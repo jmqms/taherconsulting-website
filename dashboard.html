@@ -8,18 +8,30 @@
 <link rel="icon" type="image/png" sizes="32x32" href="assets/favicon-32.png">
 <link rel="icon" type="image/png" sizes="16x16" href="assets/favicon-16.png">
 <link rel="apple-touch-icon" href="assets/apple-touch-icon.png">
-<link rel="canonical" href="https://taherconsultingbd.com/dashboard.html">
-<meta property="og:type" content="website">
-<meta property="og:site_name" content="Taher Consulting">
-<meta property="og:title" content="Dashboard — Taher Consulting">
-<meta property="og:description" content="Taher Consulting client dashboard.">
-<meta property="og:image" content="https://taherconsultingbd.com/assets/og-image.png">
-<meta property="og:url" content="https://taherconsultingbd.com/dashboard.html">
-<meta name="twitter:card" content="summary_large_image">
-<meta name="twitter:title" content="Dashboard — Taher Consulting">
-<meta name="twitter:description" content="Taher Consulting client dashboard.">
-<meta name="twitter:image" content="https://taherconsultingbd.com/assets/og-image.png">
 <link rel="stylesheet" href="css/style.css">
+<style>
+  .module-grid{display:grid;grid-template-columns:repeat(3,1fr);gap:22px;margin-top:36px}
+  .module-card{
+    background:var(--card);border:1.5px solid var(--ink);border-radius:5px;
+    padding:30px 26px;position:relative;display:block;transition:transform .15s,box-shadow .15s;
+  }
+  .module-card::before{
+    content:"";position:absolute;top:18px;left:18px;width:12px;height:12px;
+    border:1.5px solid var(--ink);border-radius:50%;background:var(--paper);
+  }
+  .module-card:hover{transform:translate(-3px,-3px);box-shadow:4px 4px 0 var(--gold)}
+  .module-code{
+    font-family:var(--mono);font-size:11px;color:var(--gold);letter-spacing:.08em;
+    display:block;margin:0 0 18px 26px;
+  }
+  .module-card h3{font-family:var(--display);font-weight:600;font-size:21px;margin-bottom:10px}
+  .module-card p{color:var(--ink-soft);font-size:14px;margin-bottom:18px}
+  .module-arrow{
+    font-family:var(--mono);font-size:12.5px;color:var(--pass);letter-spacing:.04em;
+    text-transform:uppercase;
+  }
+  @media (max-width:920px){ .module-grid{grid-template-columns:1fr} }
+</style>
 </head>
 <body>
 
@@ -37,28 +49,34 @@
 </div>
 
 <div class="wrap" style="padding-top:40px;padding-bottom:80px">
-  <div class="eyebrow">Client Dashboard</div>
+  <div class="eyebrow">Dashboard</div>
   <h1 style="font-size:32px;margin-bottom:8px">Welcome back<span id="welcomeName"></span></h1>
-  <p class="lede" style="margin-bottom:0">This is a placeholder dashboard. Once connected to a backend, this is where audit reports, training records, and CAPA trackers will live.</p>
+  <p class="lede" style="margin-bottom:0">Choose a module to continue.</p>
 
-  <div class="dash-grid">
-    <div class="dash-card">
-      <span>Open CAPA Items</span>
-      <b>—</b>
-    </div>
-    <div class="dash-card">
-      <span>Latest Audit Score</span>
-      <b>—</b>
-    </div>
-    <div class="dash-card">
-      <span>Training Sessions Logged</span>
-      <b>—</b>
-    </div>
+  <div class="module-grid">
+    <a href="#" class="module-card" onclick="return notReady('Daily QMS Floor Audit')">
+      <span class="module-code">MODULE 01</span>
+      <h3>Daily QMS Floor Audit</h3>
+      <p>Log daily floor audit findings, non-conformities, and CAPA status across sections and SBUs.</p>
+      <span class="module-arrow">Open →</span>
+    </a>
+    <a href="#" class="module-card" onclick="return notReady('QC Inspection')">
+      <span class="module-code">MODULE 02</span>
+      <h3>QC Inspection</h3>
+      <p>Record end-line inspection results, DHU tracking, and defect breakdowns by line.</p>
+      <span class="module-arrow">Open →</span>
+    </a>
+    <a href="#" class="module-card" onclick="return notReady('Training and Competency')">
+      <span class="module-code">MODULE 03</span>
+      <h3>Training and Competency</h3>
+      <p>Track training sessions, inspector skill matrix, and certification records.</p>
+      <span class="module-arrow">Open →</span>
+    </a>
   </div>
 
-  <div class="tag" style="margin-top:40px;padding:26px;max-width:640px">
+  <div class="tag" style="margin-top:44px;padding:26px;max-width:640px">
     <div class="tag-corner">SETUP NOTE</div>
-    <p style="margin-left:26px;color:var(--ink-soft);font-size:14.5px">This dashboard is currently a front-end placeholder. Connect it to a backend (Google Apps Script + Sheets, or Airtable) to pull real audit, training, and CAPA data per client — the same pattern used for the JM Fabrics QMS portal.</p>
+    <p style="margin-left:26px;color:var(--ink-soft);font-size:14.5px">These three modules are placeholders for now. Each will open its own page once connected to a real backend (Google Apps Script + Sheets, or Airtable) so data can be entered and saved per module.</p>
   </div>
 </div>
 
@@ -68,6 +86,11 @@
   if (session) {
     document.getElementById("dashUser").innerHTML = `Signed in as <b>${session.name}</b> — ${session.role}`;
     document.getElementById("welcomeName").textContent = `, ${session.name.split(" ")[0]}`;
+  }
+
+  function notReady(moduleName) {
+    alert(moduleName + " module is not connected yet. This will open once a backend is set up.");
+    return false;
   }
 </script>
 </body>
