@@ -1,0 +1,5 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64">
+  <circle cx="32" cy="32" r="30" fill="#F1F0EA" stroke="#1B211D" stroke-width="3"/>
+  <circle cx="32" cy="32" r="23" fill="none" stroke="#A9832F" stroke-width="1.5"/>
+  <text x="32" y="41" font-family="Georgia, 'Fraunces', serif" font-size="24" font-weight="700" fill="#1B211D" text-anchor="middle">TC</text>
+</svg>
