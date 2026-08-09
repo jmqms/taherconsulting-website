@@ -1,0 +1,92 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Dashboard — Taher Consulting</title>
+<link rel="icon" type="image/svg+xml" href="assets/favicon.svg">
+<link rel="icon" type="image/png" sizes="32x32" href="assets/favicon-32.png">
+<link rel="icon" type="image/png" sizes="16x16" href="assets/favicon-16.png">
+<link rel="apple-touch-icon" href="assets/apple-touch-icon.png">
+<link rel="stylesheet" href="css/style.css">
+<style>
+  .module-grid{display:grid;grid-template-columns:repeat(3,1fr);gap:22px;margin-top:36px}
+  .module-card{
+    background:var(--card);border:1.5px solid var(--ink);border-radius:5px;
+    padding:30px 26px;position:relative;display:block;transition:transform .15s,box-shadow .15s;
+  }
+  .module-card::before{
+    content:"";position:absolute;top:18px;left:18px;width:12px;height:12px;
+    border:1.5px solid var(--ink);border-radius:50%;background:var(--paper);
+  }
+  .module-card:hover{transform:translate(-3px,-3px);box-shadow:4px 4px 0 var(--gold)}
+  .module-code{
+    font-family:var(--mono);font-size:11px;color:var(--gold);letter-spacing:.08em;
+    display:block;margin:0 0 18px 26px;
+  }
+  .module-card h3{font-family:var(--display);font-weight:600;font-size:21px;margin-bottom:10px}
+  .module-card p{color:var(--ink-soft);font-size:14px;margin-bottom:18px}
+  .module-arrow{
+    font-family:var(--mono);font-size:12.5px;color:var(--pass);letter-spacing:.04em;
+    text-transform:uppercase;
+  }
+  @media (max-width:920px){ .module-grid{grid-template-columns:1fr} }
+</style>
+</head>
+<body>
+
+<div class="dash-top">
+  <div class="wrap">
+    <a href="index.html" class="brand" style="gap:10px">
+      <div class="brand-mark" style="border-color:var(--paper);color:var(--paper)">TC</div>
+      <div class="brand-name" style="color:var(--paper);font-size:17px">Taher Consulting</div>
+    </a>
+    <div style="display:flex;align-items:center;gap:18px">
+      <span class="dash-user" id="dashUser">Loading…</span>
+      <button class="logout-btn" onclick="logout()">Log Out</button>
+    </div>
+  </div>
+</div>
+
+<div class="wrap" style="padding-top:40px;padding-bottom:80px">
+  <div class="eyebrow">Dashboard</div>
+  <h1 style="font-size:32px;margin-bottom:8px">Welcome back<span id="welcomeName"></span></h1>
+  <p class="lede" style="margin-bottom:0">Choose a module to continue.</p>
+
+  <div class="module-grid">
+    <a href="audit.html" class="module-card">
+      <span class="module-code">MODULE 01</span>
+      <h3>Daily QMS Floor Audit</h3>
+      <p>Log daily floor audit findings, non-conformities, and CAPA status across sections and SBUs.</p>
+      <span class="module-arrow">Open →</span>
+    </a>
+    <a href="qc-inspection.html" class="module-card">
+      <span class="module-code">MODULE 02</span>
+      <h3>QC Inspection</h3>
+      <p>Record end-line inspection results, DHU tracking, and defect breakdowns by line.</p>
+      <span class="module-arrow">Open →</span>
+    </a>
+    <a href="training.html" class="module-card">
+      <span class="module-code">MODULE 03</span>
+      <h3>Training and Competency</h3>
+      <p>Track training sessions, inspector skill matrix, and certification records.</p>
+      <span class="module-arrow">Open →</span>
+    </a>
+  </div>
+
+  <div class="tag" style="margin-top:44px;padding:26px;max-width:640px">
+    <div class="tag-corner">SETUP NOTE</div>
+    <p style="margin-left:26px;color:var(--ink-soft);font-size:14.5px">Daily QMS Floor Audit is connected to its existing Google Sheets backend. QC Inspection and Training and Competency are the standalone tools you already built — they'll run as-is until you decide whether to give them a shared backend too.</p>
+  </div>
+</div>
+
+<script src="js/auth.js"></script>
+<script>
+  const session = requireLogin();
+  if (session) {
+    document.getElementById("dashUser").innerHTML = `Signed in as <b>${session.name}</b> — ${session.role}` + (/guest|visitor/i.test(session.role||"") ? ` <span style="background:#B84226;padding:3px 9px;border-radius:2px;margin-left:8px;font-size:10.5px">VIEW ONLY</span>` : "");
+    document.getElementById("welcomeName").textContent = `, ${session.name.split(" ")[0]}`;
+  }
+</script>
+</body>
+</html>
