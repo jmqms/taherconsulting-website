@@ -1,0 +1,998 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>Quality Complexity Management — Taher Consulting</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Fraunces:opsz,wght@9..144,500;9..144,600;9..144,700&family=Inter:wght@400;500;600;700&family=IBM+Plex+Mono:wght@400;500;600&display=swap" rel="stylesheet">
+<script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.4/chart.umd.min.js"></script>
+<style>
+  :root{
+    --navy:#0F1B33; --navy-2:#16244A; --navy-3:#1D2F5C;
+    --bg:#F2F3F6; --panel:#FFFFFF; --border:#E1E4EC; --border-soft:#ECEEF3;
+    --text:#1B211D; --muted:#697083; --muted-2:#9AA1B0;
+    --gold:#A9832F; --pass:#2F6E52; --pass-dim:#E5EEE7;
+    --amber:#B8862B; --amber-dim:#F5EBD8;
+    --crit:#B84226; --crit-dim:#F4E4DE;
+    --grey-dim:#EDEEF2;
+    --display:'Fraunces',serif; --body:'Inter',system-ui,sans-serif; --mono:'IBM Plex Mono',monospace;
+    --radius:8px;
+    --shadow:0 1px 2px rgba(15,27,51,0.04), 0 8px 24px rgba(15,27,51,0.06);
+  }
+  *{box-sizing:border-box;}
+  html,body{margin:0;padding:0;}
+  body{background:var(--bg);color:var(--text);font-family:var(--body);-webkit-font-smoothing:antialiased;min-height:100vh;}
+  .mono{font-family:var(--mono);}
+  ::-webkit-scrollbar{width:10px;height:10px;}
+  ::-webkit-scrollbar-track{background:transparent;}
+  ::-webkit-scrollbar-thumb{background:#C6CAD6;border-radius:8px;}
+
+  /* ---------- Shell layout ---------- */
+  #shell{display:flex;min-height:100vh;}
+  .sidebar{
+    width:230px;flex:0 0 230px;background:var(--navy);color:#DCE1EE;
+    padding:22px 16px 30px;position:sticky;top:0;align-self:flex-start;height:100vh;overflow-y:auto;
+  }
+  .sb-brand{display:flex;align-items:center;gap:10px;padding:0 6px 20px;margin-bottom:14px;border-bottom:1px solid #26365E;}
+  .sb-mark{width:34px;height:34px;border-radius:50%;border:1.5px solid var(--gold);display:flex;align-items:center;justify-content:center;font-family:var(--display);font-weight:600;font-size:14px;color:var(--gold);flex:none;}
+  .sb-brand-name{font-family:var(--display);font-size:14.5px;font-weight:600;color:#fff;line-height:1.25;}
+  .sb-brand-name small{display:block;font-family:var(--mono);font-size:9px;letter-spacing:.1em;color:#8891AB;text-transform:uppercase;margin-top:2px;}
+  .sb-section{font-family:var(--mono);font-size:10px;letter-spacing:.1em;text-transform:uppercase;color:#6B7594;margin:18px 8px 8px;}
+  .sb-link{display:flex;align-items:center;gap:10px;padding:10px 10px;border-radius:6px;font-size:13.5px;color:#C4CADD;cursor:pointer;margin-bottom:2px;transition:.15s;}
+  .sb-link:hover{background:#1A2A50;color:#fff;}
+  .sb-link.active{background:var(--gold);color:#1B1400;font-weight:600;}
+  .sb-link .ic{width:20px;height:20px;border-radius:5px;background:#1A2A50;display:flex;align-items:center;justify-content:center;font-family:var(--mono);font-size:10px;flex:none;}
+  .sb-link.active .ic{background:rgba(0,0,0,0.15);}
+  .sb-back{display:block;font-family:var(--mono);font-size:11px;color:#8891AB;padding:8px 10px 0;margin-top:6px;}
+  .sb-back:hover{color:#fff;}
+
+  main{flex:1;min-width:0;}
+  .topbar{
+    background:var(--panel);border-bottom:1px solid var(--border);
+    padding:14px 26px;display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:12px;
+    position:sticky;top:0;z-index:20;
+  }
+  .topbar h1{font-family:var(--display);font-size:19px;font-weight:600;margin:0;}
+  .topbar .sub{font-family:var(--mono);font-size:11px;color:var(--muted);margin-top:2px;}
+  .top-right{display:flex;align-items:center;gap:12px;}
+  .badge-user{font-family:var(--mono);font-size:11.5px;color:var(--gold);}
+
+  #content{padding:24px 26px 70px;max-width:1360px;}
+
+  /* ---------- Filter bar ---------- */
+  .filters{display:flex;gap:10px;flex-wrap:wrap;align-items:flex-end;margin-bottom:20px;background:var(--panel);border:1px solid var(--border);border-radius:var(--radius);padding:14px 16px;box-shadow:var(--shadow);}
+  .f-field{display:flex;flex-direction:column;gap:5px;}
+  .f-field label{font-family:var(--mono);font-size:10px;letter-spacing:.06em;text-transform:uppercase;color:var(--muted);}
+  select, input[type=text], input[type=number], input[type=date], textarea{
+    background:#fff;border:1px solid var(--border);color:var(--text);border-radius:6px;
+    padding:8px 10px;font-family:var(--body);font-size:13px;outline:none;
+  }
+  select:focus, input:focus, textarea:focus{border-color:var(--navy-3);}
+  textarea{resize:vertical;min-height:56px;font-family:var(--body);}
+
+  .btn{background:var(--navy);color:#fff;border:none;border-radius:6px;padding:9px 16px;font-weight:600;font-size:12.5px;cursor:pointer;font-family:var(--body);transition:.15s;}
+  .btn:hover{background:var(--navy-3);}
+  .btn.gold{background:var(--gold);color:#1B1400;}
+  .btn.gold:hover{filter:brightness(1.05);}
+  .btn.ghost{background:transparent;color:var(--navy);border:1px solid var(--border);}
+  .btn.ghost:hover{border-color:var(--navy);}
+  .btn.danger{background:transparent;color:var(--crit);border:1px solid var(--crit-dim);}
+  .btn.danger:hover{background:var(--crit-dim);}
+  .btn.small{padding:6px 11px;font-size:11.5px;border-radius:5px;}
+
+  /* ---------- KPI cards ---------- */
+  .kpi-grid{display:grid;grid-template-columns:repeat(5,1fr);gap:14px;margin-bottom:18px;}
+  @media (max-width:1100px){.kpi-grid{grid-template-columns:repeat(2,1fr);}}
+  .kpi{background:var(--panel);border:1px solid var(--border);border-radius:var(--radius);padding:16px 18px;box-shadow:var(--shadow);position:relative;overflow:hidden;}
+  .kpi .k-bar{position:absolute;left:0;top:0;bottom:0;width:4px;}
+  .kpi .k-label{font-family:var(--mono);font-size:10.5px;color:var(--muted);text-transform:uppercase;letter-spacing:.05em;}
+  .kpi .k-value{font-family:var(--display);font-size:28px;font-weight:600;margin-top:6px;}
+  .kpi .k-sub{font-size:11.5px;color:var(--muted-2);margin-top:3px;}
+
+  /* ---------- Panels ---------- */
+  .panel{background:var(--panel);border:1px solid var(--border);border-radius:var(--radius);box-shadow:var(--shadow);padding:18px 20px;margin-bottom:18px;}
+  .panel h2{font-family:var(--display);font-size:16px;font-weight:600;margin:0 0 14px;display:flex;align-items:center;justify-content:space-between;gap:10px;}
+  .panel h2 .tag{font-family:var(--mono);font-size:10px;font-weight:400;color:var(--muted);background:var(--grey-dim);padding:3px 8px;border-radius:5px;}
+  .grid-2{display:grid;grid-template-columns:1.4fr 1fr;gap:16px;}
+  @media (max-width:1000px){.grid-2{grid-template-columns:1fr;}}
+  .chart-wrap{position:relative;height:270px;}
+
+  table{width:100%;border-collapse:collapse;font-size:13px;}
+  th{font-family:var(--mono);font-size:10.5px;text-transform:uppercase;letter-spacing:.04em;color:var(--muted);text-align:left;padding:9px 10px;border-bottom:2px solid var(--border);}
+  td{padding:9px 10px;border-bottom:1px solid var(--border-soft);}
+  tr.total-row td{font-weight:700;border-top:2px solid var(--navy);border-bottom:none;background:var(--grey-dim);}
+  .num-link{font-weight:700;cursor:pointer;text-decoration:underline;text-decoration-style:dotted;text-underline-offset:3px;}
+  .pct-cell{border-radius:4px;padding:3px 8px;display:inline-block;font-weight:600;font-size:12px;}
+
+  .lvl-badge{font-family:var(--mono);font-size:10.5px;padding:3px 9px;border-radius:100px;font-weight:600;letter-spacing:.02em;}
+  .lvl-Basic{background:var(--pass-dim);color:var(--pass);}
+  .lvl-Complex{background:var(--amber-dim);color:var(--amber);}
+  .lvl-Strategic-Complex{background:var(--crit-dim);color:var(--crit);}
+  .lvl-N\/A{background:var(--grey-dim);color:var(--muted);}
+
+  .insight-list{display:flex;flex-direction:column;gap:12px;}
+  .insight-item{display:flex;gap:10px;align-items:flex-start;font-size:13px;line-height:1.5;}
+  .insight-item .dot{width:7px;height:7px;border-radius:50%;background:var(--gold);margin-top:6px;flex:none;}
+
+  .empty{text-align:center;padding:44px 20px;color:var(--muted);}
+  .empty .t1{font-family:var(--display);font-size:16px;color:var(--text);font-weight:600;margin-bottom:4px;}
+  .empty .t2{font-size:12.5px;}
+
+  /* ---------- New Bulletin form ---------- */
+  .bull-head-grid{display:grid;grid-template-columns:repeat(4,1fr);gap:12px;margin-bottom:6px;}
+  @media (max-width:900px){.bull-head-grid{grid-template-columns:repeat(2,1fr);}}
+  .bull-head-grid .f{display:flex;flex-direction:column;gap:5px;}
+  .bull-head-grid label{font-family:var(--mono);font-size:10px;letter-spacing:.05em;text-transform:uppercase;color:var(--muted);}
+  .bull-head-grid input,.bull-head-grid select{width:100%;}
+
+  .event-row{border:1px solid var(--border);border-radius:7px;padding:14px 16px;margin-top:12px;}
+  .event-row.lvl-set-Complex{border-left:4px solid var(--amber);}
+  .event-row.lvl-set-Strategic-Complex{border-left:4px solid var(--crit);}
+  .event-row.lvl-set-Basic{border-left:4px solid var(--pass);}
+  .event-row.lvl-set-N\/A{border-left:4px solid var(--muted-2);opacity:.75;}
+  .event-row-top{display:flex;align-items:center;gap:12px;flex-wrap:wrap;}
+  .event-badge{width:34px;height:34px;border-radius:50%;background:var(--navy);color:#fff;display:flex;align-items:center;justify-content:center;font-family:var(--mono);font-size:11px;font-weight:600;flex:none;}
+  .event-name{font-family:var(--display);font-size:15px;font-weight:600;flex:1;min-width:120px;}
+  .event-row-body{display:grid;grid-template-columns:1fr 1fr;gap:12px;margin-top:12px;}
+  @media (max-width:800px){.event-row-body{grid-template-columns:1fr;}}
+  .event-row-body .f{display:flex;flex-direction:column;gap:5px;}
+  .event-row-body label{font-family:var(--mono);font-size:10px;letter-spacing:.05em;text-transform:uppercase;color:var(--muted);}
+  .impact-chips{display:flex;gap:7px;flex-wrap:wrap;margin-top:6px;}
+  .impact-chip{font-family:var(--mono);font-size:10.5px;padding:5px 10px;border-radius:100px;border:1px solid var(--border);color:var(--muted);cursor:pointer;user-select:none;}
+  .impact-chip.on{background:var(--navy);color:#fff;border-color:var(--navy);}
+
+  /* ---------- Records table ---------- */
+  .rec-row{cursor:pointer;}
+  .rec-row:hover{background:#FAFAFC;}
+
+  /* ---------- Action tracking ---------- */
+  .kanban{display:grid;grid-template-columns:repeat(3,1fr);gap:14px;}
+  @media (max-width:960px){.kanban{grid-template-columns:1fr;}}
+  .kcol{background:var(--grey-dim);border-radius:var(--radius);padding:12px;min-height:120px;}
+  .kcol h3{font-family:var(--mono);font-size:11px;text-transform:uppercase;letter-spacing:.05em;color:var(--muted);margin:0 0 10px;display:flex;justify-content:space-between;}
+  .acard{background:#fff;border:1px solid var(--border);border-radius:7px;padding:12px 13px;margin-bottom:10px;box-shadow:var(--shadow);}
+  .acard .a-style{font-family:var(--mono);font-size:10.5px;color:var(--gold);margin-bottom:4px;}
+  .acard .a-desc{font-size:13px;line-height:1.4;margin-bottom:8px;}
+  .acard .a-meta{font-size:11.5px;color:var(--muted);display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:6px;}
+  .prio{font-family:var(--mono);font-size:10px;padding:2px 7px;border-radius:100px;font-weight:600;}
+  .prio-Low{background:var(--pass-dim);color:var(--pass);}
+  .prio-Medium{background:var(--amber-dim);color:var(--amber);}
+  .prio-High{background:#FBE4D3;color:#B85B26;}
+  .prio-Critical{background:var(--crit-dim);color:var(--crit);}
+  .acard .a-actions{display:flex;gap:6px;margin-top:8px;}
+
+  .outcome-strip{display:flex;gap:20px;flex-wrap:wrap;margin-top:6px;}
+  .outcome-item{display:flex;align-items:center;gap:8px;font-size:13px;color:var(--pass);font-weight:600;}
+  .outcome-item .ck{width:18px;height:18px;border-radius:50%;background:var(--pass-dim);display:flex;align-items:center;justify-content:center;font-size:11px;flex:none;}
+
+  /* ---------- Modal ---------- */
+  .modal-bg{position:fixed;inset:0;background:rgba(15,27,51,0.55);z-index:9998;display:flex;align-items:flex-start;justify-content:center;padding:50px 20px;overflow-y:auto;}
+  .modal{background:#fff;border-radius:10px;max-width:640px;width:100%;padding:26px 28px;box-shadow:0 20px 60px rgba(0,0,0,0.3);}
+  .modal h3{font-family:var(--display);font-size:18px;margin:0 0 14px;display:flex;justify-content:space-between;align-items:center;}
+  .modal .close{cursor:pointer;color:var(--muted);font-size:20px;line-height:1;}
+  .modal-row{display:flex;justify-content:space-between;padding:8px 0;border-bottom:1px solid var(--border-soft);font-size:13px;gap:14px;}
+  .modal-row .k{color:var(--muted);font-family:var(--mono);font-size:11px;text-transform:uppercase;letter-spacing:.04em;flex:none;}
+  .modal-row .v{text-align:right;}
+
+  .toast{position:fixed;bottom:24px;right:24px;background:var(--navy);color:#fff;padding:12px 18px;border-radius:8px;font-size:13px;z-index:9999;box-shadow:0 8px 24px rgba(0,0,0,0.25);}
+</style>
+</head>
+<body>
+
+<div id="tc-guard-bar" style="background:#1B211D;color:#F1F0EA;font-family:'IBM Plex Mono',monospace;font-size:12.5px;letter-spacing:.04em;padding:10px 20px;display:flex;justify-content:space-between;align-items:center;position:sticky;top:0;z-index:9999">
+  <a href="dashboard.html" style="color:#F1F0EA;text-decoration:none">&larr; Back to Dashboard</a>
+  <span>TAHER CONSULTING &middot; Quality Complexity Management</span>
+  <span>
+    <span id="tc-guard-user" style="color:#A9832F"></span>
+    <span id="tc-guest-badge" style="display:none;background:#B84226;color:#F1F0EA;padding:3px 9px;border-radius:2px;margin-left:10px;font-size:10.5px;letter-spacing:.06em">VIEW ONLY &middot; GUEST</span>
+  </span>
+</div>
+<script>
+window.TC_IS_GUEST = false;
+(function(){
+  var raw = localStorage.getItem("tc_session") || sessionStorage.getItem("tc_session");
+  if (!raw) {
+    window.location.href = "login.html";
+  } else {
+    try {
+      var s = JSON.parse(raw);
+      window.TC_IS_GUEST = /guest|visitor/i.test(s.role || "");
+      document.addEventListener("DOMContentLoaded", function(){
+        var el = document.getElementById("tc-guard-user");
+        if (el) el.textContent = s.name || "";
+        var badge = document.getElementById("tc-guest-badge");
+        if (badge && window.TC_IS_GUEST) badge.style.display = "inline-block";
+      });
+    } catch(e) {}
+  }
+})();
+function tcBlockIfGuest(actionLabel) {
+  if (window.TC_IS_GUEST) {
+    alert("You're signed in as a Guest (View Only). " + (actionLabel || "This action") + " is disabled for guest accounts.\n\nAsk an administrator for a full account to " + (actionLabel ? actionLabel.toLowerCase() : "make changes") + ".");
+    return true;
+  }
+  return false;
+}
+</script>
+
+<script src="js/module-auth.js"></script>
+<script>
+  tcInitModuleAuth({
+    moduleKey: "complexity",
+    sheetName: "ComplexityUsers",
+    displayLabel: "Quality Complexity Management"
+  });
+</script>
+
+<div id="shell">
+  <div class="sidebar">
+    <div class="sb-brand">
+      <div class="sb-mark">QC</div>
+      <div class="sb-brand-name">Quality Complexity<small>Management System</small></div>
+    </div>
+    <div class="sb-section">Overview</div>
+    <div class="sb-link" data-tab="dashboard"><span class="ic">▤</span> Dashboard</div>
+    <div class="sb-section">Data Entry</div>
+    <div class="sb-link" data-tab="entry"><span class="ic">＋</span> New Bulletin</div>
+    <div class="sb-link" data-tab="records"><span class="ic">≡</span> Bulletin Records</div>
+    <div class="sb-section">Follow-up</div>
+    <div class="sb-link" data-tab="actions"><span class="ic">✓</span> Preventive Actions</div>
+    <a class="sb-back" href="dashboard.html">← Back to Portal Dashboard</a>
+  </div>
+
+  <main>
+    <div class="topbar">
+      <div>
+        <h1 id="topTitle">Operational Complexity Analysis — Quality</h1>
+        <div class="sub" id="topSub">Loading…</div>
+      </div>
+      <div class="top-right">
+        <span class="badge-user mono" id="topUpdated"></span>
+      </div>
+    </div>
+    <div id="content"></div>
+  </main>
+</div>
+
+<div id="modalRoot"></div>
+<div id="toastRoot"></div>
+
+<script>
+/* ============================= DATA MODEL ============================= */
+const EVENTS = [
+  {key:'cutting',    label:'Cutting',    code:'CT'},
+  {key:'print',      label:'Print',      code:'PR'},
+  {key:'embroidery', label:'Embroidery', code:'EM'},
+  {key:'sewing',     label:'Sewing',     code:'SW'},
+  {key:'wash',       label:'Wash',       code:'WS'},
+  {key:'finishing',  label:'Finishing',  code:'FN'},
+];
+const LEVELS = ['N/A','Basic','Complex','Strategic Complex'];
+const LEVEL_COLOR = {'Basic':'#2F6E52','Complex':'#B8862B','Strategic Complex':'#B84226','N/A':'#C6CAD6'};
+const REASONS = [
+  'High historical DHU / defect rate for this operation',
+  'Repeat NC or CAPA history on this style or operation',
+  'Buyer Critical Point — AQL critical defect risk',
+  'New or inexperienced operator assigned',
+  'Complex construction (multi-panel, engineered placement)',
+  'Fabric or wash sensitivity (shade, shrinkage, colorfastness)',
+  'First-time style — no proven process history',
+  'High rework / repair rate history',
+  'Special buyer requirement prone to error (trims, labels, safety)',
+  'Buyer risk cluster / compliance flag tie-in',
+  'Other (see notes)',
+];
+const IMPACTS = ['Quality','Delivery','Cost','Compliance'];
+const SBU_LIST = ['SBU-01','SBU-02','SBU-03','SBU-04','SBU-05'];
+const MONTHS = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
+const PRIORITIES = ['Low','Medium','High','Critical'];
+const STATUSES = ['Open','In Progress','Done'];
+
+function uid(){ return 'id' + Date.now().toString(36) + Math.random().toString(36).slice(2,8); }
+function slug(s){ return String(s).replace(/[^A-Za-z]/g,'-'); }
+function todayISO(){ return new Date().toISOString().slice(0,10); }
+
+function emptyEvents(){
+  const o = {};
+  EVENTS.forEach(e => o[e.key] = { level:'N/A', reason:'', notes:'', impacts:[] });
+  return o;
+}
+function emptyEntryHeader(){
+  const now = new Date();
+  return {
+    id:null, styleNo:'', buyer:'', sbu:'SBU-01', productType:'',
+    season:'', month: MONTHS[now.getMonth()], year: now.getFullYear(),
+  };
+}
+
+/* ============================= STATE ============================= */
+let state = {
+  reports: [],
+  actions: [],
+  storageReady: false,
+  tab: 'dashboard',
+  filters: { year:'All', month:'All', sbu:'All', season:'All' },
+  entry: { header: emptyEntryHeader(), events: emptyEvents() },
+  editingReportId: null,
+  drill: null,        // {eventKey, level}
+  viewingReport: null,
+  actionForm: { open:false, styleNo:'', event:'', description:'', responsible:'', department:'', targetDate:'', priority:'Medium' },
+  charts: {},
+};
+
+/* ============================= STORAGE ============================= */
+/* Backed by a Google Apps Script Web App + Google Sheet — same pattern as
+   the other Taher Consulting modules. Paste your deployed /exec URL below
+   after setting up complexity-backend.gs (see that file for setup steps). */
+const CLOUD_API_URL = "PASTE_YOUR_GOOGLE_APPS_SCRIPT_EXEC_URL_HERE";
+
+async function loadData(){
+  try{
+    if (CLOUD_API_URL.indexOf("PASTE_YOUR") === 0) throw new Error("Backend not configured yet");
+    const res = await fetch(CLOUD_API_URL);
+    const data = await res.json();
+    state.reports = Array.isArray(data.reports) ? data.reports : [];
+    state.actions = Array.isArray(data.actions) ? data.actions : [];
+  }catch(e){
+    try{
+      const raw = localStorage.getItem('complexity-fallback');
+      const parsed = raw ? JSON.parse(raw) : {reports:[],actions:[]};
+      state.reports = parsed.reports || [];
+      state.actions = parsed.actions || [];
+    }catch(e2){ state.reports = []; state.actions = []; }
+    if (CLOUD_API_URL.indexOf("PASTE_YOUR") === 0) {
+      showToast('Backend not connected yet — saving to this browser only');
+    }
+  }
+  state.storageReady = true;
+  render();
+}
+async function persistData(){
+  try{
+    if (CLOUD_API_URL.indexOf("PASTE_YOUR") === 0) throw new Error("Backend not configured yet");
+    await fetch(CLOUD_API_URL, {
+      method: "POST",
+      headers: { "Content-Type": "text/plain;charset=utf-8" },
+      body: JSON.stringify({ action:"save", reports: state.reports, actions: state.actions })
+    });
+  }catch(e){
+    try{ localStorage.setItem('complexity-fallback', JSON.stringify({reports:state.reports, actions:state.actions})); }catch(e2){}
+    if (CLOUD_API_URL.indexOf("PASTE_YOUR") === 0) {
+      showToast('Backend not connected yet — saved to this browser only');
+    } else {
+      showToast('Could not reach server — saved to this browser only');
+    }
+  }
+}
+
+function showToast(msg){
+  const root = document.getElementById('toastRoot');
+  root.innerHTML = `<div class="toast">${msg}</div>`;
+  setTimeout(()=>{ root.innerHTML=''; }, 3200);
+}
+
+/* ============================= COMPUTATION ============================= */
+function filteredReports(){
+  return state.reports.filter(r=>{
+    if (state.filters.year !== 'All' && String(r.header.year) !== String(state.filters.year)) return false;
+    if (state.filters.month !== 'All' && r.header.month !== state.filters.month) return false;
+    if (state.filters.sbu !== 'All' && r.header.sbu !== state.filters.sbu) return false;
+    if (state.filters.season !== 'All' && r.header.season !== state.filters.season) return false;
+    return true;
+  });
+}
+
+function eventStats(reports){
+  const stats = {};
+  EVENTS.forEach(ev=>{
+    stats[ev.key] = { total:0, basic:0, complex:0, strategic:0, reasonCounts:{} };
+  });
+  reports.forEach(r=>{
+    EVENTS.forEach(ev=>{
+      const cell = r.events[ev.key];
+      if (!cell || cell.level === 'N/A') return;
+      const s = stats[ev.key];
+      s.total++;
+      if (cell.level === 'Basic') s.basic++;
+      else if (cell.level === 'Complex') s.complex++;
+      else if (cell.level === 'Strategic Complex') s.strategic++;
+      if (cell.level !== 'Basic' && cell.reason) {
+        s.reasonCounts[cell.reason] = (s.reasonCounts[cell.reason]||0) + 1;
+      }
+    });
+  });
+  return stats;
+}
+
+function totalsFromStats(stats){
+  let total=0, basic=0, complex=0, strategic=0;
+  EVENTS.forEach(ev=>{ const s=stats[ev.key]; total+=s.total; basic+=s.basic; complex+=s.complex; strategic+=s.strategic; });
+  return {total,basic,complex,strategic};
+}
+
+function distinctYears(){
+  const ys = new Set(state.reports.map(r=>r.header.year));
+  return Array.from(ys).sort((a,b)=>b-a);
+}
+function distinctSeasons(){
+  const ss = new Set(state.reports.map(r=>r.header.season).filter(Boolean));
+  return Array.from(ss).sort();
+}
+
+function computeInsights(stats, totals){
+  const insights = [];
+  if (totals.total === 0) return insights;
+  let topComplex = null, topStrategic = null;
+  EVENTS.forEach(ev=>{
+    const s = stats[ev.key];
+    if (!topComplex || s.complex > stats[topComplex.key].complex) topComplex = ev;
+    if (!topStrategic || s.strategic > stats[topStrategic.key].strategic) topStrategic = ev;
+  });
+  if (topComplex && stats[topComplex.key].complex>0) insights.push(`${topComplex.label} carries the highest number of Complex-rated entries (${stats[topComplex.key].complex}).`);
+  if (topStrategic && stats[topStrategic.key].strategic>0) insights.push(`${topStrategic.label} carries the highest number of Strategic Complex entries (${stats[topStrategic.key].strategic}) — prioritise preventive action here.`);
+  const pctBasic = ((totals.basic/totals.total)*100).toFixed(1);
+  insights.push(`${pctBasic}% of all style-events reviewed are Basic risk, ${((totals.complex/totals.total)*100).toFixed(1)}% Complex, and ${((totals.strategic/totals.total)*100).toFixed(1)}% Strategic Complex.`);
+  // top reason overall
+  const reasonTotals = {};
+  EVENTS.forEach(ev=>{
+    Object.entries(stats[ev.key].reasonCounts).forEach(([r,c])=>{ reasonTotals[r] = (reasonTotals[r]||0)+c; });
+  });
+  const topReason = Object.entries(reasonTotals).sort((a,b)=>b[1]-a[1])[0];
+  if (topReason) insights.push(`The most common driver of complexity is "${topReason[0]}" (${topReason[1]} occurrence${topReason[1]>1?'s':''}).`);
+  const sortedRisk = EVENTS.map(ev=>({ev, score: stats[ev.key].complex + stats[ev.key].strategic*2})).sort((a,b)=>b.score-a.score).filter(x=>x.score>0).slice(0,2);
+  if (sortedRisk.length) insights.push(`Focus preventive action on ${sortedRisk.map(x=>x.ev.label).join(' & ')} for the greatest quality-risk reduction.`);
+  return insights;
+}
+
+/* ============================= RENDER: SHELL ============================= */
+function render(){
+  document.querySelectorAll('.sb-link').forEach(el=>{
+    el.classList.toggle('active', el.dataset.tab === state.tab);
+  });
+  const now = new Date();
+  document.getElementById('topUpdated').textContent = 'Last updated ' + now.toLocaleDateString('en-GB',{day:'2-digit',month:'short',year:'numeric'}) + ' ' + now.toLocaleTimeString('en-GB',{hour:'2-digit',minute:'2-digit'});
+
+  if (!state.storageReady){
+    document.getElementById('content').innerHTML = `<div class="empty"><div class="t1">Loading…</div></div>`;
+    return;
+  }
+
+  const titles = {
+    dashboard: ['Operational Complexity Analysis — Quality', 'Quality-risk view across the 6 core production events'],
+    entry: [state.editingReportId ? 'Edit Complexity Bulletin' : 'New Complexity Bulletin', 'Rate each core event by quality risk and record the reason'],
+    records: ['Bulletin Records', 'All style-wise complexity bulletins on file'],
+    actions: ['Preventive Actions', 'Track corrective and preventive actions to completion'],
+  };
+  document.getElementById('topTitle').textContent = titles[state.tab][0];
+  document.getElementById('topSub').textContent = titles[state.tab][1];
+
+  if (state.tab === 'dashboard') renderDashboard();
+  else if (state.tab === 'entry') renderEntry();
+  else if (state.tab === 'records') renderRecords();
+  else if (state.tab === 'actions') renderActions();
+
+  renderModal();
+}
+
+document.querySelectorAll('.sb-link').forEach(el=>{
+  el.addEventListener('click', ()=>{
+    state.tab = el.dataset.tab;
+    if (state.tab === 'entry' && !state.editingReportId){
+      state.entry = { header: emptyEntryHeader(), events: emptyEvents() };
+    }
+    render();
+  });
+});
+
+/* ============================= RENDER: DASHBOARD ============================= */
+function renderDashboard(){
+  const reports = filteredReports();
+  const stats = eventStats(reports);
+  const totals = totalsFromStats(stats);
+  const years = distinctYears();
+  const seasons = distinctSeasons();
+
+  const c = document.getElementById('content');
+  c.innerHTML = `
+    <div class="filters">
+      <div class="f-field"><label>Year</label>
+        <select id="fYear">
+          <option value="All">All Years</option>
+          ${years.map(y=>`<option value="${y}" ${state.filters.year==String(y)?'selected':''}>${y}</option>`).join('')}
+        </select>
+      </div>
+      <div class="f-field"><label>Month</label>
+        <select id="fMonth">
+          <option value="All">All Months</option>
+          ${MONTHS.map(m=>`<option value="${m}" ${state.filters.month===m?'selected':''}>${m}</option>`).join('')}
+        </select>
+      </div>
+      <div class="f-field"><label>SBU</label>
+        <select id="fSbu">
+          <option value="All">All SBUs</option>
+          ${SBU_LIST.map(s=>`<option value="${s}" ${state.filters.sbu===s?'selected':''}>${s}</option>`).join('')}
+        </select>
+      </div>
+      <div class="f-field"><label>Season</label>
+        <select id="fSeason">
+          <option value="All">All Seasons</option>
+          ${seasons.map(s=>`<option value="${s}" ${state.filters.season===s?'selected':''}>${s}</option>`).join('')}
+        </select>
+      </div>
+      <div style="flex:1"></div>
+      <button class="btn gold" id="btnNewBulletin">+ New Bulletin</button>
+    </div>
+
+    ${reports.length===0 ? `
+      <div class="empty panel">
+        <div class="t1">No bulletins yet for this filter</div>
+        <div class="t2">Create a complexity bulletin to see the dashboard populate.</div>
+      </div>
+    ` : `
+    <div class="kpi-grid">
+      <div class="kpi"><div class="k-bar" style="background:var(--navy)"></div><div class="k-label">Core Events</div><div class="k-value">6</div><div class="k-sub">Cutting → Finishing</div></div>
+      <div class="kpi"><div class="k-bar" style="background:var(--gold)"></div><div class="k-label">Styles Reviewed</div><div class="k-value">${reports.length}</div><div class="k-sub">Across all core events</div></div>
+      <div class="kpi"><div class="k-bar" style="background:${LEVEL_COLOR['Basic']}"></div><div class="k-label">Basic Risk</div><div class="k-value">${totals.basic}</div><div class="k-sub">${totals.total? ((totals.basic/totals.total)*100).toFixed(1):'0'}% of total</div></div>
+      <div class="kpi"><div class="k-bar" style="background:${LEVEL_COLOR['Complex']}"></div><div class="k-label">Complex</div><div class="k-value">${totals.complex}</div><div class="k-sub">${totals.total? ((totals.complex/totals.total)*100).toFixed(1):'0'}% of total</div></div>
+      <div class="kpi"><div class="k-bar" style="background:${LEVEL_COLOR['Strategic Complex']}"></div><div class="k-label">Strategic Complex</div><div class="k-value">${totals.strategic}</div><div class="k-sub">${totals.total? ((totals.strategic/totals.total)*100).toFixed(1):'0'}% of total</div></div>
+    </div>
+
+    <div class="grid-2">
+      <div class="panel">
+        <h2>Quality Risk by Core Event <span class="tag">Basic · Complex · Strategic</span></h2>
+        <div class="chart-wrap"><canvas id="chartByEvent"></canvas></div>
+      </div>
+      <div class="panel">
+        <h2>Overall Distribution</h2>
+        <div class="chart-wrap"><canvas id="chartDonut"></canvas></div>
+      </div>
+    </div>
+
+    <div class="grid-2">
+      <div class="panel">
+        <h2>Detailed Complexity Summary by Core Event</h2>
+        <table>
+          <thead><tr><th>Core Event</th><th>Total</th><th>Basic</th><th>Complex</th><th>Strategic</th><th>% Complex</th><th>% Strategic</th></tr></thead>
+          <tbody>
+            ${EVENTS.map(ev=>{
+              const s = stats[ev.key];
+              const pctC = s.total? ((s.complex/s.total)*100).toFixed(1) : '0.0';
+              const pctS = s.total? ((s.strategic/s.total)*100).toFixed(1) : '0.0';
+              return `<tr>
+                <td><b>${ev.label}</b></td>
+                <td>${s.total}</td>
+                <td>${s.basic}</td>
+                <td>${s.complex>0?`<span class="num-link" data-ev="${ev.key}" data-lvl="Complex">${s.complex}</span>`:'0'}</td>
+                <td>${s.strategic>0?`<span class="num-link" data-ev="${ev.key}" data-lvl="Strategic Complex">${s.strategic}</span>`:'0'}</td>
+                <td><span class="pct-cell" style="background:${pctC>=25?'var(--amber-dim)':'var(--pass-dim)'};color:${pctC>=25?'var(--amber)':'var(--pass)'}">${pctC}%</span></td>
+                <td><span class="pct-cell" style="background:${pctS>=10?'var(--crit-dim)':'var(--pass-dim)'};color:${pctS>=10?'var(--crit)':'var(--pass)'}">${pctS}%</span></td>
+              </tr>`;
+            }).join('')}
+            <tr class="total-row">
+              <td>TOTAL</td><td>${totals.total}</td><td>${totals.basic}</td><td>${totals.complex}</td><td>${totals.strategic}</td>
+              <td>${totals.total?((totals.complex/totals.total)*100).toFixed(1):'0.0'}%</td>
+              <td>${totals.total?((totals.strategic/totals.total)*100).toFixed(1):'0.0'}%</td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+      <div class="panel">
+        <h2>Key Insights</h2>
+        <div class="insight-list">
+          ${computeInsights(stats, totals).map(t=>`<div class="insight-item"><span class="dot"></span><span>${t}</span></div>`).join('')}
+        </div>
+      </div>
+    </div>
+    `}
+  `;
+
+  document.getElementById('btnNewBulletin').addEventListener('click', ()=>{
+    state.tab='entry'; state.editingReportId=null;
+    state.entry = { header: emptyEntryHeader(), events: emptyEvents() };
+    render();
+  });
+  ['fYear','fMonth','fSbu','fSeason'].forEach(id=>{
+    const el = document.getElementById(id);
+    if (el) el.addEventListener('change', e=>{
+      const map = {fYear:'year',fMonth:'month',fSbu:'sbu',fSeason:'season'};
+      state.filters[map[id]] = e.target.value;
+      render();
+    });
+  });
+  document.querySelectorAll('.num-link').forEach(el=>{
+    el.addEventListener('click', ()=>{
+      state.drill = { eventKey: el.dataset.ev, level: el.dataset.lvl };
+      render();
+    });
+  });
+
+  if (reports.length>0) drawCharts(stats, totals);
+}
+
+function drawCharts(stats, totals){
+  const ctx1 = document.getElementById('chartByEvent');
+  const ctx2 = document.getElementById('chartDonut');
+  if (state.charts.byEvent) state.charts.byEvent.destroy();
+  if (state.charts.donut) state.charts.donut.destroy();
+
+  state.charts.byEvent = new Chart(ctx1, {
+    type:'bar',
+    data:{
+      labels: EVENTS.map(e=>e.label),
+      datasets:[
+        {label:'Basic', data: EVENTS.map(e=>stats[e.key].basic), backgroundColor: LEVEL_COLOR['Basic'], stack:'s'},
+        {label:'Complex', data: EVENTS.map(e=>stats[e.key].complex), backgroundColor: LEVEL_COLOR['Complex'], stack:'s'},
+        {label:'Strategic Complex', data: EVENTS.map(e=>stats[e.key].strategic), backgroundColor: LEVEL_COLOR['Strategic Complex'], stack:'s'},
+      ]
+    },
+    options:{
+      responsive:true, maintainAspectRatio:false,
+      plugins:{legend:{position:'bottom', labels:{boxWidth:11,font:{size:11}}}},
+      scales:{ x:{stacked:true, grid:{display:false}}, y:{stacked:true, beginAtZero:true, ticks:{precision:0}} }
+    }
+  });
+
+  state.charts.donut = new Chart(ctx2, {
+    type:'doughnut',
+    data:{
+      labels:['Basic','Complex','Strategic Complex'],
+      datasets:[{ data:[totals.basic, totals.complex, totals.strategic],
+        backgroundColor:[LEVEL_COLOR['Basic'],LEVEL_COLOR['Complex'],LEVEL_COLOR['Strategic Complex']],
+        borderWidth:2, borderColor:'#fff' }]
+    },
+    options:{
+      responsive:true, maintainAspectRatio:false, cutout:'62%',
+      plugins:{legend:{position:'bottom', labels:{boxWidth:11,font:{size:11}}}}
+    }
+  });
+}
+
+/* ============================= RENDER: ENTRY FORM ============================= */
+function renderEntry(){
+  const h = state.entry.header;
+  const c = document.getElementById('content');
+  c.innerHTML = `
+    <div class="panel">
+      <h2>Style Identification</h2>
+      <div class="bull-head-grid">
+        <div class="f"><label>Style No *</label><input type="text" id="hStyle" value="${h.styleNo}"></div>
+        <div class="f"><label>Buyer</label><input type="text" id="hBuyer" value="${h.buyer}"></div>
+        <div class="f"><label>SBU</label><select id="hSbu">${SBU_LIST.map(s=>`<option ${h.sbu===s?'selected':''}>${s}</option>`).join('')}</select></div>
+        <div class="f"><label>Product Type</label><input type="text" id="hProduct" value="${h.productType}"></div>
+        <div class="f"><label>Season</label><input type="text" id="hSeason" placeholder="e.g. SS'27, Holiday" value="${h.season}"></div>
+        <div class="f"><label>Month</label><select id="hMonth">${MONTHS.map(m=>`<option ${h.month===m?'selected':''}>${m}</option>`).join('')}</select></div>
+        <div class="f"><label>Year</label><input type="number" id="hYear" value="${h.year}"></div>
+      </div>
+    </div>
+
+    <div class="panel">
+      <h2>Complexity by Core Event <span class="tag">Rate quality risk, not production difficulty</span></h2>
+      <div id="eventRows"></div>
+    </div>
+
+    <div style="display:flex;gap:10px;justify-content:flex-end">
+      <button class="btn ghost" id="btnCancelEntry">Cancel</button>
+      <button class="btn gold" id="btnSaveEntry">${state.editingReportId?'Save Changes':'Save Bulletin'}</button>
+    </div>
+  `;
+
+  const rows = document.getElementById('eventRows');
+  rows.innerHTML = EVENTS.map(ev=>{
+    const cell = state.entry.events[ev.key];
+    return `
+      <div class="event-row lvl-set-${slug(cell.level)}" data-ev="${ev.key}">
+        <div class="event-row-top">
+          <div class="event-badge">${ev.code}</div>
+          <div class="event-name">${ev.label}</div>
+          <select class="ev-level" data-ev="${ev.key}" style="min-width:170px">
+            ${LEVELS.map(l=>`<option value="${l}" ${cell.level===l?'selected':''}>${l}</option>`).join('')}
+          </select>
+        </div>
+        <div class="event-row-body" style="${cell.level==='N/A'?'display:none':''}">
+          <div class="f">
+            <label>Reason for Complexity</label>
+            <select class="ev-reason" data-ev="${ev.key}">
+              <option value="">— Select reason —</option>
+              ${REASONS.map(r=>`<option value="${r}" ${cell.reason===r?'selected':''}>${r}</option>`).join('')}
+            </select>
+            <label style="margin-top:8px">Notes</label>
+            <textarea class="ev-notes" data-ev="${ev.key}" placeholder="Optional detail...">${cell.notes||''}</textarea>
+          </div>
+          <div class="f">
+            <label>Impact Area</label>
+            <div class="impact-chips">
+              ${IMPACTS.map(im=>`<span class="impact-chip ${cell.impacts.includes(im)?'on':''}" data-ev="${ev.key}" data-im="${im}">${im}</span>`).join('')}
+            </div>
+          </div>
+        </div>
+      </div>
+    `;
+  }).join('');
+
+  // header field bindings
+  document.getElementById('hStyle').addEventListener('input', e=> h.styleNo = e.target.value);
+  document.getElementById('hBuyer').addEventListener('input', e=> h.buyer = e.target.value);
+  document.getElementById('hSbu').addEventListener('change', e=> h.sbu = e.target.value);
+  document.getElementById('hProduct').addEventListener('input', e=> h.productType = e.target.value);
+  document.getElementById('hSeason').addEventListener('input', e=> h.season = e.target.value);
+  document.getElementById('hMonth').addEventListener('change', e=> h.month = e.target.value);
+  document.getElementById('hYear').addEventListener('input', e=> h.year = parseInt(e.target.value)||h.year);
+
+  document.querySelectorAll('.ev-level').forEach(el=>{
+    el.addEventListener('change', e=>{
+      state.entry.events[el.dataset.ev].level = e.target.value;
+      renderEntry();
+    });
+  });
+  document.querySelectorAll('.ev-reason').forEach(el=>{
+    el.addEventListener('change', e=> state.entry.events[el.dataset.ev].reason = e.target.value);
+  });
+  document.querySelectorAll('.ev-notes').forEach(el=>{
+    el.addEventListener('input', e=> state.entry.events[el.dataset.ev].notes = e.target.value);
+  });
+  document.querySelectorAll('.impact-chip').forEach(el=>{
+    el.addEventListener('click', ()=>{
+      const arr = state.entry.events[el.dataset.ev].impacts;
+      const idx = arr.indexOf(el.dataset.im);
+      if (idx>=0) arr.splice(idx,1); else arr.push(el.dataset.im);
+      renderEntry();
+    });
+  });
+
+  document.getElementById('btnCancelEntry').addEventListener('click', ()=>{
+    state.tab='dashboard'; state.editingReportId=null; render();
+  });
+  document.getElementById('btnSaveEntry').addEventListener('click', ()=>{
+    if (tcBlockIfGuest('Saving a bulletin')) return;
+    if (!h.styleNo.trim()){ showToast('Style No is required'); return; }
+    const report = {
+      id: state.editingReportId || uid(),
+      header: JSON.parse(JSON.stringify(h)),
+      events: JSON.parse(JSON.stringify(state.entry.events)),
+      createdAt: state.editingReportId ? (state.reports.find(r=>r.id===state.editingReportId)||{}).createdAt || todayISO() : todayISO(),
+      updatedAt: todayISO(),
+    };
+    if (state.editingReportId){
+      const i = state.reports.findIndex(r=>r.id===state.editingReportId);
+      if (i>=0) state.reports[i] = report;
+    } else {
+      state.reports.push(report);
+    }
+    persistData();
+    state.editingReportId = null;
+    state.entry = { header: emptyEntryHeader(), events: emptyEvents() };
+    state.tab = 'dashboard';
+    showToast('Bulletin saved');
+    render();
+  });
+}
+
+/* ============================= RENDER: RECORDS ============================= */
+function renderRecords(){
+  const c = document.getElementById('content');
+  const reports = [...state.reports].sort((a,b)=> (b.updatedAt||'').localeCompare(a.updatedAt||''));
+  c.innerHTML = `
+    <div class="panel">
+      <h2>All Bulletins <span class="tag">${reports.length} record${reports.length===1?'':'s'}</span></h2>
+      ${reports.length===0 ? `<div class="empty"><div class="t1">No bulletins yet</div><div class="t2">Use "New Bulletin" to create the first one.</div></div>` : `
+      <table>
+        <thead><tr><th>Style No</th><th>Buyer</th><th>SBU</th><th>Season</th><th>Month/Year</th><th>Highest Risk</th><th></th></tr></thead>
+        <tbody>
+          ${reports.map(r=>{
+            const levels = EVENTS.map(ev=>r.events[ev.key].level);
+            let highest = 'N/A';
+            if (levels.includes('Strategic Complex')) highest='Strategic Complex';
+            else if (levels.includes('Complex')) highest='Complex';
+            else if (levels.includes('Basic')) highest='Basic';
+            return `<tr class="rec-row" data-id="${r.id}">
+              <td><b>${r.header.styleNo}</b></td>
+              <td>${r.header.buyer||'—'}</td>
+              <td>${r.header.sbu}</td>
+              <td>${r.header.season||'—'}</td>
+              <td>${r.header.month} ${r.header.year}</td>
+              <td><span class="lvl-badge lvl-${slug(highest)}">${highest}</span></td>
+              <td style="text-align:right;white-space:nowrap">
+                <button class="btn ghost small" data-edit="${r.id}">Edit</button>
+                <button class="btn danger small" data-del="${r.id}">Delete</button>
+              </td>
+            </tr>`;
+          }).join('')}
+        </tbody>
+      </table>`}
+    </div>
+  `;
+  document.querySelectorAll('[data-edit]').forEach(el=>{
+    el.addEventListener('click', (ev)=>{
+      ev.stopPropagation();
+      const r = state.reports.find(x=>x.id===el.dataset.edit);
+      if (!r) return;
+      state.editingReportId = r.id;
+      state.entry = { header: JSON.parse(JSON.stringify(r.header)), events: JSON.parse(JSON.stringify(r.events)) };
+      state.tab = 'entry';
+      render();
+    });
+  });
+  document.querySelectorAll('[data-del]').forEach(el=>{
+    el.addEventListener('click', (ev)=>{
+      ev.stopPropagation();
+      if (tcBlockIfGuest('Deleting a bulletin')) return;
+      if (!confirm('Delete this bulletin? This cannot be undone.')) return;
+      state.reports = state.reports.filter(r=>r.id!==el.dataset.del);
+      persistData();
+      render();
+    });
+  });
+  document.querySelectorAll('.rec-row').forEach(el=>{
+    el.addEventListener('click', ()=>{
+      state.viewingReport = state.reports.find(r=>r.id===el.dataset.id);
+      render();
+    });
+  });
+}
+
+/* ============================= RENDER: ACTION TRACKING ============================= */
+function renderActions(){
+  const c = document.getElementById('content');
+  const grouped = {Open:[], 'In Progress':[], Done:[]};
+  state.actions.forEach(a=> (grouped[a.status]||grouped.Open).push(a));
+
+  c.innerHTML = `
+    <div class="panel">
+      <h2>New Preventive Action</h2>
+      <div class="bull-head-grid" style="grid-template-columns:1fr 1fr 1fr 1fr">
+        <div class="f"><label>Style No</label><input type="text" id="aStyle" list="styleList"></div>
+        <div class="f"><label>Related Event</label><select id="aEvent"><option value="">— None —</option>${EVENTS.map(e=>`<option value="${e.label}">${e.label}</option>`).join('')}</select></div>
+        <div class="f"><label>Responsible Person</label><input type="text" id="aResp"></div>
+        <div class="f"><label>Department</label><input type="text" id="aDept"></div>
+      </div>
+      <div class="bull-head-grid" style="grid-template-columns:2fr 1fr 1fr;margin-top:10px">
+        <div class="f"><label>Action Description</label><input type="text" id="aDesc" placeholder="What preventive action will be taken?"></div>
+        <div class="f"><label>Target Date</label><input type="date" id="aDate"></div>
+        <div class="f"><label>Priority</label><select id="aPrio">${PRIORITIES.map(p=>`<option ${p==='Medium'?'selected':''}>${p}</option>`).join('')}</select></div>
+      </div>
+      <datalist id="styleList">${state.reports.map(r=>`<option value="${r.header.styleNo}">`).join('')}</datalist>
+      <div style="margin-top:14px;text-align:right"><button class="btn gold" id="btnAddAction">+ Add Action</button></div>
+    </div>
+
+    <div class="panel">
+      <h2>Action Status Board</h2>
+      <div class="kanban">
+        ${STATUSES.map(st=>`
+          <div class="kcol">
+            <h3><span>${st}</span><span>${grouped[st].length}</span></h3>
+            ${grouped[st].length===0 ? `<div style="color:var(--muted-2);font-size:12px;padding:10px 4px">No actions</div>` : grouped[st].map(a=>`
+              <div class="acard">
+                <div class="a-style">${a.styleNo||'—'}${a.event?' · '+a.event:''}</div>
+                <div class="a-desc">${a.description}</div>
+                <div class="a-meta">
+                  <span>${a.responsible||'Unassigned'}${a.department?' · '+a.department:''}</span>
+                  <span class="prio prio-${a.priority}">${a.priority}</span>
+                </div>
+                <div class="a-meta"><span>Target: ${a.targetDate||'—'}</span></div>
+                <div class="a-actions">
+                  ${STATUSES.filter(s=>s!==a.status).map(s=>`<button class="btn ghost small" data-move="${a.id}" data-to="${s}">${s}</button>`).join('')}
+                  <button class="btn danger small" data-delact="${a.id}">Delete</button>
+                </div>
+              </div>
+            `).join('')}
+          </div>
+        `).join('')}
+      </div>
+    </div>
+
+    <div class="panel">
+      <h2>Outcome — Quality Impact</h2>
+      <div class="outcome-strip">
+        <div class="outcome-item"><span class="ck">✓</span> Lower DHU / Defect Rate</div>
+        <div class="outcome-item"><span class="ck">✓</span> Fewer Buyer Complaints</div>
+        <div class="outcome-item"><span class="ck">✓</span> Reduced Rework & Repair</div>
+        <div class="outcome-item"><span class="ck">✓</span> On-time, First-Pass Quality Delivery</div>
+      </div>
+    </div>
+  `;
+
+  document.getElementById('btnAddAction').addEventListener('click', ()=>{
+    if (tcBlockIfGuest('Adding an action')) return;
+    const desc = document.getElementById('aDesc').value.trim();
+    if (!desc){ showToast('Action description is required'); return; }
+    state.actions.push({
+      id: uid(),
+      styleNo: document.getElementById('aStyle').value.trim(),
+      event: document.getElementById('aEvent').value,
+      responsible: document.getElementById('aResp').value.trim(),
+      department: document.getElementById('aDept').value.trim(),
+      description: desc,
+      targetDate: document.getElementById('aDate').value,
+      priority: document.getElementById('aPrio').value,
+      status: 'Open',
+      createdAt: todayISO(),
+    });
+    persistData();
+    showToast('Action added');
+    render();
+  });
+  document.querySelectorAll('[data-move]').forEach(el=>{
+    el.addEventListener('click', ()=>{
+      if (tcBlockIfGuest('Updating action status')) return;
+      const a = state.actions.find(x=>x.id===el.dataset.move);
+      if (a){ a.status = el.dataset.to; persistData(); render(); }
+    });
+  });
+  document.querySelectorAll('[data-delact]').forEach(el=>{
+    el.addEventListener('click', ()=>{
+      if (tcBlockIfGuest('Deleting an action')) return;
+      if (!confirm('Delete this action?')) return;
+      state.actions = state.actions.filter(a=>a.id!==el.dataset.delact);
+      persistData();
+      render();
+    });
+  });
+}
+
+/* ============================= MODALS ============================= */
+function renderModal(){
+  const root = document.getElementById('modalRoot');
+  if (state.drill){
+    const evMeta = EVENTS.find(e=>e.key===state.drill.eventKey);
+    const rows = filteredReports().filter(r=> r.events[state.drill.eventKey].level === state.drill.level);
+    root.innerHTML = `
+      <div class="modal-bg" id="drillBg">
+        <div class="modal">
+          <h3>${evMeta.label} — ${state.drill.level} <span class="close" id="closeDrill">&times;</span></h3>
+          ${rows.map(r=>{
+            const cell = r.events[state.drill.eventKey];
+            return `
+            <div class="modal-row" style="flex-direction:column;align-items:flex-start;gap:4px">
+              <div style="display:flex;justify-content:space-between;width:100%">
+                <b>${r.header.styleNo}</b><span class="mono" style="color:var(--muted);font-size:11px">${r.header.buyer||''}</span>
+              </div>
+              <div style="font-size:12.5px;color:var(--muted)">${r.header.sbu} · ${r.header.month} ${r.header.year}${r.header.season?' · '+r.header.season:''}</div>
+              ${cell.reason?`<div style="font-size:13px;margin-top:4px"><b>Reason:</b> ${cell.reason}</div>`:''}
+              ${cell.impacts && cell.impacts.length?`<div style="margin-top:4px">${cell.impacts.map(im=>`<span class="lvl-badge lvl-Complex" style="margin-right:5px">${im}</span>`).join('')}</div>`:''}
+              ${cell.notes?`<div style="font-size:12.5px;color:var(--muted);margin-top:4px">${cell.notes}</div>`:''}
+            </div>`;
+          }).join('') || `<div class="empty"><div class="t2">No entries</div></div>`}
+        </div>
+      </div>
+    `;
+    document.getElementById('closeDrill').addEventListener('click', ()=>{ state.drill=null; render(); });
+    document.getElementById('drillBg').addEventListener('click', (e)=>{ if(e.target.id==='drillBg'){ state.drill=null; render(); } });
+    return;
+  }
+  if (state.viewingReport){
+    const r = state.viewingReport;
+    root.innerHTML = `
+      <div class="modal-bg" id="viewBg">
+        <div class="modal">
+          <h3>${r.header.styleNo} <span class="close" id="closeView">&times;</span></h3>
+          <div class="modal-row"><span class="k">Buyer</span><span class="v">${r.header.buyer||'—'}</span></div>
+          <div class="modal-row"><span class="k">SBU</span><span class="v">${r.header.sbu}</span></div>
+          <div class="modal-row"><span class="k">Product</span><span class="v">${r.header.productType||'—'}</span></div>
+          <div class="modal-row"><span class="k">Season / Month</span><span class="v">${r.header.season||'—'} · ${r.header.month} ${r.header.year}</span></div>
+          <div style="margin-top:14px">
+            ${EVENTS.map(ev=>{
+              const cell = r.events[ev.key];
+              if (cell.level==='N/A') return '';
+              return `<div class="modal-row" style="flex-direction:column;align-items:flex-start">
+                <div style="display:flex;justify-content:space-between;width:100%"><b>${ev.label}</b><span class="lvl-badge lvl-${slug(cell.level)}">${cell.level}</span></div>
+                ${cell.reason?`<div style="font-size:12.5px;color:var(--muted);margin-top:3px">${cell.reason}</div>`:''}
+                ${cell.notes?`<div style="font-size:12.5px;color:var(--muted-2);margin-top:2px">${cell.notes}</div>`:''}
+              </div>`;
+            }).join('') || `<div class="empty"><div class="t2">No events rated above N/A</div></div>`}
+          </div>
+        </div>
+      </div>
+    `;
+    document.getElementById('closeView').addEventListener('click', ()=>{ state.viewingReport=null; render(); });
+    document.getElementById('viewBg').addEventListener('click', (e)=>{ if(e.target.id==='viewBg'){ state.viewingReport=null; render(); } });
+    return;
+  }
+  root.innerHTML = '';
+}
+
+/* ============================= INIT ============================= */
+loadData();
+</script>
+</body>
+</html>
