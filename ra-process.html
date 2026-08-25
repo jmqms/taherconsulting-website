@@ -1,0 +1,623 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Risk Assessment — Taher Consulting</title>
+<link rel="icon" type="image/svg+xml" href="assets/favicon.svg">
+<script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.4/chart.umd.min.js"></script>
+<link rel="stylesheet" href="css/style.css">
+<style>
+  body{background:var(--paper);}
+  .qa-shell{display:flex;min-height:calc(100vh - 44px);}
+  .qa-side{width:230px;flex:none;background:var(--ink);color:#C7CCC7;padding:22px 0;overflow-y:auto;transition:width .2s,padding .2s;}
+  .qa-shell.collapsed .qa-side{width:0;padding:0;overflow:hidden;border:none;}
+  .qa-side h6{font-family:var(--mono);font-size:10px;letter-spacing:.1em;text-transform:uppercase;color:var(--gold);padding:14px 20px 8px;}
+  .qa-side button{
+    display:flex;align-items:center;gap:10px;width:100%;text-align:left;background:none;border:none;
+    color:#C7CCC7;font-family:var(--body);font-size:13.5px;padding:9px 20px;cursor:pointer;border-left:3px solid transparent;
+  }
+  .qa-side button:hover{background:rgba(255,255,255,.06);color:#fff;}
+  .qa-side button.active{background:rgba(47,110,82,.18);color:#fff;border-left-color:var(--pass);font-weight:600;}
+  .qa-side button .dot{width:6px;height:6px;border-radius:50%;background:#5b6459;flex:none;}
+  .qa-side button.active .dot{background:var(--pass);}
+  .qa-main{flex:1;padding:32px 36px 60px;overflow-y:auto;max-width:1180px;}
+  .qa-head{margin-bottom:26px;}
+  .qa-head .eyebrow{margin-bottom:8px;}
+  .qa-head h1{font-size:26px;}
+
+  .stat-grid{display:grid;grid-template-columns:repeat(5,1fr);gap:16px;margin-bottom:28px;}
+  .stat-card{background:var(--card);border:1.5px solid var(--ink);border-radius:5px;padding:18px 16px;}
+  .stat-card span{font-family:var(--mono);font-size:10px;text-transform:uppercase;color:var(--ink-soft);letter-spacing:.05em;}
+  .stat-card b{display:block;font-family:var(--display);font-size:28px;margin-top:6px;}
+
+  .panel-grid{display:grid;grid-template-columns:1.4fr 1fr;gap:20px;margin-bottom:28px;}
+  .panel{background:var(--card);border:1.5px solid var(--ink);border-radius:5px;padding:22px;}
+  .panel h3{font-family:var(--display);font-size:16px;margin-bottom:14px;}
+
+  table.qa-table{width:100%;border-collapse:collapse;font-size:13px;}
+  table.qa-table th{
+    text-align:left;font-family:var(--mono);font-size:10.5px;text-transform:uppercase;letter-spacing:.04em;
+    color:var(--ink-soft);border-bottom:1.5px solid var(--ink);padding:8px 10px;
+  }
+  table.qa-table td{padding:8px 10px;border-bottom:1px solid var(--line);}
+  table.qa-table tr:last-child td{border-bottom:none;}
+
+  .form-grid{display:grid;grid-template-columns:repeat(2,1fr);gap:0 20px;}
+  .form-grid .field{margin-bottom:16px;}
+  .complexity-row{display:grid;grid-template-columns:1fr 1fr;gap:12px;align-items:end;padding:10px 0;border-bottom:1px solid var(--line);}
+  .complexity-row label{font-family:var(--mono);font-size:11px;color:var(--ink-soft);text-transform:uppercase;}
+
+  .insight-item{display:flex;gap:10px;font-size:13px;color:var(--ink-soft);margin-bottom:12px;}
+  .insight-item b{color:var(--ink);}
+
+  .autofill-box{background:var(--paper-2);border:1px solid var(--line-strong);border-radius:4px;padding:16px;margin:10px 0 18px;}
+  .autofill-box .row{display:flex;justify-content:space-between;font-size:13.5px;padding:4px 0;}
+  .autofill-box .row span:first-child{color:var(--ink-soft)}
+  .autofill-box .empty{color:var(--ink-soft);font-size:13px;font-style:italic}
+
+  @media (max-width:920px){
+    .qa-shell{flex-direction:column;}
+    .qa-side{width:100%;display:flex;overflow-x:auto;padding:8px;}
+    .qa-side h6{display:none;}
+    .qa-side button{white-space:nowrap;border-left:none;border-bottom:3px solid transparent;}
+    .qa-side button.active{border-left:none;border-bottom-color:var(--pass);}
+    .stat-grid{grid-template-columns:1fr 1fr;}
+    .panel-grid,.form-grid{grid-template-columns:1fr;}
+  }
+</style>
+</head>
+<body>
+<div id="tc-guard-bar" style="background:#1B211D;color:#F1F0EA;font-family:'IBM Plex Mono',monospace;font-size:12.5px;letter-spacing:.04em;padding:10px 20px;display:flex;justify-content:space-between;align-items:center;position:sticky;top:0;z-index:9999">
+  <a href="dashboard.html" style="color:#F1F0EA;text-decoration:none">&larr; Back to Dashboard</a>
+  <span>J.M. FABRICS LIMITED &middot; Risk Assessment</span>
+  <span>
+    <button id="menuToggle" style="font-family:var(--mono);font-size:11px;background:none;border:1px solid #F1F0EA;color:#F1F0EA;padding:5px 12px;border-radius:2px;cursor:pointer;margin-right:10px">☰ Hide Menu</button>
+    <span id="tc-guard-user" style="color:#A9832F"></span>
+    <span id="tc-guest-badge" style="display:none;background:#B84226;color:#F1F0EA;padding:3px 9px;border-radius:2px;margin-left:10px;font-size:10.5px;letter-spacing:.06em">VIEW ONLY &middot; GUEST</span>
+  </span>
+</div>
+<script>
+window.TC_IS_GUEST = false;
+(function(){
+  var raw = localStorage.getItem("tc_session") || sessionStorage.getItem("tc_session");
+  if (!raw) {
+    window.location.href = "login.html";
+  } else {
+    try {
+      var s = JSON.parse(raw);
+      window.TC_IS_GUEST = /guest|visitor/i.test(s.role || "");
+      document.addEventListener("DOMContentLoaded", function(){
+        var el = document.getElementById("tc-guard-user");
+        if (el) el.textContent = s.name || "";
+        var badge = document.getElementById("tc-guest-badge");
+        if (badge && window.TC_IS_GUEST) badge.style.display = "inline-block";
+      });
+    } catch(e) {}
+  }
+})();
+
+function tcBlockIfGuest(actionLabel) {
+  if (window.TC_IS_GUEST) {
+    alert("You're signed in as a Guest (View Only). " + (actionLabel || "This action") + " is disabled for guest accounts.\n\nAsk an administrator for a full account to " + (actionLabel ? actionLabel.toLowerCase() : "make changes") + ".");
+    return true;
+  }
+  return false;
+}
+</script>
+
+<div class="qa-shell" id="qaShell">
+  <nav class="qa-side" id="qaSide">
+    <div id="qaSideSticky" style="position:sticky;top:0;background:var(--ink);z-index:5;padding-bottom:6px;border-bottom:1px solid rgba(255,255,255,.12);margin-bottom:6px">
+      <h6 style="padding-top:0">Dashboard</h6>
+      <button data-tab="overview" class="active"><span class="dot"></span>Overview</button>
+      <button data-tab="raanalysis"><span class="dot"></span>RA Analysis</button>
+    </div>
+    <h6>Process-wise Analysis</h6>
+    <div id="qaEventTabs"></div>
+  </nav>
+
+  <main class="qa-main">
+    <div id="tabContent"></div>
+  </main>
+</div>
+
+<script>
+const RA_EVENTS = ["Fabric", "Cutting", "Printing", "Embroidery", "Sewing", "Wash", "Finishing"];
+const RA_API_URL = "https://script.google.com/macros/s/AKfycbyBiCCV-DjlvFDZt4DSVxh0qwPhSIPcFAggAhsKiaee9gxcQDWkqsu6C1Ca_SW52HID-A/exec";
+
+function esc(s){ return (s||"").toString().replace(/[&<>"]/g, c => ({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;"}[c])); }
+
+document.getElementById("qaEventTabs").innerHTML = RA_EVENTS.map(ev =>
+  `<button data-tab="event:${esc(ev)}"><span class="dot"></span>${esc(ev)}</button>`
+).join("");
+
+document.getElementById("menuToggle").addEventListener("click", () => {
+  const shell = document.getElementById("qaShell");
+  shell.classList.toggle("collapsed");
+  document.getElementById("menuToggle").textContent = shell.classList.contains("collapsed") ? "☰ Show Menu" : "☰ Hide Menu";
+});
+
+document.getElementById("qaSide").addEventListener("click", (e) => {
+  const btn = e.target.closest("button[data-tab]");
+  if (!btn) return;
+  document.querySelectorAll(".qa-side button").forEach(b => b.classList.remove("active"));
+  btn.classList.add("active");
+  loadTab(btn.dataset.tab);
+});
+
+async function raApi(payload) {
+  if (RA_API_URL.indexOf("PASTE_YOUR") === 0) {
+    throw new Error("RA backend not connected yet — see ra-process-backend.gs for setup steps.");
+  }
+  const res = await fetch(RA_API_URL, {
+    method: "POST",
+    headers: { "Content-Type": "text/plain;charset=utf-8" },
+    body: JSON.stringify(payload),
+  });
+  return res.json();
+}
+
+function loadTab(id) {
+  if (id === "overview") return renderOverview();
+  if (id === "raanalysis") return renderRAAnalysis();
+  if (id.indexOf("event:") === 0) return renderEventAnalysis(id.slice(6));
+}
+
+// ---------------------------------------------------------------
+// Overview — mirrors the Operational Complexity Analysis layout
+// ---------------------------------------------------------------
+async function renderOverview() {
+  const el = document.getElementById("tabContent");
+  const prevStart = document.getElementById("ovStart") ? document.getElementById("ovStart").value : "";
+  const prevEnd = document.getElementById("ovEnd") ? document.getElementById("ovEnd").value : "";
+  el.innerHTML = `
+    <div class="qa-head">
+      <div class="eyebrow">Risk Assessment</div>
+      <h1>Operational Complexity Overview</h1>
+    </div>
+    <div class="panel" style="margin-bottom:20px;display:flex;gap:14px;align-items:end;flex-wrap:wrap">
+      <div class="field" style="margin:0"><label>Start Date</label><input type="date" id="ovStart" value="${prevStart}"></div>
+      <div class="field" style="margin:0"><label>End Date</label><input type="date" id="ovEnd" value="${prevEnd}"></div>
+      <button class="btn btn-primary" onclick="renderOverview()">Apply Filter →</button>
+      <button class="btn btn-ghost" onclick="document.getElementById('ovStart').value='';document.getElementById('ovEnd').value='';renderOverview();">Clear</button>
+    </div>
+    <div class="stat-grid" id="raStatGrid">
+      <div class="stat-card"><span>Total Styles Assessed</span><b>—</b></div>
+      <div class="stat-card"><span>Core Events</span><b>—</b></div>
+      <div class="stat-card"><span>Basic</span><b>—</b></div>
+      <div class="stat-card"><span>Complex</span><b>—</b></div>
+      <div class="stat-card"><span>Strategic Complex</span><b>—</b></div>
+    </div>
+    <div class="panel-grid">
+      <div class="panel"><h3>Complexity Breakdown by Process</h3><canvas id="eventChart" height="220"></canvas></div>
+      <div class="panel"><h3>Overall Complexity Distribution</h3><canvas id="distChart" height="220"></canvas></div>
+    </div>
+    <div class="panel-grid" style="grid-template-columns:1.4fr 1fr">
+      <div class="panel">
+        <h3>Detailed Summary by Process</h3>
+        <table class="qa-table" id="eventTable">
+          <thead><tr><th>Process</th><th>Basic</th><th>Complex</th><th>Strategic Complex</th></tr></thead>
+          <tbody><tr><td colspan="4" style="text-align:center;color:var(--ink-soft)">Loading…</td></tr></tbody>
+        </table>
+      </div>
+      <div class="panel">
+        <h3>Key Insights</h3>
+        <div id="raInsights"><div class="insight-item">Loading insights…</div></div>
+      </div>
+    </div>
+  `;
+
+  try {
+    const res = await raApi({ action: "overview", start: prevStart || null, end: prevEnd || null });
+    if (!res.ok) throw new Error(res.error || "Failed to load overview");
+    const s = res.summary;
+
+    document.getElementById("raStatGrid").innerHTML = `
+      <div class="stat-card"><span>Total Styles Assessed</span><b>${s.totalStyles}</b></div>
+      <div class="stat-card"><span>Core Events</span><b>${s.totalCoreEvents}</b></div>
+      <div class="stat-card"><span>Basic</span><b>${s.totalBasic}</b></div>
+      <div class="stat-card"><span>Complex</span><b>${s.totalComplex}</b></div>
+      <div class="stat-card"><span>Strategic Complex</span><b>${s.totalStrategic}</b></div>
+    `;
+
+    const labels = RA_EVENTS;
+    const basicData = labels.map(ev => s.byEvent[ev].basic);
+    const complexData = labels.map(ev => s.byEvent[ev].complex);
+    const strategicData = labels.map(ev => s.byEvent[ev].strategic);
+
+    new Chart(document.getElementById("eventChart"), {
+      data: {
+        labels,
+        datasets: [
+          { type: "bar", label: "Basic", data: basicData, backgroundColor: "#2F6E52", stack: "s" },
+          { type: "bar", label: "Complex", data: complexData, backgroundColor: "#A9832F", stack: "s" },
+          { type: "line", label: "Strategic Complex", data: strategicData, borderColor: "#B84226", backgroundColor: "#B84226", yAxisID: "y1" }
+        ]
+      },
+      options: {
+        scales: { x: { stacked: true }, y: { stacked: true }, y1: { position: "right", grid: { drawOnChartArea: false } } },
+        plugins: { legend: { position: "bottom" } }
+      }
+    });
+
+    new Chart(document.getElementById("distChart"), {
+      type: "doughnut",
+      data: {
+        labels: ["Basic", "Complex", "Strategic Complex"],
+        datasets: [{ data: [s.totalBasic, s.totalComplex, s.totalStrategic], backgroundColor: ["#2F6E52", "#A9832F", "#B84226"] }]
+      },
+      options: { plugins: { legend: { position: "bottom" } } }
+    });
+
+    document.querySelector("#eventTable tbody").innerHTML = labels.map(ev => {
+      const d = s.byEvent[ev];
+      return `<tr><td>${esc(ev)}</td><td>${d.basic}</td><td>${d.complex}</td><td>${d.strategic}</td></tr>`;
+    }).join("");
+
+    const riskiest = labels.map(ev => ({ ev, strategic: s.byEvent[ev].strategic })).sort((a,b) => b.strategic - a.strategic)[0];
+    document.getElementById("raInsights").innerHTML = `
+      <div class="insight-item">📋 <span><b>${s.totalStyles}</b> styles assessed for risk across <b>${s.totalCoreEvents}</b> core processes.</span></div>
+      <div class="insight-item">⚠️ <span>Highest Strategic Complex concentration: <b>${riskiest ? esc(riskiest.ev) : "—"}</b> (${riskiest ? riskiest.strategic : 0} styles).</span></div>
+      <div class="insight-item">🎯 <span>Focus preventive action on processes with the most Complex/Strategic Complex styles.</span></div>
+    `;
+  } catch (err) {
+    document.getElementById("raStatGrid").innerHTML = `<div class="stat-card" style="grid-column:1/-1"><span style="color:var(--reject)">${esc(err.message)}</span></div>`;
+  }
+}
+
+// ---------------------------------------------------------------
+// RA Analysis — cascading SBU → Buyer → IR, auto-fill style + qty
+// ---------------------------------------------------------------
+async function renderRAAnalysis() {
+  const el = document.getElementById("tabContent");
+  el.innerHTML = `
+    <div class="qa-head">
+      <div class="eyebrow">Risk Assessment</div>
+      <h1>RA Analysis</h1>
+    </div>
+    <div class="panel" style="margin-bottom:24px">
+      <h3>Select Order</h3>
+      <div class="form-grid">
+        <div class="field"><label>RA Date</label><input type="date" id="raDate"></div>
+        <div class="field"><label>SBU</label><select id="raSbu"><option value="">Select SBU…</option></select></div>
+        <div class="field"><label>Buyer</label><select id="raBuyer"><option value="">Select Buyer…</option></select></div>
+        <div class="field"><label>IR No</label><select id="raIr"><option value="">Select IR…</option></select></div>
+        <div class="field"><label>Embellishment Category</label><select id="raEmbCat" disabled><option value="">All Categories</option></select></div>
+      </div>
+
+      <div id="autofillBox" class="autofill-box"><span class="empty">Select SBU, Buyer, and IR to auto-fill style and order quantity details.</span></div>
+
+      <h3 style="margin-top:6px">Process-wise Complexity</h3>
+      <div id="complexityRows"></div>
+
+      <div class="field" style="margin-top:16px;max-width:280px">
+        <label>Overall Style Complexity</label>
+        <select id="raOverall">
+          <option value="Basic">Basic</option>
+          <option value="Complex">Complex</option>
+          <option value="Strategic Complex">Strategic Complex</option>
+        </select>
+      </div>
+
+      <div class="field" style="margin-top:12px"><label>Notes</label><textarea id="raNotes" rows="3"></textarea></div>
+      <button class="btn btn-primary" style="margin-top:10px" onclick="saveRA()">Save RA →</button>
+      <div id="raMsg" class="form-msg"></div>
+    </div>
+    <div class="panel">
+      <h3>Recent RA Records</h3>
+      <table class="qa-table" id="raTable">
+        <thead><tr><th>Date</th><th>SBU</th><th>Buyer</th><th>IR</th><th>Style</th><th>Emb. Category</th><th>Total Qty</th><th>Overall</th></tr></thead>
+        <tbody><tr><td colspan="8" style="text-align:center;color:var(--ink-soft)">Loading…</td></tr></tbody>
+      </table>
+    </div>
+  `;
+
+  document.getElementById("complexityRows").innerHTML = RA_EVENTS.map(ev => `
+    <div class="complexity-row">
+      <div><label>${esc(ev)}</label>
+        <select id="cx_${ev}" onchange="suggestOverallComplexity()">
+          <option value="Basic">Basic</option>
+          <option value="Complex">Complex</option>
+          <option value="Strategic Complex">Strategic Complex</option>
+        </select>
+      </div>
+      <div><label>Reason (if Complex/Strategic)</label><input id="rs_${ev}" placeholder="e.g. multi-panel embroidery, delicate fabric"></div>
+    </div>
+  `).join("");
+
+  window.currentOrderDetail = null;
+  const dateEl = document.getElementById("raDate");
+  if (dateEl && !dateEl.value) dateEl.value = new Date().toISOString().slice(0, 10);
+
+  await populateSbus();
+  loadRARecords();
+
+  document.getElementById("raSbu").addEventListener("change", onSbuChange);
+  document.getElementById("raBuyer").addEventListener("change", onBuyerChange);
+  document.getElementById("raIr").addEventListener("change", onIrChange);
+  document.getElementById("raEmbCat").addEventListener("change", onEmbCatChange);
+}
+
+async function populateSbus() {
+  const sel = document.getElementById("raSbu");
+  try {
+    const res = await raApi({ action: "listSbus" });
+    if (!res.ok) throw new Error(res.error);
+    sel.innerHTML = `<option value="">Select SBU…</option>` + res.sbus.map(s => `<option>${esc(s)}</option>`).join("");
+  } catch (err) {
+    sel.innerHTML = `<option value="">${esc(err.message)}</option>`;
+  }
+}
+
+async function onSbuChange() {
+  const sbu = document.getElementById("raSbu").value;
+  const buyerSel = document.getElementById("raBuyer");
+  const irSel = document.getElementById("raIr");
+  buyerSel.innerHTML = `<option value="">Select Buyer…</option>`;
+  irSel.innerHTML = `<option value="">Select IR…</option>`;
+  resetEmbCat();
+  resetAutofill();
+  if (!sbu) return;
+  try {
+    const res = await raApi({ action: "listBuyers", sbu });
+    if (!res.ok) throw new Error(res.error);
+    if (!res.buyers.length) {
+      buyerSel.innerHTML = `<option value="">No buyers found for this SBU in OrderInfo</option>`;
+      return;
+    }
+    buyerSel.innerHTML = `<option value="">Select Buyer…</option>` + res.buyers.map(b => `<option>${esc(b)}</option>`).join("");
+  } catch (err) {
+    buyerSel.innerHTML = `<option value="">${esc(err.message)}</option>`;
+  }
+}
+
+async function onBuyerChange() {
+  const sbu = document.getElementById("raSbu").value;
+  const buyer = document.getElementById("raBuyer").value;
+  const irSel = document.getElementById("raIr");
+  irSel.innerHTML = `<option value="">Select IR…</option>`;
+  resetEmbCat();
+  resetAutofill();
+  if (!sbu || !buyer) return;
+  try {
+    const res = await raApi({ action: "listIrs", sbu, buyer });
+    if (!res.ok) throw new Error(res.error);
+    if (!res.irs.length) {
+      irSel.innerHTML = `<option value="">No IR found for this Buyer in OrderInfo</option>`;
+      return;
+    }
+    irSel.innerHTML = `<option value="">Select IR…</option>` + res.irs.map(i => `<option>${esc(i)}</option>`).join("");
+  } catch (err) {
+    irSel.innerHTML = `<option value="">${esc(err.message)}</option>`;
+  }
+}
+
+async function onIrChange() {
+  const sbu = document.getElementById("raSbu").value;
+  const buyer = document.getElementById("raBuyer").value;
+  const ir = document.getElementById("raIr").value;
+  if (!sbu || !buyer || !ir) { resetEmbCat(); resetAutofill(); return; }
+
+  const embSel = document.getElementById("raEmbCat");
+  try {
+    const res = await raApi({ action: "listEmbCats", sbu, buyer, ir });
+    if (res.ok && res.embCats.length > 1) {
+      embSel.innerHTML = `<option value="">All Categories</option>` + res.embCats.map(c => `<option>${esc(c)}</option>`).join("");
+      embSel.disabled = false;
+    } else {
+      embSel.innerHTML = `<option value="">${res.ok && res.embCats.length ? esc(res.embCats[0]) : "All Categories"}</option>`;
+      embSel.disabled = true;
+    }
+  } catch (err) {
+    embSel.innerHTML = `<option value="">All Categories</option>`;
+    embSel.disabled = true;
+  }
+
+  await fetchOrderDetail();
+}
+
+async function onEmbCatChange() {
+  await fetchOrderDetail();
+}
+
+async function fetchOrderDetail() {
+  const sbu = document.getElementById("raSbu").value;
+  const buyer = document.getElementById("raBuyer").value;
+  const ir = document.getElementById("raIr").value;
+  const embCat = document.getElementById("raEmbCat").value;
+  if (!sbu || !buyer || !ir) { resetAutofill(); return; }
+  try {
+    const res = await raApi({ action: "getOrderDetail", sbu, buyer, ir, embCat });
+    if (!res.ok || !res.detail) throw new Error("No order details found for this IR.");
+    window.currentOrderDetail = res.detail;
+    const d = res.detail;
+    document.getElementById("autofillBox").innerHTML = `
+      <div class="row"><span>Style Name</span><span><b>${esc(d.styleName)}</b></span></div>
+      <div class="row"><span>Style Description</span><span>${esc(d.styleDescription)}</span></div>
+      <div class="row"><span>Item / Product Dept</span><span>${esc(d.item)} / ${esc(d.productDept)}</span></div>
+      <div class="row"><span>Season</span><span>${esc(d.season)}</span></div>
+      <div class="row"><span>Embellishment Category</span><span>${esc(d.embellishmentCategory)}</span></div>
+      <hr style="border:none;border-top:1px solid var(--line);margin:10px 0">
+      <div class="row" style="font-weight:600"><span>Color-wise Order Qty</span><span></span></div>
+      ${d.colors.map(c => `<div class="row"><span>${esc(c.color)}</span><span>${c.qty}</span></div>`).join("")}
+      <hr style="border:none;border-top:1px solid var(--line-strong);margin:10px 0">
+      <div class="row" style="font-weight:700;font-size:15px"><span>Total Style Order Qty</span><span>${d.totalQty}</span></div>
+    `;
+  } catch (err) {
+    document.getElementById("autofillBox").innerHTML = `<span class="empty" style="color:var(--reject)">${esc(err.message)}</span>`;
+    window.currentOrderDetail = null;
+  }
+}
+
+function resetEmbCat() {
+  const embSel = document.getElementById("raEmbCat");
+  if (!embSel) return;
+  embSel.innerHTML = `<option value="">All Categories</option>`;
+  embSel.disabled = true;
+}
+
+function resetAutofill() {
+  window.currentOrderDetail = null;
+  const box = document.getElementById("autofillBox");
+  if (box) box.innerHTML = `<span class="empty">Select SBU, Buyer, and IR to auto-fill style and order quantity details.</span>`;
+}
+
+function suggestOverallComplexity() {
+  const levels = RA_EVENTS.map(ev => document.getElementById("cx_" + ev).value);
+  const overall = levels.includes("Strategic Complex") ? "Strategic Complex" : levels.includes("Complex") ? "Complex" : "Basic";
+  const sel = document.getElementById("raOverall");
+  if (sel) sel.value = overall;
+}
+
+async function saveRA() {
+  if (typeof tcBlockIfGuest === 'function' && tcBlockIfGuest('Saving an RA record')) return;
+  const msg = document.getElementById("raMsg");
+  const sbu = document.getElementById("raSbu").value;
+  const buyer = document.getElementById("raBuyer").value;
+  const ir = document.getElementById("raIr").value;
+  const raDate = document.getElementById("raDate").value;
+  const d = window.currentOrderDetail;
+  if (!raDate) {
+    msg.textContent = "Set the RA Date first.";
+    msg.className = "form-msg err show";
+    return;
+  }
+  if (!sbu || !buyer || !ir || !d) {
+    msg.textContent = "Select SBU, Buyer, and IR (with valid order details) first.";
+    msg.className = "form-msg err show";
+    return;
+  }
+  const complexity = {}, reasons = {};
+  RA_EVENTS.forEach(ev => {
+    complexity[ev] = document.getElementById("cx_" + ev).value;
+    reasons[ev] = document.getElementById("rs_" + ev).value;
+  });
+  const overallComplexity = document.getElementById("raOverall").value;
+
+  const record = {
+    sbu, buyer, ir, raDate,
+    styleName: d.styleName, item: d.item, productDept: d.productDept, season: d.season,
+    totalQty: d.totalQty, complexity, reasons, overallComplexity,
+    embellishmentCategory: d.embellishmentCategory,
+    notes: document.getElementById("raNotes").value,
+  };
+
+  try {
+    const res = await raApi({ action: "saveRA", record });
+    if (!res.ok) throw new Error(res.error || "Save failed");
+    msg.textContent = "RA record saved.";
+    msg.className = "form-msg ok show";
+    loadRARecords();
+  } catch (err) {
+    msg.textContent = err.message;
+    msg.className = "form-msg err show";
+  }
+}
+
+async function loadRARecords() {
+  const tbody = document.querySelector("#raTable tbody");
+  try {
+    const res = await raApi({ action: "listRA" });
+    if (!res.ok) throw new Error(res.error || "Failed to load");
+    if (!res.records.length) { tbody.innerHTML = `<tr><td colspan="8" style="text-align:center;color:var(--ink-soft)">No RA records yet.</td></tr>`; return; }
+    tbody.innerHTML = res.records.slice().reverse().map(r => `
+      <tr><td>${esc(r.raDate)}</td><td>${esc(r.sbu)}</td><td>${esc(r.buyer)}</td><td>${esc(r.ir)}</td><td>${esc(r.styleName)}</td><td>${esc(r.embellishmentCategory)}</td><td>${esc(r.totalQty)}</td><td>${esc(r.overallComplexity)}</td></tr>
+    `).join("");
+  } catch (err) {
+    tbody.innerHTML = `<tr><td colspan="8" style="text-align:center;color:var(--reject)">${esc(err.message)}</td></tr>`;
+  }
+}
+
+renderOverview();
+
+// ---------------------------------------------------------------
+// Per-process tabs — Fabric / Cutting / Printing / Embroidery /
+// Sewing / Wash / Finishing — each filterable by SBU and Buyer
+// ---------------------------------------------------------------
+let evChart = null;
+
+async function renderEventAnalysis(ev) {
+  const el = document.getElementById("tabContent");
+  el.innerHTML = `
+    <div class="qa-head">
+      <div class="eyebrow">Risk Assessment · Process-wise</div>
+      <h1>${esc(ev)} — Complexity Analysis</h1>
+    </div>
+    <div class="panel" style="margin-bottom:20px;display:flex;gap:14px;align-items:end;flex-wrap:wrap">
+      <div class="field" style="margin:0;min-width:180px"><label>SBU</label><select id="evSbu"><option value="">All SBUs</option></select></div>
+      <div class="field" style="margin:0;min-width:180px"><label>Buyer</label><select id="evBuyer"><option value="">All Buyers</option></select></div>
+      <button class="btn btn-primary" onclick="applyEventFilter('${esc(ev)}')">Apply Filter →</button>
+      <button class="btn btn-ghost" onclick="document.getElementById('evSbu').value='';document.getElementById('evBuyer').value='';applyEventFilter('${esc(ev)}');">Clear</button>
+    </div>
+    <div class="stat-grid" id="evStatGrid" style="grid-template-columns:repeat(4,1fr)">
+      <div class="stat-card"><span>Styles Assessed</span><b>—</b></div>
+      <div class="stat-card"><span>Basic</span><b>—</b></div>
+      <div class="stat-card"><span>Complex</span><b>—</b></div>
+      <div class="stat-card"><span>Strategic Complex</span><b>—</b></div>
+    </div>
+    <div class="panel-grid">
+      <div class="panel">
+        <h3>Styles — ${esc(ev)}</h3>
+        <table class="qa-table" id="evTable">
+          <thead><tr><th>Date</th><th>SBU</th><th>Buyer</th><th>IR</th><th>Style</th><th>Qty</th><th>Complexity</th><th>Reason</th></tr></thead>
+          <tbody><tr><td colspan="8" style="text-align:center;color:var(--ink-soft)">Loading…</td></tr></tbody>
+        </table>
+      </div>
+      <div class="panel"><h3>Distribution</h3><canvas id="evChart" height="220"></canvas></div>
+    </div>
+  `;
+
+  try {
+    const [sbuRes, buyerRes] = await Promise.all([
+      raApi({ action: "listSbus" }),
+      raApi({ action: "listBuyers", sbu: "" })
+    ]);
+    if (sbuRes.ok) document.getElementById("evSbu").innerHTML = `<option value="">All SBUs</option>` + sbuRes.sbus.map(s => `<option>${esc(s)}</option>`).join("");
+    if (buyerRes.ok) document.getElementById("evBuyer").innerHTML = `<option value="">All Buyers</option>` + buyerRes.buyers.map(b => `<option>${esc(b)}</option>`).join("");
+  } catch (err) { /* dropdowns stay at defaults */ }
+
+  await applyEventFilter(ev);
+}
+
+async function applyEventFilter(ev) {
+  const sbu = document.getElementById("evSbu").value;
+  const buyer = document.getElementById("evBuyer").value;
+  try {
+    const res = await raApi({ action: "eventAnalysis", event: ev, sbu, buyer });
+    if (!res.ok) throw new Error(res.error || "Failed to load");
+    const r = res.result;
+
+    document.getElementById("evStatGrid").innerHTML = `
+      <div class="stat-card"><span>Styles Assessed</span><b>${r.totalStyles}</b></div>
+      <div class="stat-card"><span>Basic</span><b>${r.basic}</b></div>
+      <div class="stat-card"><span>Complex</span><b>${r.complex}</b></div>
+      <div class="stat-card"><span>Strategic Complex</span><b>${r.strategic}</b></div>
+    `;
+
+    const tbody = document.querySelector("#evTable tbody");
+    if (!r.styles.length) {
+      tbody.innerHTML = `<tr><td colspan="8" style="text-align:center;color:var(--ink-soft)">No styles match this filter.</td></tr>`;
+    } else {
+      tbody.innerHTML = r.styles.slice().reverse().map(s => `
+        <tr><td>${esc(s.raDate)}</td><td>${esc(s.sbu)}</td><td>${esc(s.buyer)}</td><td>${esc(s.ir)}</td><td>${esc(s.styleName)}</td><td>${esc(s.totalQty)}</td><td>${esc(s.complexity)}</td><td>${esc(s.reason)}</td></tr>
+      `).join("");
+    }
+
+    if (evChart) { evChart.destroy(); evChart = null; }
+    evChart = new Chart(document.getElementById("evChart"), {
+      type: "doughnut",
+      data: {
+        labels: ["Basic", "Complex", "Strategic Complex"],
+        datasets: [{ data: [r.basic, r.complex, r.strategic], backgroundColor: ["#2F6E52", "#A9832F", "#B84226"] }]
+      },
+      options: { plugins: { legend: { position: "bottom" } } }
+    });
+  } catch (err) {
+    document.getElementById("evStatGrid").innerHTML = `<div class="stat-card" style="grid-column:1/-1"><span style="color:var(--reject)">${esc(err.message)}</span></div>`;
+  }
+}
+
+</script>
+</body>
+</html>
