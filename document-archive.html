@@ -1,0 +1,290 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Document Archive — Taher Consulting</title>
+<link rel="icon" type="image/svg+xml" href="assets/favicon.svg">
+<link rel="stylesheet" href="css/style.css">
+<style>
+  body{background:var(--paper);}
+  .dm-wrap{max-width:1080px;margin:0 auto;padding:32px 24px 60px;}
+  .dm-head{margin-bottom:26px;}
+  .dm-head h1{font-size:26px;}
+  .panel{background:var(--card);border:1.5px solid var(--ink);border-radius:5px;padding:22px;margin-bottom:24px;}
+  .panel h3{font-family:var(--display);font-size:16px;margin-bottom:14px;}
+  .form-grid{display:grid;grid-template-columns:repeat(2,1fr);gap:0 20px;}
+  .form-grid .field{margin-bottom:16px;}
+  .field label{display:block;font-family:var(--mono);font-size:11px;color:var(--ink-soft);text-transform:uppercase;letter-spacing:.04em;margin-bottom:6px;}
+  .field input,.field select,.field textarea{
+    width:100%;padding:10px 12px;border:1.5px solid var(--line-strong);border-radius:2px;background:var(--paper);font-family:var(--body);font-size:14px;box-sizing:border-box;
+  }
+  .btn{font-family:var(--mono);font-size:13px;letter-spacing:.04em;text-transform:uppercase;padding:12px 22px;border-radius:2px;display:inline-flex;align-items:center;gap:8px;border:none;cursor:pointer;}
+  .btn-primary{background:var(--ink);color:var(--paper);}
+  .btn-primary:disabled{opacity:.5;cursor:default;}
+  .btn-ghost{border:1.5px solid var(--ink);color:var(--ink);background:none;font-size:11.5px;padding:8px 14px;}
+  .form-msg{font-family:var(--mono);font-size:12.5px;padding:10px 12px;border-radius:2px;margin-top:12px;display:none;}
+  .form-msg.show{display:block;}
+  .form-msg.err{background:var(--reject-dim);color:var(--reject);border:1px solid var(--reject);}
+  .form-msg.ok{background:var(--pass-dim);color:var(--pass);border:1px solid var(--pass);}
+
+  .cat-tabs{display:flex;gap:8px;margin-bottom:18px;}
+  .cat-tabs button{font-family:var(--mono);font-size:12px;letter-spacing:.04em;text-transform:uppercase;padding:9px 18px;border-radius:2px;border:1.5px solid var(--ink);background:none;color:var(--ink);cursor:pointer;}
+  .cat-tabs button.active{background:var(--ink);color:var(--paper);}
+
+  .doc-card{background:var(--card);border:1.5px solid var(--ink);border-radius:5px;padding:18px 20px;margin-bottom:14px;}
+  .doc-card .doc-top{display:flex;justify-content:space-between;align-items:flex-start;gap:14px;flex-wrap:wrap;}
+  .doc-card h4{font-family:var(--display);font-size:17px;}
+  .doc-card .meta{font-family:var(--mono);font-size:11px;color:var(--ink-soft);margin-top:4px;letter-spacing:.03em;}
+  .doc-card .actions{display:flex;gap:8px;flex-wrap:wrap;}
+  .version-badge{background:var(--pass-dim);color:var(--pass);font-family:var(--mono);font-size:10.5px;padding:3px 9px;border-radius:10px;letter-spacing:.03em;}
+  .history-list{margin-top:12px;border-top:1px solid var(--line);padding-top:10px;display:none;}
+  .history-list.show{display:block;}
+  .history-row{display:flex;justify-content:space-between;align-items:center;padding:6px 0;font-size:13px;border-bottom:1px solid var(--line);}
+  .history-row:last-child{border-bottom:none;}
+  .history-row a{color:var(--pass);font-family:var(--mono);font-size:11.5px;}
+
+  @media (max-width:700px){ .form-grid{grid-template-columns:1fr;} }
+</style>
+</head>
+<body>
+<div id="tc-guard-bar" style="background:#1B211D;color:#F1F0EA;font-family:'IBM Plex Mono',monospace;font-size:12.5px;letter-spacing:.04em;padding:10px 20px;display:flex;justify-content:space-between;align-items:center;position:sticky;top:0;z-index:9999">
+  <a href="dashboard.html" style="color:#F1F0EA;text-decoration:none">&larr; Back to Dashboard</a>
+  <span>J.M. FABRICS LIMITED &middot; Document Archive</span>
+  <span>
+    <span id="tc-guard-user" style="color:#A9832F"></span>
+    <span id="tc-guest-badge" style="display:none;background:#B84226;color:#F1F0EA;padding:3px 9px;border-radius:2px;margin-left:10px;font-size:10.5px;letter-spacing:.06em">VIEW ONLY &middot; GUEST</span>
+  </span>
+</div>
+<script>
+window.TC_IS_GUEST = false;
+(function(){
+  var raw = localStorage.getItem("tc_session") || sessionStorage.getItem("tc_session");
+  if (!raw) {
+    window.location.href = "login.html";
+  } else {
+    try {
+      var s = JSON.parse(raw);
+      window.TC_IS_GUEST = /guest|visitor/i.test(s.role || "");
+      document.addEventListener("DOMContentLoaded", function(){
+        var el = document.getElementById("tc-guard-user");
+        if (el) el.textContent = s.name || "";
+        var badge = document.getElementById("tc-guest-badge");
+        if (badge && window.TC_IS_GUEST) badge.style.display = "inline-block";
+      });
+    } catch(e) {}
+  }
+})();
+
+function tcBlockIfGuest(actionLabel) {
+  if (window.TC_IS_GUEST) {
+    alert("You're signed in as a Guest (View Only). " + (actionLabel || "This action") + " is disabled for guest accounts.\n\nAsk an administrator for a full account to " + (actionLabel ? actionLabel.toLowerCase() : "make changes") + ".");
+    return true;
+  }
+  return false;
+}
+</script>
+
+<div class="dm-wrap">
+  <div class="dm-head">
+    <div class="eyebrow">Quality Management System</div>
+    <h1>Quality Manual &amp; SOP Archive</h1>
+    <p class="lede" style="margin-top:6px">Upload controlled documents here. Uploading a PDF again under the same document keeps the old version in the history — nothing is silently overwritten.</p>
+  </div>
+
+  <div class="panel">
+    <h3>Upload Document</h3>
+    <div class="form-grid">
+      <div class="field"><label>Document Title</label><input id="docTitle" placeholder="e.g. Sharp Tool Control SOP"></div>
+      <div class="field"><label>Category</label>
+        <select id="docCategory"><option>Quality Manual</option><option>SOP</option></select>
+      </div>
+      <div class="field"><label>Document No (optional)</label><input id="docNo" placeholder="e.g. SOP-QA-014"></div>
+      <div class="field"><label>PDF File</label><input id="docFile" type="file" accept="application/pdf"></div>
+    </div>
+    <div class="field"><label>Notes (what changed, optional)</label><textarea id="docNotes" rows="2"></textarea></div>
+    <input type="hidden" id="docIdField" value="">
+    <button class="btn btn-primary" id="uploadBtn" onclick="uploadDocument()">Upload →</button>
+    <button class="btn btn-ghost" id="cancelUpdateBtn" style="display:none" onclick="cancelUpdateMode()">Cancel (uploading a fresh document instead)</button>
+    <div id="docMsg" class="form-msg"></div>
+  </div>
+
+  <div class="cat-tabs">
+    <button data-cat="Quality Manual" class="active" onclick="switchCat('Quality Manual')">Quality Manual</button>
+    <button data-cat="SOP" onclick="switchCat('SOP')">SOP</button>
+  </div>
+
+  <div id="docList"><div style="color:var(--ink-soft);font-size:13px">Loading…</div></div>
+</div>
+
+<script>
+const DOC_API_URL = "https://script.google.com/macros/s/AKfycbxX_xUN8yuYpeNr0kppchq_hQyt4SRNmnneXS1QrGSwb6hTIgG5NIP0X22PLhz_a_DpDA/exec";
+let activeCat = "Quality Manual";
+let allDocs = [];
+
+function esc(s){ return (s||"").toString().replace(/[&<>"]/g, c => ({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;"}[c])); }
+
+async function docApi(payload) {
+  if (DOC_API_URL.indexOf("PASTE_YOUR") === 0) {
+    throw new Error("Document Archive backend not connected yet — see document-archive-backend.gs for setup steps.");
+  }
+  const res = await fetch(DOC_API_URL, {
+    method: "POST",
+    headers: { "Content-Type": "text/plain;charset=utf-8" },
+    body: JSON.stringify(payload),
+  });
+  return res.json();
+}
+
+function fileToBase64(file) {
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onload = () => resolve(reader.result.split(",")[1]);
+    reader.onerror = reject;
+    reader.readAsDataURL(file);
+  });
+}
+
+async function uploadDocument() {
+  if (tcBlockIfGuest("Uploading a document")) return;
+  const msg = document.getElementById("docMsg");
+  const btn = document.getElementById("uploadBtn");
+  const title = document.getElementById("docTitle").value.trim();
+  const category = document.getElementById("docCategory").value;
+  const docNo = document.getElementById("docNo").value.trim();
+  const notes = document.getElementById("docNotes").value.trim();
+  const docId = document.getElementById("docIdField").value;
+  const fileInput = document.getElementById("docFile");
+  const file = fileInput.files[0];
+
+  if (!title) { msg.textContent = "Document title is required."; msg.className = "form-msg err show"; return; }
+  if (!file) { msg.textContent = "Choose a PDF file."; msg.className = "form-msg err show"; return; }
+  if (file.type !== "application/pdf") { msg.textContent = "Only PDF files are accepted."; msg.className = "form-msg err show"; return; }
+  if (file.size > 15 * 1024 * 1024) { msg.textContent = "File is larger than 15MB — please compress the PDF first."; msg.className = "form-msg err show"; return; }
+
+  btn.disabled = true;
+  btn.textContent = "Uploading…";
+  msg.className = "form-msg";
+
+  try {
+    const fileBase64 = await fileToBase64(file);
+    let uploadedBy = "";
+    try { uploadedBy = (JSON.parse(localStorage.getItem("tc_session") || sessionStorage.getItem("tc_session") || "{}").name) || ""; } catch(e) {}
+
+    const res = await docApi({
+      action: "uploadDocument",
+      doc: { docId, title, category, docNo, notes, fileBase64, fileName: file.name, uploadedBy }
+    });
+    if (!res.ok) throw new Error(res.error || "Upload failed");
+
+    msg.textContent = `Uploaded as version ${res.version}.`;
+    msg.className = "form-msg ok show";
+    cancelUpdateMode();
+    document.getElementById("docFile").value = "";
+    loadDocuments();
+  } catch (err) {
+    msg.textContent = err.message;
+    msg.className = "form-msg err show";
+  } finally {
+    btn.disabled = false;
+    btn.textContent = "Upload →";
+  }
+}
+
+function startUpdateMode(doc) {
+  if (tcBlockIfGuest("Uploading a new version")) return;
+  document.getElementById("docTitle").value = doc.title;
+  document.getElementById("docCategory").value = doc.category;
+  document.getElementById("docNo").value = doc.docNo;
+  document.getElementById("docNotes").value = "";
+  document.getElementById("docIdField").value = doc.docId;
+  document.getElementById("cancelUpdateBtn").style.display = "inline-flex";
+  document.getElementById("uploadBtn").textContent = `Upload New Version →`;
+  window.scrollTo({ top: 0, behavior: "smooth" });
+}
+
+function cancelUpdateMode() {
+  document.getElementById("docIdField").value = "";
+  document.getElementById("docTitle").value = "";
+  document.getElementById("docNo").value = "";
+  document.getElementById("docNotes").value = "";
+  document.getElementById("cancelUpdateBtn").style.display = "none";
+  document.getElementById("uploadBtn").textContent = "Upload →";
+}
+
+function switchCat(cat) {
+  activeCat = cat;
+  document.querySelectorAll(".cat-tabs button").forEach(b => b.classList.toggle("active", b.dataset.cat === cat));
+  renderDocList();
+}
+
+async function loadDocuments() {
+  const listEl = document.getElementById("docList");
+  try {
+    const res = await docApi({ action: "listDocuments" });
+    if (!res.ok) throw new Error(res.error || "Failed to load documents");
+    allDocs = res.documents;
+    renderDocList();
+  } catch (err) {
+    listEl.innerHTML = `<div style="color:var(--reject);font-family:var(--mono);font-size:12.5px">${esc(err.message)}</div>`;
+  }
+}
+
+function renderDocList() {
+  const listEl = document.getElementById("docList");
+  const inCat = allDocs.filter(d => d.category === activeCat);
+
+  const byDocId = {};
+  inCat.forEach(d => {
+    if (!byDocId[d.docId]) byDocId[d.docId] = [];
+    byDocId[d.docId].push(d);
+  });
+
+  const groups = Object.values(byDocId).map(versions => versions.sort((a, b) => Number(b.version) - Number(a.version)));
+  groups.sort((a, b) => new Date(b[0].createdAt) - new Date(a[0].createdAt));
+
+  if (!groups.length) {
+    listEl.innerHTML = `<div style="color:var(--ink-soft);font-size:13px">No ${esc(activeCat)} documents uploaded yet.</div>`;
+    return;
+  }
+
+  listEl.innerHTML = groups.map((versions, idx) => {
+    const latest = versions[0];
+    const older = versions.slice(1);
+    return `
+      <div class="doc-card">
+        <div class="doc-top">
+          <div>
+            <h4>${esc(latest.title)} <span class="version-badge">v${esc(latest.version)}</span></h4>
+            <div class="meta">${esc(latest.docNo || "No Doc No")} &middot; Uploaded ${esc(latest.createdAt)} by ${esc(latest.uploadedBy || "—")}</div>
+            ${latest.notes ? `<div class="meta" style="margin-top:4px">${esc(latest.notes)}</div>` : ""}
+          </div>
+          <div class="actions">
+            <a class="btn btn-ghost" href="${esc(latest.fileUrl)}" target="_blank" rel="noopener">View / Download</a>
+            <button class="btn btn-ghost" onclick='startUpdateMode(${JSON.stringify({docId: latest.docId, title: latest.title, category: latest.category, docNo: latest.docNo}).replace(/'/g, "&#39;")})'>Upload New Version</button>
+            ${older.length ? `<button class="btn btn-ghost" onclick="toggleHistory(${idx})">Version History (${older.length})</button>` : ""}
+          </div>
+        </div>
+        ${older.length ? `
+          <div class="history-list" id="hist-${idx}">
+            ${older.map(v => `
+              <div class="history-row">
+                <span>v${esc(v.version)} — ${esc(v.createdAt)} by ${esc(v.uploadedBy || "—")}${v.notes ? " — " + esc(v.notes) : ""}</span>
+                <a href="${esc(v.fileUrl)}" target="_blank" rel="noopener">Download</a>
+              </div>
+            `).join("")}
+          </div>
+        ` : ""}
+      </div>
+    `;
+  }).join("");
+}
+
+function toggleHistory(idx) {
+  document.getElementById("hist-" + idx).classList.toggle("show");
+}
+
+loadDocuments();
+</script>
+</body>
+</html>
