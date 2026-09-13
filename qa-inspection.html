@@ -1,0 +1,426 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>QA Inspection — Taher Consulting</title>
+<link rel="icon" type="image/svg+xml" href="assets/favicon.svg">
+<script src="https://cdnjs.cloudflare.com/ajax/libs/html2pdf.js/0.10.1/html2pdf.bundle.min.js"></script>
+<link rel="stylesheet" href="css/style.css">
+<style>
+  body{background:var(--paper);}
+  .qi-shell{display:flex;min-height:calc(100vh - 44px);}
+  .qi-side{width:250px;flex:none;background:var(--ink);color:#C7CCC7;padding:22px 0;overflow-y:auto;transition:width .2s,padding .2s;}
+  .qi-shell.collapsed .qi-side{width:0;padding:0;overflow:hidden;}
+  .qi-side h6{font-family:var(--mono);font-size:10px;letter-spacing:.1em;text-transform:uppercase;color:var(--gold);padding:14px 20px 8px;}
+  .qi-side button{display:flex;align-items:center;gap:10px;width:100%;text-align:left;background:none;border:none;color:#C7CCC7;font-family:var(--body);font-size:13.5px;padding:9px 20px;cursor:pointer;border-left:3px solid transparent;}
+  .qi-side button:hover{background:rgba(255,255,255,.06);color:#fff;}
+  .qi-side button.active{background:rgba(47,110,82,.18);color:#fff;border-left-color:var(--pass);font-weight:600;}
+  .qi-main{flex:1;padding:32px 36px 60px;overflow-y:auto;max-width:1080px;}
+  .qi-head h1{font-size:24px;}
+  .panel{background:var(--card);border:1.5px solid var(--ink);border-radius:5px;padding:22px;margin-bottom:22px;}
+  .panel h3{font-family:var(--display);font-size:16px;margin-bottom:14px;}
+  .form-grid{display:grid;grid-template-columns:repeat(3,1fr);gap:0 18px;}
+  .form-grid .field{margin-bottom:16px;}
+  .field label{display:block;font-family:var(--mono);font-size:11px;color:var(--ink-soft);text-transform:uppercase;letter-spacing:.04em;margin-bottom:6px;}
+  .field input,.field select,.field textarea{width:100%;padding:10px 12px;border:1.5px solid var(--line-strong);border-radius:2px;background:var(--paper);font-family:var(--body);font-size:14px;box-sizing:border-box;}
+  .btn{font-family:var(--mono);font-size:13px;letter-spacing:.04em;text-transform:uppercase;padding:11px 20px;border-radius:2px;display:inline-flex;align-items:center;gap:8px;border:none;cursor:pointer;}
+  .btn-primary{background:var(--ink);color:var(--paper);}
+  .btn-primary:disabled{opacity:.5;}
+  .btn-ghost{border:1.5px solid var(--ink);color:var(--ink);background:none;font-size:11.5px;padding:8px 14px;}
+  .form-msg{font-family:var(--mono);font-size:12.5px;padding:10px 12px;border-radius:2px;margin-top:12px;display:none;}
+  .form-msg.show{display:block;}
+  .form-msg.err{background:var(--reject-dim);color:var(--reject);border:1px solid var(--reject);}
+  .form-msg.ok{background:var(--pass-dim);color:var(--pass);border:1px solid var(--pass);}
+
+  table.qi-check{width:100%;border-collapse:collapse;font-size:13.5px;margin-bottom:12px;}
+  table.qi-check th{text-align:left;font-family:var(--mono);font-size:10.5px;text-transform:uppercase;color:var(--ink-soft);border-bottom:1.5px solid var(--ink);padding:6px 8px;}
+  table.qi-check td{padding:6px 8px;border-bottom:1px solid var(--line);}
+
+  .photo-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(110px,1fr));gap:10px;margin-top:10px;}
+  .photo-thumb{position:relative;border:1.5px solid var(--ink);border-radius:3px;overflow:hidden;aspect-ratio:1;}
+  .photo-thumb img{width:100%;height:100%;object-fit:cover;}
+  .photo-thumb button{position:absolute;top:2px;right:2px;background:var(--reject);color:#fff;border:none;border-radius:50%;width:20px;height:20px;font-size:12px;cursor:pointer;}
+
+  table.qa-table{width:100%;border-collapse:collapse;font-size:13px;}
+  table.qa-table th{text-align:left;font-family:var(--mono);font-size:10.5px;text-transform:uppercase;letter-spacing:.04em;color:var(--ink-soft);border-bottom:1.5px solid var(--ink);padding:8px 10px;}
+  table.qa-table td{padding:8px 10px;border-bottom:1px solid var(--line);}
+
+  #pdfReportRoot{position:fixed;left:-9999px;top:0;width:210mm;background:#fff;color:#111;padding:14mm;font-family:'Inter',sans-serif;}
+  #pdfReportRoot h2{font-size:18px;margin-bottom:4px;}
+  #pdfReportRoot table{width:100%;border-collapse:collapse;font-size:11px;margin:10px 0;}
+  #pdfReportRoot th,#pdfReportRoot td{border:1px solid #ccc;padding:5px 7px;text-align:left;}
+  #pdfReportRoot .pdf-photos{display:flex;flex-wrap:wrap;gap:8px;margin-top:8px;}
+  #pdfReportRoot .pdf-photos img{width:110px;height:110px;object-fit:cover;border:1px solid #ccc;}
+
+  @media (max-width:920px){
+    .qi-shell{flex-direction:column;}
+    .qi-side{width:100%;display:flex;overflow-x:auto;padding:8px;}
+    .qi-side h6{display:none;}
+    .qi-side button{white-space:nowrap;border-left:none;border-bottom:3px solid transparent;}
+    .qi-side button.active{border-left:none;border-bottom-color:var(--pass);}
+    .form-grid{grid-template-columns:1fr;}
+  }
+</style>
+</head>
+<body>
+<div id="tc-guard-bar" style="background:#1B211D;color:#F1F0EA;font-family:'IBM Plex Mono',monospace;font-size:12.5px;letter-spacing:.04em;padding:10px 20px;display:flex;justify-content:space-between;align-items:center;position:sticky;top:0;z-index:9999">
+  <a href="dashboard.html" style="color:#F1F0EA;text-decoration:none">&larr; Back to Dashboard</a>
+  <span>J.M. FABRICS LIMITED &middot; QA Inspection</span>
+  <span>
+    <button id="menuToggle" style="font-family:var(--mono);font-size:11px;background:none;border:1px solid #F1F0EA;color:#F1F0EA;padding:5px 12px;border-radius:2px;cursor:pointer;margin-right:10px">☰ Hide Menu</button>
+    <span id="tc-guard-user" style="color:#A9832F"></span>
+    <span id="tc-guest-badge" style="display:none;background:#B84226;color:#F1F0EA;padding:3px 9px;border-radius:2px;margin-left:10px;font-size:10.5px;letter-spacing:.06em">VIEW ONLY &middot; GUEST</span>
+  </span>
+</div>
+<script>
+window.TC_IS_GUEST = false;
+(function(){
+  var raw = localStorage.getItem("tc_session") || sessionStorage.getItem("tc_session");
+  if (!raw) { window.location.href = "login.html"; }
+  else {
+    try {
+      var s = JSON.parse(raw);
+      window.TC_IS_GUEST = /guest|visitor/i.test(s.role || "");
+      document.addEventListener("DOMContentLoaded", function(){
+        var el = document.getElementById("tc-guard-user");
+        if (el) el.textContent = s.name || "";
+        var badge = document.getElementById("tc-guest-badge");
+        if (badge && window.TC_IS_GUEST) badge.style.display = "inline-block";
+      });
+    } catch(e) {}
+  }
+})();
+function tcBlockIfGuest(actionLabel) {
+  if (window.TC_IS_GUEST) {
+    alert("You're signed in as a Guest (View Only). " + (actionLabel || "This action") + " is disabled for guest accounts.\n\nAsk an administrator for a full account.");
+    return true;
+  }
+  return false;
+}
+document.addEventListener("DOMContentLoaded", () => {
+  document.getElementById("menuToggle").addEventListener("click", () => {
+    const shell = document.getElementById("qiShell");
+    shell.classList.toggle("collapsed");
+    document.getElementById("menuToggle").textContent = shell.classList.contains("collapsed") ? "☰ Show Menu" : "☰ Hide Menu";
+  });
+});
+</script>
+
+<div class="qi-shell" id="qiShell">
+  <nav class="qi-side" id="qiSide">
+    <h6>Inspection Types</h6>
+  </nav>
+  <main class="qi-main">
+    <div id="tabContent"></div>
+  </main>
+</div>
+
+<div id="pdfReportRoot"></div>
+
+<script>
+const QAI_API_URL = "PASTE_YOUR_GOOGLE_APPS_SCRIPT_EXEC_URL_HERE";
+
+const INSPECTION_TYPES = [
+  { id: "1st Bundle Inspection", photos: false },
+  { id: "Sewing Inline Inspection", photos: false },
+  { id: "Finishing Inline Inspection", photos: false },
+  { id: "1st Carton Inspection", photos: false },
+  { id: "Pre-Final Inspection", photos: true },
+  { id: "Final Inspection", photos: true },
+];
+
+const DEFAULT_CHECKLIST = [
+  "Workmanship / Stitching Quality",
+  "Measurement as per Spec",
+  "Color / Shade Matching",
+  "Trims & Accessories Correct",
+  "Print / Embroidery Placement",
+  "Packing Accuracy",
+];
+
+function esc(s){ return (s||"").toString().replace(/[&<>"]/g, c => ({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;"}[c])); }
+
+async function qaiApi(payload) {
+  if (QAI_API_URL.indexOf("PASTE_YOUR") === 0) {
+    throw new Error("QA Inspection backend not connected yet — see qa-inspection-backend.gs for setup steps.");
+  }
+  const res = await fetch(QAI_API_URL, {
+    method: "POST",
+    headers: { "Content-Type": "text/plain;charset=utf-8" },
+    body: JSON.stringify(payload),
+  });
+  return res.json();
+}
+
+// ---- Sidebar ----
+const sideEl = document.getElementById("qiSide");
+INSPECTION_TYPES.forEach(t => {
+  const btn = document.createElement("button");
+  btn.dataset.tab = t.id;
+  btn.textContent = t.id;
+  sideEl.appendChild(btn);
+});
+const searchBtn = document.createElement("button");
+searchBtn.dataset.tab = "search";
+searchBtn.textContent = "🔍 Search Reports";
+searchBtn.style.marginTop = "10px";
+searchBtn.style.borderTop = "1px solid rgba(255,255,255,.15)";
+sideEl.appendChild(searchBtn);
+
+sideEl.addEventListener("click", (e) => {
+  const btn = e.target.closest("button[data-tab]");
+  if (!btn) return;
+  document.querySelectorAll(".qi-side button").forEach(b => b.classList.remove("active"));
+  btn.classList.add("active");
+  loadTab(btn.dataset.tab);
+});
+
+function loadTab(id) {
+  if (id === "search") return renderSearch();
+  const type = INSPECTION_TYPES.find(t => t.id === id);
+  if (type) return renderInspectionForm(type);
+}
+
+// ---------------------------------------------------------------
+// Inspection form (shared template for all 6 types)
+// ---------------------------------------------------------------
+let photoFiles = []; // {dataBase64, mimeType, fileName, previewUrl}
+
+function renderInspectionForm(type) {
+  photoFiles = [];
+  const el = document.getElementById("tabContent");
+  el.innerHTML = `
+    <div class="qi-head"><div class="eyebrow">QA Inspection</div><h1>${esc(type.id)}</h1></div>
+    <div class="panel">
+      <h3>Order / Style Information</h3>
+      <div class="form-grid">
+        <div class="field"><label>SBU</label><input id="qiSbu"></div>
+        <div class="field"><label>Buyer</label><input id="qiBuyer"></div>
+        <div class="field"><label>IR No</label><input id="qiIr"></div>
+        <div class="field"><label>Style</label><input id="qiStyle"></div>
+        <div class="field"><label>Inspection Date</label><input id="qiDate" type="date"></div>
+        <div class="field"><label>Inspector</label><input id="qiInspector"></div>
+      </div>
+    </div>
+
+    <div class="panel">
+      <h3>Checklist</h3>
+      <table class="qi-check" id="qiChecklistTable">
+        <thead><tr><th style="width:45%">Item</th><th style="width:20%">Result</th><th>Remarks</th><th></th></tr></thead>
+        <tbody></tbody>
+      </table>
+      <button class="btn btn-ghost" onclick="addChecklistRow('')">+ Add Item</button>
+    </div>
+
+    ${type.photos ? `
+    <div class="panel">
+      <h3>Photo Evidence</h3>
+      <input type="file" id="qiPhotoInput" accept="image/*" multiple onchange="handlePhotoSelect(event)">
+      <div class="photo-grid" id="qiPhotoGrid"></div>
+    </div>` : ""}
+
+    <div class="panel">
+      <h3>Result</h3>
+      <div class="form-grid">
+        <div class="field"><label>Overall Result</label>
+          <select id="qiOverall"><option>Pass</option><option>Fail</option><option>Pass with Observation</option></select>
+        </div>
+      </div>
+      <div class="field"><label>Notes</label><textarea id="qiNotes" rows="3"></textarea></div>
+      <button class="btn btn-primary" id="qiCompleteBtn" onclick="completeInspection('${esc(type.id).replace(/'/g,"\\'")}', ${type.photos})">Complete Inspection &amp; Generate PDF →</button>
+      <div id="qiMsg" class="form-msg"></div>
+    </div>
+  `;
+  DEFAULT_CHECKLIST.forEach(item => addChecklistRow(item));
+}
+
+function addChecklistRow(itemText) {
+  const tbody = document.querySelector("#qiChecklistTable tbody");
+  const row = document.createElement("tr");
+  row.innerHTML = `
+    <td><input type="text" class="ci-item" value="${esc(itemText)}" placeholder="Checklist item"></td>
+    <td><select class="ci-result"><option>Pass</option><option>Fail</option><option>N/A</option></select></td>
+    <td><input type="text" class="ci-remarks" placeholder="Remarks"></td>
+    <td><button class="btn btn-ghost" onclick="this.closest('tr').remove()" style="padding:4px 9px">✕</button></td>
+  `;
+  tbody.appendChild(row);
+}
+
+function handlePhotoSelect(e) {
+  const files = Array.from(e.target.files || []);
+  files.forEach(file => {
+    const reader = new FileReader();
+    reader.onload = () => {
+      const dataUrl = reader.result;
+      photoFiles.push({
+        dataBase64: dataUrl.split(",")[1],
+        mimeType: file.type,
+        fileName: file.name,
+        previewUrl: dataUrl,
+      });
+      renderPhotoGrid();
+    };
+    reader.readAsDataURL(file);
+  });
+  e.target.value = "";
+}
+
+function renderPhotoGrid() {
+  const grid = document.getElementById("qiPhotoGrid");
+  if (!grid) return;
+  grid.innerHTML = photoFiles.map((p, i) => `
+    <div class="photo-thumb"><img src="${p.previewUrl}"><button onclick="removePhoto(${i})">✕</button></div>
+  `).join("");
+}
+
+function removePhoto(i) {
+  photoFiles.splice(i, 1);
+  renderPhotoGrid();
+}
+
+function collectChecklist() {
+  return Array.from(document.querySelectorAll("#qiChecklistTable tbody tr")).map(row => ({
+    item: row.querySelector(".ci-item").value,
+    result: row.querySelector(".ci-result").value,
+    remarks: row.querySelector(".ci-remarks").value,
+  })).filter(c => c.item.trim());
+}
+
+async function completeInspection(typeId, hasPhotos) {
+  if (tcBlockIfGuest("Completing an inspection")) return;
+  const msg = document.getElementById("qiMsg");
+  const btn = document.getElementById("qiCompleteBtn");
+
+  const sbu = document.getElementById("qiSbu").value;
+  const buyer = document.getElementById("qiBuyer").value;
+  const ir = document.getElementById("qiIr").value;
+  const styleName = document.getElementById("qiStyle").value;
+  const inspectionDate = document.getElementById("qiDate").value;
+  const inspector = document.getElementById("qiInspector").value;
+  const overallResult = document.getElementById("qiOverall").value;
+  const notes = document.getElementById("qiNotes").value;
+  const checklist = collectChecklist();
+
+  if (!styleName) { msg.textContent = "Style is required."; msg.className = "form-msg err show"; return; }
+  if (!checklist.length) { msg.textContent = "Add at least one checklist item."; msg.className = "form-msg err show"; return; }
+
+  btn.disabled = true;
+  btn.textContent = "Generating PDF…";
+  msg.className = "form-msg";
+
+  try {
+    const pdfRoot = document.getElementById("pdfReportRoot");
+    pdfRoot.innerHTML = `
+      <h2>J.M. Fabrics Limited — ${esc(typeId)}</h2>
+      <p><b>SBU:</b> ${esc(sbu)} &nbsp; <b>Buyer:</b> ${esc(buyer)} &nbsp; <b>IR:</b> ${esc(ir)}</p>
+      <p><b>Style:</b> ${esc(styleName)} &nbsp; <b>Date:</b> ${esc(inspectionDate)} &nbsp; <b>Inspector:</b> ${esc(inspector)}</p>
+      <table>
+        <thead><tr><th>Item</th><th>Result</th><th>Remarks</th></tr></thead>
+        <tbody>${checklist.map(c => `<tr><td>${esc(c.item)}</td><td>${esc(c.result)}</td><td>${esc(c.remarks)}</td></tr>`).join("")}</tbody>
+      </table>
+      <p><b>Overall Result:</b> ${esc(overallResult)}</p>
+      <p><b>Notes:</b> ${esc(notes || "—")}</p>
+      ${hasPhotos && photoFiles.length ? `<p><b>Photo Evidence:</b></p><div class="pdf-photos">${photoFiles.map(p => `<img src="${p.previewUrl}">`).join("")}</div>` : ""}
+    `;
+
+    const opt = {
+      margin: [12, 12, 12, 12],
+      filename: `${typeId.replace(/\s+/g,"_")}_${styleName}_${inspectionDate || ""}.pdf`,
+      html2canvas: { scale: 2 },
+      jsPDF: { unit: "mm", format: "a4", orientation: "portrait" }
+    };
+    const pdfDataUri = await html2pdf().set(opt).from(pdfRoot).outputPdf("datauristring");
+    const pdfBase64 = pdfDataUri.split(",")[1];
+
+    btn.textContent = "Saving report…";
+
+    const res = await qaiApi({
+      action: "saveInspection",
+      report: {
+        type: typeId, sbu, buyer, ir, styleName, inspectionDate, inspector, overallResult, notes,
+        checklist, photos: hasPhotos ? photoFiles.map(p => ({ dataBase64: p.dataBase64, mimeType: p.mimeType, fileName: p.fileName })) : [],
+        pdfBase64, pdfFileName: opt.filename,
+      }
+    });
+    if (!res.ok) throw new Error(res.error || "Save failed");
+
+    // Also give the user a local download immediately.
+    html2pdf().set(opt).from(pdfRoot).save();
+
+    msg.textContent = "Inspection completed, PDF saved to Drive, and downloaded to your device.";
+    msg.className = "form-msg ok show";
+  } catch (err) {
+    msg.textContent = err.message;
+    msg.className = "form-msg err show";
+  } finally {
+    btn.disabled = false;
+    btn.textContent = "Complete Inspection & Generate PDF →";
+  }
+}
+
+// ---------------------------------------------------------------
+// Search Reports tab
+// ---------------------------------------------------------------
+function renderSearch() {
+  const el = document.getElementById("tabContent");
+  el.innerHTML = `
+    <div class="qi-head"><div class="eyebrow">QA Inspection</div><h1>Search Reports</h1></div>
+    <div class="panel">
+      <div class="form-grid">
+        <div class="field"><label>Type</label>
+          <select id="seType"><option value="">All Types</option>${INSPECTION_TYPES.map(t => `<option>${esc(t.id)}</option>`).join("")}</select>
+        </div>
+        <div class="field"><label>SBU</label><input id="seSbu"></div>
+        <div class="field"><label>Buyer</label><input id="seBuyer"></div>
+        <div class="field"><label>IR No</label><input id="seIr"></div>
+        <div class="field"><label>Style</label><input id="seStyle"></div>
+        <div class="field"><label>Start Date</label><input id="seStart" type="date"></div>
+        <div class="field"><label>End Date</label><input id="seEnd" type="date"></div>
+      </div>
+      <button class="btn btn-primary" onclick="runSearch()">Search →</button>
+    </div>
+    <div class="panel">
+      <table class="qa-table" id="seTable">
+        <thead><tr><th>Date</th><th>Type</th><th>SBU</th><th>Buyer</th><th>IR</th><th>Style</th><th>Result</th><th>Report</th></tr></thead>
+        <tbody><tr><td colspan="8" style="text-align:center;color:var(--ink-soft)">Run a search to see reports.</td></tr></tbody>
+      </table>
+    </div>
+  `;
+}
+
+async function runSearch() {
+  const tbody = document.querySelector("#seTable tbody");
+  tbody.innerHTML = `<tr><td colspan="8" style="text-align:center;color:var(--ink-soft)">Searching…</td></tr>`;
+  try {
+    const filters = {
+      type: document.getElementById("seType").value,
+      sbu: document.getElementById("seSbu").value,
+      buyer: document.getElementById("seBuyer").value,
+      ir: document.getElementById("seIr").value,
+      styleName: document.getElementById("seStyle").value,
+      start: document.getElementById("seStart").value,
+      end: document.getElementById("seEnd").value,
+    };
+    const res = await qaiApi({ action: "searchInspections", filters });
+    if (!res.ok) throw new Error(res.error || "Search failed");
+    if (!res.reports.length) { tbody.innerHTML = `<tr><td colspan="8" style="text-align:center;color:var(--ink-soft)">No reports match this search.</td></tr>`; return; }
+    tbody.innerHTML = res.reports.map(r => `
+      <tr>
+        <td>${esc(r.inspectionDate || new Date(r.createdAt).toLocaleDateString())}</td>
+        <td>${esc(r.type)}</td><td>${esc(r.sbu)}</td><td>${esc(r.buyer)}</td><td>${esc(r.ir)}</td><td>${esc(r.styleName)}</td>
+        <td>${esc(r.overallResult)}</td>
+        <td>${r.pdfUrl ? `<a href="${esc(r.pdfUrl)}" target="_blank" rel="noopener">View PDF</a>` : "—"}</td>
+      </tr>
+    `).join("");
+  } catch (err) {
+    tbody.innerHTML = `<tr><td colspan="8" style="text-align:center;color:var(--reject)">${esc(err.message)}</td></tr>`;
+  }
+}
+
+// Default landing tab
+document.querySelector('.qi-side button[data-tab="1st Bundle Inspection"]').classList.add("active");
+renderInspectionForm(INSPECTION_TYPES[0]);
+</script>
+</body>
+</html>
