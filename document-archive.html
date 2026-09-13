@@ -337,5 +337,14 @@ function toggleHistory(idx) {
 
 loadDocuments();
 </script>
+
+<script src="js/module-auth.js"></script>
+<script>
+  tcInitModuleAuth({
+    moduleKey: "doc",
+    sheetName: "DocUsers",
+    displayLabel: "Document Archive"
+  });
+</script>
 </body>
 </html>

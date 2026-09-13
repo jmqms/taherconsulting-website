@@ -422,5 +422,14 @@ async function runSearch() {
 document.querySelector('.qi-side button[data-tab="1st Bundle Inspection"]').classList.add("active");
 renderInspectionForm(INSPECTION_TYPES[0]);
 </script>
+
+<script src="js/module-auth.js"></script>
+<script>
+  tcInitModuleAuth({
+    moduleKey: "qainspection",
+    sheetName: "QAInspectionUsers",
+    displayLabel: "QA Inspection"
+  });
+</script>
 </body>
 </html>
