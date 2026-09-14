@@ -155,10 +155,20 @@ async function qaiApi(payload) {
 
 // ---- Sidebar ----
 const sideEl = document.getElementById("qiSide");
+const STANDALONE_PAGES = {
+  "Pre-Final Inspection": "pre-final-inspection.html",
+  "Final Inspection": "final-inspection.html"
+};
 INSPECTION_TYPES.forEach(t => {
   const btn = document.createElement("button");
-  btn.dataset.tab = t.id;
-  btn.textContent = t.id;
+  if (STANDALONE_PAGES[t.id]) {
+    btn.textContent = t.id + " ↗";
+    btn.title = "Opens the dedicated " + t.id + " page (with per-checkpoint photos and PDF report)";
+    btn.addEventListener("click", () => { window.location.href = STANDALONE_PAGES[t.id]; });
+  } else {
+    btn.dataset.tab = t.id;
+    btn.textContent = t.id;
+  }
   sideEl.appendChild(btn);
 });
 const searchBtn = document.createElement("button");

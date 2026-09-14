@@ -302,6 +302,11 @@ window.TC_IS_GUEST = false;
     try {
       var s = JSON.parse(raw);
       window.TC_IS_GUEST = /guest|visitor/i.test(s.role || "");
+      if (window.TC_IS_GUEST) {
+        alert("Guest accounts do not have access to Training and Competency. Please sign in with a full account.");
+        window.location.href = "dashboard.html";
+        return;
+      }
       document.addEventListener("DOMContentLoaded", function(){
         var el = document.getElementById("tc-guard-user");
         if (el) el.textContent = s.name || "";
@@ -326,7 +331,9 @@ function tcBlockIfGuest(actionLabel) {
   tcInitModuleAuth({
     moduleKey: "training",
     sheetName: "TrainingUsers",
-    displayLabel: "Training and Competency"
+    displayLabel: "Training and Competency",
+    allowGuest: false,
+    theme: { icon: "🎓", accent: "#A9832F", iconBg: "#F7F0DD", bg: "#20190D" }
   });
 </script>
 

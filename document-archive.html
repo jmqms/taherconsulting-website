@@ -66,6 +66,11 @@ window.TC_IS_GUEST = false;
     try {
       var s = JSON.parse(raw);
       window.TC_IS_GUEST = /guest|visitor/i.test(s.role || "");
+      if (window.TC_IS_GUEST) {
+        alert("Guest accounts do not have access to the Document Archive. Please sign in with a full account.");
+        window.location.href = "dashboard.html";
+        return;
+      }
       document.addEventListener("DOMContentLoaded", function(){
         var el = document.getElementById("tc-guard-user");
         if (el) el.textContent = s.name || "";
@@ -343,7 +348,9 @@ loadDocuments();
   tcInitModuleAuth({
     moduleKey: "doc",
     sheetName: "DocUsers",
-    displayLabel: "Document Archive"
+    displayLabel: "Document Archive",
+    allowGuest: false,
+    theme: { icon: "📁", accent: "#7C6EE0", iconBg: "#EEECFB", bg: "#170F26" }
   });
 </script>
 </body>
