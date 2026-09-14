@@ -13,9 +13,10 @@
   .qi-side{width:250px;flex:none;background:var(--ink);color:#C7CCC7;padding:22px 0;overflow-y:auto;transition:width .2s,padding .2s;}
   .qi-shell.collapsed .qi-side{width:0;padding:0;overflow:hidden;}
   .qi-side h6{font-family:var(--mono);font-size:10px;letter-spacing:.1em;text-transform:uppercase;color:var(--gold);padding:14px 20px 8px;}
-  .qi-side button{display:flex;align-items:center;gap:10px;width:100%;text-align:left;background:none;border:none;color:#C7CCC7;font-family:var(--body);font-size:13.5px;padding:9px 20px;cursor:pointer;border-left:3px solid transparent;}
-  .qi-side button:hover{background:rgba(255,255,255,.06);color:#fff;}
+  .qi-side button, .qi-side a.navlink{display:flex;align-items:center;gap:10px;width:100%;text-align:left;background:none;border:none;color:#C7CCC7;font-family:var(--body);font-size:13.5px;padding:9px 20px;cursor:pointer;border-left:3px solid transparent;text-decoration:none;box-sizing:border-box;}
+  .qi-side button:hover, .qi-side a.navlink:hover{background:rgba(255,255,255,.06);color:#fff;}
   .qi-side button.active{background:rgba(47,110,82,.18);color:#fff;border-left-color:var(--pass);font-weight:600;}
+  .qi-side a.navlink{color:#9FD6B8;}
   .qi-main{flex:1;padding:32px 36px 60px;overflow-y:auto;max-width:1080px;}
   .qi-head h1{font-size:24px;}
   .panel{background:var(--card);border:1.5px solid var(--ink);border-radius:5px;padding:22px;margin-bottom:22px;}
@@ -119,15 +120,27 @@ document.addEventListener("DOMContentLoaded", () => {
 <div id="pdfReportRoot"></div>
 
 <script>
-const QAI_API_URL = "PASTE_YOUR_GOOGLE_APPS_SCRIPT_EXEC_URL_HERE";
+const QAI_API_URL = "https://script.google.com/macros/s/AKfycbx5m8XA9a6SgLuGeRGoj5JbgVVXOFM_N58pz2as77THXkHa3Fz3zgHGH1soPR0vpsPj/exec";
+
+// The QA Process module's backend (qa-process-backend.gs) — used ONLY
+// to pull Pre-Final/Final Inspection reports into this page's unified
+// Search Reports tab. This tool's own 4 checklist types are saved
+// separately, to QAI_API_URL's own Google Sheet — nothing is shared.
+const SHARED_QA_API_URL = "https://script.google.com/macros/s/AKfycbwsPJcvf_0pa3Pyt3fhR3AOOo5TfDkoiGq_gwDpH9Tgpd5uJ2MQM_rzhFHIavPtnUakxw/exec";
 
 const INSPECTION_TYPES = [
   { id: "1st Bundle Inspection", photos: false },
   { id: "Sewing Inline Inspection", photos: false },
   { id: "Finishing Inline Inspection", photos: false },
   { id: "1st Carton Inspection", photos: false },
-  { id: "Pre-Final Inspection", photos: true },
-  { id: "Final Inspection", photos: true },
+];
+
+// Pre-Final and Final Inspection have their own dedicated, richer AQL
+// tools (separate files/backends) — link out to those instead of
+// building another inspection form for them here.
+const EXTERNAL_INSPECTION_LINKS = [
+  { label: "Pre-Final Inspection", href: "pre-final-inspection.html" },
+  { label: "Final Inspection", href: "final-inspection.html" },
 ];
 
 const DEFAULT_CHECKLIST = [
@@ -160,6 +173,13 @@ INSPECTION_TYPES.forEach(t => {
   btn.dataset.tab = t.id;
   btn.textContent = t.id;
   sideEl.appendChild(btn);
+});
+EXTERNAL_INSPECTION_LINKS.forEach(l => {
+  const a = document.createElement("a");
+  a.className = "navlink";
+  a.href = l.href;
+  a.textContent = l.label + " ↗";
+  sideEl.appendChild(a);
 });
 const searchBtn = document.createElement("button");
 searchBtn.dataset.tab = "search";
@@ -362,6 +382,9 @@ async function completeInspection(typeId, hasPhotos) {
 // ---------------------------------------------------------------
 // Search Reports tab
 // ---------------------------------------------------------------
+const ALL_SEARCH_TYPES = [...INSPECTION_TYPES.map(t => t.id), "Pre-Final Inspection", "Final Inspection", "Final Inspection (Re-Inspection)"];
+const EXTERNAL_TOOL_FOR_TYPE = { "Pre-Final Inspection": "pre-final-inspection.html", "Final Inspection": "final-inspection.html", "Final Inspection (Re-Inspection)": "final-inspection.html" };
+
 function renderSearch() {
   const el = document.getElementById("tabContent");
   el.innerHTML = `
@@ -369,7 +392,7 @@ function renderSearch() {
     <div class="panel">
       <div class="form-grid">
         <div class="field"><label>Type</label>
-          <select id="seType"><option value="">All Types</option>${INSPECTION_TYPES.map(t => `<option>${esc(t.id)}</option>`).join("")}</select>
+          <select id="seType"><option value="">All Types</option>${ALL_SEARCH_TYPES.map(t => `<option>${esc(t)}</option>`).join("")}</select>
         </div>
         <div class="field"><label>SBU</label><input id="seSbu"></div>
         <div class="field"><label>Buyer</label><input id="seBuyer"></div>
@@ -379,6 +402,7 @@ function renderSearch() {
         <div class="field"><label>End Date</label><input id="seEnd" type="date"></div>
       </div>
       <button class="btn btn-primary" onclick="runSearch()">Search →</button>
+      <div class="subtle-note" style="font-family:var(--body);font-size:12px;color:var(--ink-soft);margin-top:10px;">Searches across all 6 QA Inspection types — this tool's own 4 checklist types plus Pre-Final/Final Inspection (pulled live from their own tools).</div>
     </div>
     <div class="panel">
       <table class="qa-table" id="seTable">
@@ -392,27 +416,45 @@ function renderSearch() {
 async function runSearch() {
   const tbody = document.querySelector("#seTable tbody");
   tbody.innerHTML = `<tr><td colspan="8" style="text-align:center;color:var(--ink-soft)">Searching…</td></tr>`;
+  const filters = {
+    type: document.getElementById("seType").value,
+    sbu: document.getElementById("seSbu").value,
+    buyer: document.getElementById("seBuyer").value,
+    ir: document.getElementById("seIr").value,
+    styleName: document.getElementById("seStyle").value,
+    start: document.getElementById("seStart").value,
+    end: document.getElementById("seEnd").value,
+  };
   try {
-    const filters = {
-      type: document.getElementById("seType").value,
-      sbu: document.getElementById("seSbu").value,
-      buyer: document.getElementById("seBuyer").value,
-      ir: document.getElementById("seIr").value,
-      styleName: document.getElementById("seStyle").value,
-      start: document.getElementById("seStart").value,
-      end: document.getElementById("seEnd").value,
-    };
-    const res = await qaiApi({ action: "searchInspections", filters });
-    if (!res.ok) throw new Error(res.error || "Search failed");
-    if (!res.reports.length) { tbody.innerHTML = `<tr><td colspan="8" style="text-align:center;color:var(--ink-soft)">No reports match this search.</td></tr>`; return; }
-    tbody.innerHTML = res.reports.map(r => `
+    const [ownRes, sharedRes] = await Promise.all([
+      qaiApi({ action: "searchInspections", filters }).catch(err => ({ ok: false, error: err.message, reports: [] })),
+      SHARED_QA_API_URL.indexOf("PASTE_YOUR") === 0
+        ? Promise.resolve({ ok: true, reports: [] })
+        : fetch(SHARED_QA_API_URL, { method: "POST", headers: { "Content-Type": "text/plain;charset=utf-8" }, body: JSON.stringify({ action: "searchInspections", filters }) }).then(r => r.json()).catch(err => ({ ok: false, error: err.message, reports: [] })),
+    ]);
+    const reports = [...(ownRes.reports || []), ...(sharedRes.reports || [])]
+      .sort((a, b) => new Date(b.inspectionDate || b.createdAt || 0) - new Date(a.inspectionDate || a.createdAt || 0));
+
+    if (!reports.length) {
+      const note = !ownRes.ok ? ` (${esc(ownRes.error)})` : "";
+      tbody.innerHTML = `<tr><td colspan="8" style="text-align:center;color:var(--ink-soft)">No reports match this search.${note}</td></tr>`;
+      return;
+    }
+    tbody.innerHTML = reports.map(r => {
+      let reportCell = "—";
+      if (r.pdfUrl) reportCell = `<a href="${esc(r.pdfUrl)}" target="_blank" rel="noopener">View PDF</a>`;
+      else if (EXTERNAL_TOOL_FOR_TYPE[r.type]) {
+        const q = new URLSearchParams({ sbu: r.sbu || "", buyer: r.buyer || "", ir: r.ir || "" });
+        reportCell = `<a href="${EXTERNAL_TOOL_FOR_TYPE[r.type]}?${q.toString()}" target="_blank" rel="noopener">Open in tool ↗</a>`;
+      }
+      return `
       <tr>
-        <td>${esc(r.inspectionDate || new Date(r.createdAt).toLocaleDateString())}</td>
+        <td>${esc(r.inspectionDate || (r.createdAt ? new Date(r.createdAt).toLocaleDateString() : ""))}</td>
         <td>${esc(r.type)}</td><td>${esc(r.sbu)}</td><td>${esc(r.buyer)}</td><td>${esc(r.ir)}</td><td>${esc(r.styleName)}</td>
         <td>${esc(r.overallResult)}</td>
-        <td>${r.pdfUrl ? `<a href="${esc(r.pdfUrl)}" target="_blank" rel="noopener">View PDF</a>` : "—"}</td>
-      </tr>
-    `).join("");
+        <td>${reportCell}</td>
+      </tr>`;
+    }).join("");
   } catch (err) {
     tbody.innerHTML = `<tr><td colspan="8" style="text-align:center;color:var(--reject)">${esc(err.message)}</td></tr>`;
   }

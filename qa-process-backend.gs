@@ -19,8 +19,6 @@
  *                 Heat Seal, Home Laundry, Print & Embroidery,
  *                 Physical Testing), differentiated by a TestType column
  *      Entries  — generic entries for the remaining process/QA stages
- *      QAInspections — Pre-Final / Final Inspection records (workmanship
- *                 counts, checklist results, itemized defects)
  *      QAUsers  — this module's own login (UserID, Password, Name, Role)
  * 3. Extensions -> Apps Script, paste this file in, Save.
  * 4. Deploy -> New deployment -> Web app -> Execute as: Me ->
@@ -46,13 +44,6 @@ const RARECORDS_SHEET = "RARecords";
 const QARA_SHEET = "QualityRA";
 const QARA_HEADERS = ["Timestamp","SBU","Buyer","IR","StyleNo","RADate","RAby","OrderType","ChangesJSON","RiskDecision","ActionComments"];
 const QARA_CHANGE_ROWS = ["Fabric","Pattern (Measurements)","Construction","Print","Embroidery","Wash","Additional Changes (If Any)"];
-
-// Pre-Final Inspection / Final Inspection — its own richer module (separate
-// from the generic per-stage Entries form used by every other stage), modeled
-// on real buyer/QC inspection report formats (workmanship defect counts by
-// severity, a checklist pass/fail table, and a itemized defects list).
-const INSPECTIONS_SHEET = "QAInspections";
-const INSPECTIONS_HEADERS = ["Timestamp","Stage","SBU","Buyer","IR","StyleNo","Inspector","InspectionDate","SampleSize","OverallResult","Critical","Major","Minor","CheckpointsJSON","DefectsJSON","Remarks"];
 
 function doPost(e) {
   const body = JSON.parse(e.postData.contents);
@@ -90,8 +81,13 @@ function doPost(e) {
   if (action === "saveQualityRA") return saveQualityRA_(body.entry);
   if (action === "listQualityRA") return jsonResponse_({ ok: true, entries: listQualityRA_() });
 
-  if (action === "saveInspectionRecord") return saveInspectionRecord_(body.entry);
-  if (action === "listInspectionRecords") return jsonResponse_({ ok: true, records: listInspectionRecords_(body.stage) });
+  if (action === "listPreFinal") return jsonResponse_({ ok: true, reports: listInspectionReports_(PREFINAL_SHEET) });
+  if (action === "savePreFinal") return saveInspectionReports_(PREFINAL_SHEET, body.reports, "prefinal");
+  if (action === "listFinal") return jsonResponse_({ ok: true, reports: listInspectionReports_(FINAL_SHEET) });
+  if (action === "saveFinal") return saveInspectionReports_(FINAL_SHEET, body.reports, "final");
+  if (action === "uploadImage") return uploadImage_(body.base64, body.filename, body.mimeType);
+  if (action === "fetchImageBase64") return fetchImageBase64_(body.fileId);
+  if (action === "searchInspections") return jsonResponse_({ ok: true, reports: searchPreFinalAndFinal_(body.filters) });
 
   return jsonResponse_({ ok: false, error: "Unrecognized request" });
 }
@@ -388,59 +384,136 @@ function listQualityRA_() {
   return out.reverse();
 }
 
-// ---------- Pre-Final / Final Inspection module ----------
-// Saves the full inspection record (sample size, workmanship counts by
-// severity, checklist results, itemized defects), AND mirrors a summary
-// row into Entries (stage "prefinal"/"final") so Style Tracking's rollup
-// and the Overview stage-status chart pick it up like every other stage.
+// ---------- Pre-Final / Final Inspection (AQL tool) ----------
+// This is a full-overwrite store (the tool lets users edit/delete
+// individual reports), same pattern as the site's original QC
+// Inspection backend — one JSON blob per report row. Pre-Final and
+// Final Inspection are managed as two separate tools/files, each with
+// its own sheet, so saving one never touches the other's data. Every
+// save also rebuilds ONLY that stage's rows in Entries so Style
+// Tracking's rollup reflects the current set of reports exactly.
+const PREFINAL_SHEET = "PreFinalReports";   // Pre-Final Inspection only
+const FINAL_SHEET = "FinalReports";         // Final Inspection only
 
-function saveInspectionRecord_(entry) {
-  entry = entry || {};
-  const sheet = getSheet_(INSPECTIONS_SHEET, INSPECTIONS_HEADERS);
-  sheet.appendRow([
-    new Date(), entry.stage || "", entry.sbu || "", entry.buyer || "", entry.ir || "", entry.styleNo || "",
-    entry.inspector || "", entry.inspectionDate || "", entry.sampleSize || "", entry.overallResult || "",
-    entry.critical || 0, entry.major || 0, entry.minor || 0,
-    JSON.stringify(entry.checkpoints || []), JSON.stringify(entry.defects || []), entry.remarks || ""
-  ]);
+// Every photo attached to a checkpoint (any section, any stage) is
+// uploaded here to Google Drive and only the resulting URL is stored
+// in the report JSON — keeps Sheets cells small and photos full-res.
+const INSPECTION_PHOTOS_FOLDER = "QA Inspection Photos";
 
-  const statusMap = { "Pass": "Done", "Fail": "Open" };
-  const sample = Number(entry.sampleSize) || 0;
-  const defectTotal = (Number(entry.critical) || 0) + (Number(entry.major) || 0) + (Number(entry.minor) || 0);
-  const score = sample ? (100 - (defectTotal / sample) * 100).toFixed(1) : "";
-  saveEntry_({
-    stage: entry.stage || "",
-    orderNo: "",
-    styleNo: entry.styleNo || "",
-    irNo: entry.ir || "",
-    inspector: entry.inspector || "",
-    status: statusMap[entry.overallResult] || "In Progress",
-    score: score,
-    notes: entry.remarks || ""
-  });
-
-  return jsonResponse_({ ok: true });
+function uploadImage_(base64, filename, mimeType) {
+  try {
+    if (!base64) throw new Error("No image data received");
+    var folders = DriveApp.getFoldersByName(INSPECTION_PHOTOS_FOLDER);
+    var folder = folders.hasNext() ? folders.next() : DriveApp.createFolder(INSPECTION_PHOTOS_FOLDER);
+    var bytes = Utilities.base64Decode(base64);
+    var blob = Utilities.newBlob(bytes, mimeType || "image/jpeg", filename || ("photo_" + Date.now() + ".jpg"));
+    var file = folder.createFile(blob);
+    file.setSharing(DriveApp.Access.ANYONE_WITH_LINK, DriveApp.Permission.VIEW);
+    var id = file.getId();
+    var url = "https://drive.google.com/uc?export=view&id=" + id;
+    return jsonResponse_({ ok: true, url: url, fileId: id });
+  } catch (e) {
+    return jsonResponse_({ ok: false, error: String(e) });
+  }
 }
 
-function listInspectionRecords_(stage) {
-  const sheet = getSheet_(INSPECTIONS_SHEET, INSPECTIONS_HEADERS);
+// Fetches a previously-uploaded photo's bytes server-side (Apps Script
+// isn't subject to browser CORS) so the PDF report can embed it
+// directly, instead of relying on the browser being able to read
+// pixel data back out of a Drive-hosted <img>.
+function fetchImageBase64_(fileId) {
+  try {
+    var file = DriveApp.getFileById(fileId);
+    var blob = file.getBlob();
+    return jsonResponse_({ ok: true, base64: Utilities.base64Encode(blob.getBytes()), mimeType: blob.getContentType() });
+  } catch (e) {
+    return jsonResponse_({ ok: false, error: String(e) });
+  }
+}
+
+function listInspectionReports_(sheetName) {
+  const sheet = getSheet_(sheetName, ["id", "json"]);
   const rows = sheet.getDataRange().getValues();
   const out = [];
   for (let i = 1; i < rows.length; i++) {
-    const r = rows[i];
-    if (!r[0]) continue;
-    if (stage && r[1] !== stage) continue;
-    let checkpoints = [], defects = [];
-    try { checkpoints = JSON.parse(r[13] || "[]"); } catch (e) {}
-    try { defects = JSON.parse(r[14] || "[]"); } catch (e) {}
-    out.push({
-      timestamp: r[0], stage: r[1], sbu: r[2], buyer: r[3], ir: r[4], styleNo: r[5],
-      inspector: r[6], inspectionDate: r[7], sampleSize: r[8], overallResult: r[9],
-      critical: r[10], major: r[11], minor: r[12], checkpoints: checkpoints, defects: defects,
-      remarks: r[15]
-    });
+    if (!rows[i][1]) continue;
+    try { out.push(JSON.parse(rows[i][1])); } catch (e) {}
   }
-  return out.reverse();
+  return out;
+}
+
+function saveInspectionReports_(sheetName, reports, stage) {
+  reports = reports || [];
+  const sheet = getSheet_(sheetName, ["id", "json"]);
+  const lastRow = sheet.getLastRow();
+  if (lastRow > 1) sheet.getRange(2, 1, lastRow - 1, 2).clearContent();
+  if (reports.length) {
+    const rows = reports.map(function (r) { return [r.id || Utilities.getUuid(), JSON.stringify(r)]; });
+    sheet.getRange(2, 1, rows.length, 2).setValues(rows);
+  }
+  resyncEntriesForStage_(stage, reports);
+  return jsonResponse_({ ok: true, count: reports.length });
+}
+
+// Rebuilds Entries rows for ONE stage only ("prefinal" or "final"),
+// leaving every other stage's rows (including the other inspection
+// file's) completely untouched.
+function resyncEntriesForStage_(stage, reports) {
+  const sheet = getSheet_(ENTRIES_SHEET, ENTRIES_HEADERS);
+  const data = sheet.getDataRange().getValues();
+  const keep = [ENTRIES_HEADERS];
+  for (let i = 1; i < data.length; i++) {
+    if (data[i][1] === stage) continue;
+    keep.push(data[i]);
+  }
+  reports.filter(function (r) { return r.status === "Submitted"; }).forEach(function (r) {
+    const h = r.header || {};
+    keep.push([
+      h.date ? new Date(h.date) : new Date(),
+      stage, "", h.styleName || "", h.ir || "",
+      h.inspectorName || "",
+      r.result === "PASS" ? "Done" : (r.result === "FAIL" ? "Open" : "In Progress"),
+      r.result || "",
+      r.remarks || ""
+    ]);
+  });
+  sheet.clearContents();
+  sheet.getRange(1, 1, keep.length, ENTRIES_HEADERS.length).setValues(keep);
+}
+
+// ---------- Shared search (feeds qa-inspection.html's unified Search Reports) ----------
+// Pre-Final/Final PDFs are generated on-demand in-browser, not stored
+// in Drive, so there's no pdfUrl here — the frontend instead offers an
+// "Open in tool" link (with sbu/buyer/ir prefilled) for these rows.
+
+function searchPreFinalAndFinal_(filters) {
+  filters = filters || {};
+  const out = [];
+  listInspectionReports_(PREFINAL_SHEET).forEach(function (r) { out.push(normalizeReportForSearch_(r)); });
+  listInspectionReports_(FINAL_SHEET).forEach(function (r) { out.push(normalizeReportForSearch_(r)); });
+  return out.filter(function (r) { return matchesSearchFilters_(r, filters); });
+}
+
+function normalizeReportForSearch_(r) {
+  const h = r.header || {};
+  return {
+    type: h.inspectionType || "Final Inspection",
+    sbu: h.sbu || "", buyer: h.buyer || "", ir: h.ir || "", styleName: h.styleName || "",
+    inspectionDate: h.date || "", inspector: h.inspectorName || "",
+    overallResult: r.result || "", createdAt: r.savedAt || "",
+    pdfUrl: "" // no stored PDF for these — see note above
+  };
+}
+
+function matchesSearchFilters_(r, f) {
+  if (f.type && r.type !== f.type) return false;
+  if (f.sbu && String(r.sbu).toLowerCase().indexOf(String(f.sbu).toLowerCase()) === -1) return false;
+  if (f.buyer && String(r.buyer).toLowerCase().indexOf(String(f.buyer).toLowerCase()) === -1) return false;
+  if (f.ir && String(r.ir).toLowerCase().indexOf(String(f.ir).toLowerCase()) === -1) return false;
+  if (f.styleName && String(r.styleName).toLowerCase().indexOf(String(f.styleName).toLowerCase()) === -1) return false;
+  if (f.start && r.inspectionDate && r.inspectionDate < f.start) return false;
+  if (f.end && r.inspectionDate && r.inspectionDate > f.end) return false;
+  return true;
 }
 
 // ---------- Overview aggregation ----------
