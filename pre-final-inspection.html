@@ -1,0 +1,1666 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>Pre-Final Inspection — Taher Consulting</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@500;600;700&family=Inter:wght@400;500;600;700&family=IBM+Plex+Mono:wght@400;500;600&display=swap" rel="stylesheet">
+<script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.4/chart.umd.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf-autotable/3.8.2/jspdf.plugin.autotable.min.js"></script>
+<style>
+:root{
+  --bg:#0F1216; --panel:#171B21; --panel-2:#1D222A; --border:#2A303B; --border-soft:#232833;
+  --text:#E7EAEE; --muted:#8A93A3; --muted-2:#5E6675;
+  --brand:#2DD4BF; --brand-dim:#164E48;
+  --crit:#EF4444; --crit-dim:#3A1B1B;
+  --maj:#F5A524; --maj-dim:#3A2A10;
+  --min:#38BDF8; --min-dim:#132A38;
+  --good:#34D399;
+  --radius:10px;
+  --shadow: 0 1px 0 rgba(255,255,255,0.02) inset, 0 8px 24px rgba(0,0,0,0.35);
+}
+*{box-sizing:border-box;}
+html,body{margin:0;padding:0;}
+body{background:radial-gradient(1200px 500px at 90% -10%, rgba(45,212,191,0.06), transparent), var(--bg); color:var(--text); font-family:'Inter',system-ui,sans-serif; -webkit-font-smoothing:antialiased; min-height:100vh;}
+.mono{font-family:'IBM Plex Mono',monospace;}
+.display{font-family:'Space Grotesk',sans-serif;}
+::-webkit-scrollbar{width:10px;height:10px;}
+::-webkit-scrollbar-track{background:transparent;}
+::-webkit-scrollbar-thumb{background:#2A303B;border-radius:8px;}
+#app{max-width:1320px;margin:0 auto;padding:20px 22px 80px;}
+.topbar{display:flex;align-items:center;justify-content:space-between;gap:16px;flex-wrap:wrap;padding-bottom:18px;margin-bottom:18px;border-bottom:1px solid var(--border-soft);}
+.brand{display:flex;align-items:center;gap:12px;}
+.brand-mark{width:38px;height:38px;border-radius:9px;background:linear-gradient(155deg,var(--brand),#0EA5A0);display:flex;align-items:center;justify-content:center;font-family:'Space Grotesk';font-weight:700;color:#06201D;font-size:13px;box-shadow:0 4px 14px rgba(45,212,191,0.25);flex:none;}
+.brand h1{font-family:'Space Grotesk';font-size:16.5px;font-weight:600;margin:0;letter-spacing:.2px;}
+.brand .sub{font-size:11.5px;color:var(--muted);margin-top:1px;}
+.tabs{display:flex;gap:6px;background:var(--panel);padding:4px;border-radius:11px;border:1px solid var(--border-soft);}
+.tab-btn{border:none;background:transparent;color:var(--muted);font-family:'Inter';font-weight:600;font-size:13px;padding:8px 15px;border-radius:8px;cursor:pointer;transition:.15s;}
+.tab-btn:hover{color:var(--text);}
+.tab-btn.active{background:var(--panel-2);color:var(--text);box-shadow:0 0 0 1px var(--border);}
+.panel{background:var(--panel);border:1px solid var(--border-soft);border-radius:var(--radius);box-shadow:var(--shadow);}
+.panel-pad{padding:18px 20px;}
+.row{display:flex;gap:14px;flex-wrap:wrap;}
+h2.section-title{font-family:'Space Grotesk';font-size:14px;font-weight:600;margin:0 0 14px;display:flex;align-items:center;gap:8px;color:var(--text);}
+h2.section-title .tag{font-family:'IBM Plex Mono';font-size:10px;color:var(--muted);font-weight:400;background:var(--panel-2);border:1px solid var(--border);padding:2px 7px;border-radius:5px;}
+.kpi-grid{display:grid;grid-template-columns:repeat(5,1fr);gap:12px;margin-bottom:16px;}
+@media (max-width:1000px){.kpi-grid{grid-template-columns:repeat(2,1fr);}}
+.kpi{background:var(--panel);border:1px solid var(--border-soft);border-radius:var(--radius);padding:14px 16px;position:relative;overflow:hidden;}
+.kpi .k-label{font-size:11px;color:var(--muted);text-transform:uppercase;letter-spacing:.06em;font-weight:600;}
+.kpi .k-value{font-family:'Space Grotesk';font-size:26px;font-weight:700;margin-top:6px;}
+.kpi .k-sub{font-size:11px;color:var(--muted-2);margin-top:3px;font-family:'IBM Plex Mono';}
+.kpi .k-bar{position:absolute;left:0;top:0;bottom:0;width:3px;}
+.dash-grid{display:grid;grid-template-columns:1.4fr 1fr;gap:14px;margin-top:14px;}
+@media (max-width:980px){.dash-grid{grid-template-columns:1fr;}}
+.chart-wrap{position:relative;height:260px;}
+.chart-wrap.tall{height:300px;}
+.filters{display:flex;gap:10px;flex-wrap:wrap;align-items:center;margin-bottom:16px;}
+select, input[type=text], input[type=number], input[type=date], textarea{background:var(--panel-2);border:1px solid var(--border);color:var(--text);border-radius:7px;padding:7px 10px;font-family:'Inter';font-size:12.5px;outline:none;}
+select:focus, input:focus, textarea:focus{border-color:var(--brand);}
+.field-label{font-size:10.5px;color:var(--muted);text-transform:uppercase;letter-spacing:.05em;font-weight:600;display:block;margin-bottom:5px;}
+.dept-toggle{display:flex;border:1px solid var(--border);border-radius:8px;overflow:hidden;}
+.dept-toggle button{background:var(--panel-2);border:none;color:var(--muted);font-size:12.5px;font-weight:600;padding:7px 14px;cursor:pointer;font-family:'Inter';}
+.dept-toggle button.active{background:var(--brand);color:#06201D;}
+.empty{text-align:center;padding:50px 20px;color:var(--muted);}
+.empty .big{font-size:34px;margin-bottom:8px;}
+.empty .t1{font-family:'Space Grotesk';font-size:15px;color:var(--text);font-weight:600;margin-bottom:4px;}
+.empty .t2{font-size:12.5px;}
+.btn{background:var(--brand);color:#06201D;border:none;border-radius:8px;padding:9px 16px;font-weight:700;font-size:12.5px;cursor:pointer;font-family:'Inter';transition:.15s;}
+.btn:hover{filter:brightness(1.08);}
+.btn.ghost{background:transparent;color:var(--text);border:1px solid var(--border);font-weight:600;}
+.btn.ghost:hover{border-color:var(--brand);}
+.btn.danger{background:transparent;color:#F87171;border:1px solid #4A2323;}
+.btn.small{padding:5px 10px;font-size:11.5px;border-radius:6px;}
+.header-grid{display:grid;grid-template-columns:repeat(4,1fr);gap:12px;}
+@media (max-width:900px){.header-grid{grid-template-columns:repeat(2,1fr);}}
+.header-grid .f{display:flex;flex-direction:column;}
+.header-grid input, .header-grid select{width:100%;}
+.badge{display:inline-block;padding:3px 10px;border-radius:12px;font-size:11px;font-weight:700;color:#06201D;}
+.badge.pass{background:var(--good);}
+.badge.fail{background:var(--crit);color:#fff;}
+.aql-preview{display:grid;grid-template-columns:repeat(4,1fr);gap:10px;margin:14px 0;}
+.aql-cell{background:var(--panel-2);border:1px solid var(--border);border-radius:8px;padding:10px 12px;text-align:center;}
+.aql-cell .al{font-size:10px;color:var(--muted);text-transform:uppercase;}
+.aql-cell .av{font-family:'Space Grotesk';font-size:20px;font-weight:700;margin-top:3px;}
+.defect-row{display:flex;gap:8px;align-items:center;margin-bottom:8px;flex-wrap:wrap;}
+.defect-row select{flex:2;min-width:220px;}
+.defect-row select.sev{flex:1;min-width:100px;}
+.defect-row input{flex:1;min-width:70px;}
+table.log{width:100%;border-collapse:collapse;font-size:12.5px;}
+table.log th{text-align:left;font-size:10.5px;text-transform:uppercase;letter-spacing:.05em;color:var(--muted);padding:9px 10px;border-bottom:1px solid var(--border);font-weight:600;}
+table.log td{padding:10px;border-bottom:1px solid var(--border-soft);vertical-align:middle;}
+table.log tr:hover td{background:rgba(255,255,255,0.015);}
+.pill{font-family:'IBM Plex Mono';font-size:10.5px;padding:3px 8px;border-radius:100px;border:1px solid var(--border);}
+.pill.prefinal{color:var(--min);border-color:#164450;background:var(--min-dim);}
+.pill.final{color:#A78BFA;border-color:#332a55;background:#261F3D;}
+.actions-cell{display:flex;gap:6px;}
+.modal-bg{position:fixed;inset:0;background:rgba(6,8,11,0.7);backdrop-filter:blur(2px);display:flex;align-items:flex-start;justify-content:center;padding:40px 16px;z-index:50;overflow:auto;}
+.modal{background:var(--panel);border:1px solid var(--border);border-radius:12px;max-width:920px;width:100%;box-shadow:0 30px 60px rgba(0,0,0,0.5);}
+.modal-head{display:flex;justify-content:space-between;align-items:center;padding:16px 20px;border-bottom:1px solid var(--border-soft);}
+.modal-body{padding:18px 20px;max-height:70vh;overflow:auto;}
+.close-x{cursor:pointer;color:var(--muted);font-size:18px;background:none;border:none;}
+.close-x:hover{color:var(--text);}
+.toast{position:fixed;bottom:20px;right:20px;background:var(--panel-2);border:1px solid var(--border);padding:11px 16px;border-radius:9px;font-size:12.5px;box-shadow:0 10px 30px rgba(0,0,0,.4);display:flex;align-items:center;gap:8px;z-index:100;}
+.toast .d{width:7px;height:7px;border-radius:50%;background:var(--good);}
+.subtle-note{font-size:11px;color:var(--muted-2);margin-top:8px;line-height:1.5;}
+::placeholder{color:var(--muted-2);}
+.pic-widget{display:flex;flex-direction:column;gap:6px;}
+.pic-thumbs{display:flex;flex-wrap:wrap;gap:6px;}
+.pic-thumb{position:relative;width:44px;height:44px;border-radius:6px;overflow:hidden;border:1px solid var(--border);}
+.pic-thumb img{width:100%;height:100%;object-fit:cover;cursor:pointer;}
+.pic-thumb .pic-del{position:absolute;top:0;right:0;background:rgba(0,0,0,.6);color:#fff;border:none;width:15px;height:15px;line-height:14px;font-size:11px;cursor:pointer;padding:0;}
+.rep-table{width:100%;border-collapse:collapse;font-size:12px;margin-bottom:6px;}
+.rep-table th{text-align:left;font-size:10px;text-transform:uppercase;letter-spacing:.04em;color:var(--muted);padding:7px 8px;border-bottom:1px solid var(--border);font-weight:600;}
+.rep-table td{padding:7px 8px;border-bottom:1px solid var(--border-soft);vertical-align:middle;}
+.rep-table input,.rep-table select,.rep-table textarea{width:100%;font-size:12px;padding:5px 7px;}
+.rep-group-hd td{background:var(--panel-2);font-weight:700;color:var(--brand);font-size:11px;text-transform:uppercase;letter-spacing:.04em;}
+.result-select.PASS{color:var(--good);} .result-select.FAIL{color:var(--crit);}
+.gallery{display:grid;grid-template-columns:repeat(auto-fill,minmax(140px,1fr));gap:12px;}
+.gallery figure{margin:0;background:var(--panel-2);border:1px solid var(--border);border-radius:8px;overflow:hidden;}
+.gallery img{width:100%;height:110px;object-fit:cover;display:block;cursor:pointer;}
+.gallery figcaption{font-size:10.5px;color:var(--muted);padding:6px 8px;}
+.section-block{margin-bottom:16px;}
+.row-add-btn{margin-top:8px;}
+@media print{
+  #tc-guard-bar,.topbar,.tabs,.filters,.btn,.close-x{display:none !important;}
+  body{background:#fff;color:#000;}
+  .panel,.modal{border:1px solid #ccc;box-shadow:none;background:#fff;color:#000;}
+  .modal-bg{position:static;background:none;backdrop-filter:none;padding:0;}
+}
+body.pdf-mode #tc-guard-bar, body.pdf-mode .topbar, body.pdf-mode .tabs, body.pdf-mode .filters,
+body.pdf-mode .btn, body.pdf-mode .close-x, body.pdf-mode input[type=file]{display:none !important;}
+body.pdf-mode{background:#fff;color:#000;}
+body.pdf-mode .panel, body.pdf-mode .modal{border:1px solid #ccc;box-shadow:none;background:#fff;color:#000;}
+body.pdf-mode .rep-table th, body.pdf-mode .field-label{color:#555;}
+</style>
+</head>
+<body>
+
+<div id="tc-guard-bar" style="background:#1B211D;color:#F1F0EA;font-family:'IBM Plex Mono',monospace;font-size:12.5px;letter-spacing:.04em;padding:10px 20px;display:flex;justify-content:space-between;align-items:center;position:sticky;top:0;z-index:9999">
+  <a href="dashboard.html" style="color:#F1F0EA;text-decoration:none">&larr; Back to Dashboard</a>
+  <span>TAHER CONSULTING &middot; Module 7 &middot; Pre-Final Inspection</span>
+  <span>
+    <span id="tc-guard-user" style="color:#A9832F"></span>
+    <span id="tc-guest-badge" style="display:none;background:#B84226;color:#F1F0EA;padding:3px 9px;border-radius:2px;margin-left:10px;font-size:10.5px;letter-spacing:.06em">VIEW ONLY &middot; GUEST</span>
+  </span>
+</div>
+<script>
+window.TC_IS_GUEST = false;
+(function(){
+  var raw = localStorage.getItem("tc_session") || sessionStorage.getItem("tc_session");
+  if (!raw) {
+    window.location.href = "login.html";
+  } else {
+    try {
+      var s = JSON.parse(raw);
+      window.TC_IS_GUEST = /guest|visitor/i.test(s.role || "");
+      document.addEventListener("DOMContentLoaded", function(){
+        var el = document.getElementById("tc-guard-user");
+        if (el) el.textContent = s.name || "";
+        var badge = document.getElementById("tc-guest-badge");
+        if (badge && window.TC_IS_GUEST) badge.style.display = "inline-block";
+      });
+    } catch(e) {}
+  }
+})();
+function tcBlockIfGuest(actionLabel) {
+  if (window.TC_IS_GUEST) {
+    alert("You're signed in as a Guest (View Only). " + (actionLabel || "This action") + " is disabled for guest accounts.\n\nAsk an administrator for a full account to " + (actionLabel ? actionLabel.toLowerCase() : "make changes") + ".");
+    return true;
+  }
+  return false;
+}
+</script>
+<script src="js/module-auth.js"></script>
+<script>
+tcInitModuleAuth({
+  moduleKey: "prefinal",
+  sheetName: "PreFinalUsers",
+  displayLabel: "Pre-Final Inspection"
+});
+</script>
+
+<div id="app"></div>
+
+<script>
+/* ============================= REFERENCE DATA ============================= */
+
+// ISO 2859-1 General Inspection Level II sample-size-by-lot-size table.
+// Capped at 315 for very large lots — common garment-industry practice
+// (matches the sample buyer reports this was built from). Edit here if a
+// buyer requires the uncapped standard sizes (500/800/1250).
+const AQL_LOT_TABLE = [
+  {min:2,max:8,code:'A',size:2},{min:9,max:15,code:'B',size:3},{min:16,max:25,code:'C',size:5},
+  {min:26,max:50,code:'D',size:8},{min:51,max:90,code:'E',size:13},{min:91,max:150,code:'F',size:20},
+  {min:151,max:280,code:'G',size:32},{min:281,max:500,code:'H',size:50},{min:501,max:1200,code:'J',size:80},
+  {min:1201,max:3200,code:'K',size:125},{min:3201,max:10000,code:'L',size:200},{min:10001,max:35000,code:'M',size:315},
+  {min:35001,max:150000,code:'N',size:315},{min:150001,max:500000,code:'P',size:315},{min:500001,max:Infinity,code:'Q',size:315}
+];
+// Ac (accept) / Re (reject) numbers, Normal inspection, single sampling.
+const AQL_ACCEPT_TABLE = [
+  {size:2,  a1_0:0,r1_0:1, a1_5:0,r1_5:1, a2_5:0,r2_5:1, a4_0:0,r4_0:1},
+  {size:3,  a1_0:0,r1_0:1, a1_5:0,r1_5:1, a2_5:0,r2_5:1, a4_0:0,r4_0:1},
+  {size:5,  a1_0:0,r1_0:1, a1_5:0,r1_5:1, a2_5:0,r2_5:1, a4_0:1,r4_0:2},
+  {size:8,  a1_0:0,r1_0:1, a1_5:0,r1_5:1, a2_5:1,r2_5:2, a4_0:1,r4_0:2},
+  {size:13, a1_0:0,r1_0:1, a1_5:1,r1_5:2, a2_5:1,r2_5:2, a4_0:2,r4_0:3},
+  {size:20, a1_0:1,r1_0:2, a1_5:1,r1_5:2, a2_5:2,r2_5:3, a4_0:3,r4_0:4},
+  {size:32, a1_0:1,r1_0:2, a1_5:2,r1_5:3, a2_5:3,r2_5:4, a4_0:5,r4_0:6},
+  {size:50, a1_0:2,r1_0:3, a1_5:3,r1_5:4, a2_5:5,r2_5:6, a4_0:7,r4_0:8},
+  {size:80, a1_0:2,r1_0:3, a1_5:3,r1_5:4, a2_5:5,r2_5:6, a4_0:7,r4_0:8},
+  {size:125,a1_0:3,r1_0:4, a1_5:5,r1_5:6, a2_5:7,r2_5:8, a4_0:10,r4_0:11},
+  {size:200,a1_0:5,r1_0:6, a1_5:7,r1_5:8, a2_5:10,r2_5:11, a4_0:14,r4_0:15},
+  {size:315,a1_0:7,r1_0:8, a1_5:10,r1_5:11, a2_5:14,r2_5:15, a4_0:21,r4_0:22},
+  {size:500,a1_0:10,r1_0:11, a1_5:14,r1_5:15, a2_5:21,r2_5:22, a4_0:21,r4_0:22},
+  {size:800,a1_0:14,r1_0:15, a1_5:21,r1_5:22, a2_5:21,r2_5:22, a4_0:21,r4_0:22},
+  {size:1250,a1_0:21,r1_0:22, a1_5:21,r1_5:22, a2_5:21,r2_5:22, a4_0:21,r4_0:22}
+];
+
+const DEFECT_LIBRARY = [
+  {category:'Assembling', code:'1C2-18', name:'Asymmetrical/Uneven or Deformed shape', sev:'Major'},
+  {category:'Assembling', code:'1C2-16', name:'Uneven hem (Major >1/4", Minor <=1/4")', sev:'Minor'},
+  {category:'Finishing', code:'1C4-8', name:'Oil stain', sev:'Major'},
+  {category:'Finishing', code:'1C4-14', name:'Dirty/Glue/Pencil/Pen/Chalk mark, Dust', sev:'Minor'},
+  {category:'Stitch and seam', code:'1C1-5', name:'Broken stitches on chain stitching', sev:'Major'},
+  {category:'Stitch and seam', code:'1C1-4', name:'Skipped stitches on lock stitching', sev:'Major'},
+  {category:'Fabric', code:'FAB-1', name:'Fabric defect (hole/slub/misweave)', sev:'Major'},
+  {category:'Measurement', code:'MEAS-1', name:'Out of tolerance measurement', sev:'Major'},
+  {category:'Labeling', code:'LBL-1', name:'Wrong or missing care/size label', sev:'Major'},
+  {category:'Labeling', code:'LBL-2', name:'Missing/wrong component (label/button/print)', sev:'Critical'},
+  {category:'Packing', code:'PACK-1', name:'Incorrect carton marking', sev:'Minor'},
+  {category:'Others', code:'OTH-1', name:'Other defect (specify in remarks)', sev:'Minor'},
+];
+
+const SEV_META = {
+  Critical:{label:'Critical', color:'var(--crit)', hex:'#EF4444', dim:'var(--crit-dim)'},
+  Major:{label:'Major', color:'var(--maj)', hex:'#F5A524', dim:'var(--maj-dim)'},
+  Minor:{label:'Minor', color:'var(--min)', hex:'#38BDF8', dim:'var(--min-dim)'},
+};
+
+// ---- Report structure config (matches JMF_PreFinal_Final_Inspection_Report.xlsx) ----
+const INSPECTION_TYPES = ['Pre-Final Inspection'];
+const SAMPLING_PLANS = ['Single','Double'];
+const INSPECTION_LEVELS = ['General I','General II','General III','S-1','S-2','S-3','S-4'];
+const AQL_OPTIONS = [0,0.065,0.1,0.15,0.25,0.4,0.65,1.0,1.5,2.5,4.0,6.5,10];
+const DEFECT_GROUPS = ['Critical Red Flag','Group-A','Group-B','Group-C','Group-D'];
+const DEFECT_CATEGORIES = ['Assembling / Sewing','Finishing','Stitch & Seam','Fabric / Material','Embellishment / Print / Trims','Measurement-related','Packing-related','Other'];
+const SIGNOFF_ROLES = ['Inspector','Factory QA / Representative','Quality Manager (JMF)','Buyer / Client Representative'];
+
+const QUANTITY_PACKING_CHECKPOINTS = [
+  'Available Quantity Check (vs. Packing List / Order)','Shipment Quantity Tolerance (Short / Over shipment)',
+  'Random Carton Selection','Carton Assortment, Dimensions & Weight','Outer Packaging Conformity (carton seal / tape)',
+  'Shipping Front Marks','Shipping Side Marks','Carton Markings / Barcode Check','Retail Carton Sticker (if applicable)',
+  'Unit Packing (polybag, folding, hangtag placement)','Inner Packing (if applicable)','PPS / Black Seal Availability',
+  'PPS Approval Comment Availability','SHS / Gold Seal Availability (hard line only)','SHS Approval Comment Availability',
+  'Sealed Good Cartons (after inspection)','Carton Drop Test','Country of Origin / Compliance Labelling'
+];
+
+const TEST_CHECKPOINT_GROUPS = [
+  { group: 'Style / Construction / Colour', items: [
+    'Product Style / Construction (vs. PP sample)','Product Colours (vs. approved shade band)','Colour Shading Check',
+    'Handfeel Check (vs. approved standard)','Wash / Dry Process Check (if applicable)','GSM Check'
+  ]},
+  { group: 'Artwork & Labels', items: [
+    'Logo General Quality & Design','Logo Dimensions (Width & Height)','Logo Check / Elongation & Stretch Test','Care Label',
+    'Size Label / Size on Label Check','Barcode Label / Barcode Scanning Test','Information on Label & Polybag Sticker',
+    'Information on Carton Label & PO','Information on Product, Carton Sticker & Polybag'
+  ]},
+  { group: 'Functional & Safety Tests', items: [
+    'Metal / Needle Detection Check (with small parts)','Needle Damage Check','Stitch Density Check','Seam Strength Test',
+    'Symmetry Check','Odor Check','Moisture / Aqua Boy Check','Button Check','Pull Test (button/snap/hook/bar/handle/eyelet)',
+    'Zipper Test','Pocket Check','Seam Pockets Check (leggings)','Elastic & Seams Resistance at Waistband','Elastic Recovery Check',
+    'Rubbing (Colour Fastness) Test - Dry & Wet','Dye Line Check (seamless product)','Lamination / Bonding Check','Binding Check',
+    'Shedding Test (fleece fabric)','Bra Cup Check (sport bra only)','Hygiene Sticker Check (underwear only)',
+    'Pattern / Stripe / Grid Check','Model / Dummy Fitting Check','Ironing, Washing & Treatment Check','Carton Drop Test'
+  ]},
+  { group: 'Test Reports', isReport: true, items: [
+    'Fabric Test Report (In-House)','Fabric Test Report (3rd Party)','Garment Test Report (In-House)','Garment Test Report (3rd Party)',
+    'Cross-Staining Test','Printing Durability Test','Embroidery Durability Test','Heat-Seal Durability Test','AOP Durability Test',
+    'RM Test Report (In-House & 3rd Party)'
+  ]},
+];
+function flatTestCheckpoints(){
+  const out = [];
+  TEST_CHECKPOINT_GROUPS.forEach(g => g.items.forEach(label => out.push({ group: g.group, label, isReport: !!g.isReport })));
+  return out;
+}
+
+/* ============================= STATE ============================= */
+
+function emptyHeader(){
+  return {
+    sbu:'', buyer:'', ir:'', styleId:'', styleName:'', styleDescription:'', item:'', productDept:'', season:'',
+    date:new Date().toISOString().slice(0,10), startTime:'', inspectorName:'', factoryName:'',
+    inspectionType:'Pre-Final Inspection', samplingPlan:'Single', inspectionLevel:'General II',
+    poNo:'', poQty:'', orderQty:'', offerQty:'',
+    aqlCritical:0, aqlMajor:2.5, aqlMinor:4.0, inspectionLevelMeasurements:'S-2',
+  };
+}
+function emptyReportState(){
+  return {
+    header: emptyHeader(),
+    allQtyCheck: { comments:'', result:'', pictures:[] },
+    cartonSelection: { totalCarton:'', selectedCartonNo:'', pictures:[] },
+    colorQty: [],
+    sampleOverview: [ { styleId:'', styleName:'', orderQty:'', availableQty:'', cartonsAvailable:'', cartonsSelected:'', actualSampleInspected:'', remarks:'' } ],
+    cartonQtySelection: { totalCartonsPackingList:'', randomSelectionPerformed:'Yes', selectedCartonNumbers:'' },
+    packingCheckpoints: QUANTITY_PACKING_CHECKPOINTS.map(label => ({ label, result:'', comments:'', pictures:[] })),
+    cartonDims: [ { poNumber:'', cartonNo:'', dims:'', comments:'' } ],
+    defects: [],
+    testCheckpoints: flatTestCheckpoints().map(c => ({ group:c.group, label:c.label, isReport:c.isReport, applicable:'Yes', result:'', comments:'', testReportNumber:'', pictures:[] })),
+    measurements: { poms: [ { description:'', size:'', tolMinus:'', tolPlus:'', spec:'', m:['','','','',''] } ], pictures:[], totalSampleSize:'', totalPOMsMeasured:'', maxAllowedOOT:'' },
+    signOff: SIGNOFF_ROLES.map(role => ({ role, name:'', signature:'' })),
+    remarks:'',
+  };
+}
+
+let state = Object.assign({
+  reports: [],
+  storageReady: false,
+  tab: 'dashboard',
+  dashRange: '90',
+  dashType: 'All',
+  editingId: null,
+  viewingId: null,
+  toast: null,
+  sbuOptions: [],
+  buyerOptions: [],
+  irOptions: [],
+  styleDetail: null,
+}, emptyReportState());
+
+/* ============================= STORAGE ============================= */
+
+// Same Google Apps Script + Sheet that powers the QA Process /
+// Style Tracking dashboard — this tool reads its OrderInfo (SBU→
+// Buyer→IR) master data and writes its results into the same
+// spreadsheet, so Style Tracking's rollup sees Pre-Final/Final
+// Inspection entries too.
+const QA_API_URL = "https://script.google.com/macros/s/AKfycbwsPJcvf_0pa3Pyt3fhR3AOOo5TfDkoiGq_gwDpH9Tgpd5uJ2MQM_rzhFHIavPtnUakxw/exec";
+
+async function qaApi(payload){
+  if (QA_API_URL.indexOf("PASTE_YOUR") === 0) throw new Error("Backend not connected yet");
+  const res = await fetch(QA_API_URL, {
+    method: "POST",
+    headers: { "Content-Type": "text/plain;charset=utf-8" },
+    body: JSON.stringify(payload),
+  });
+  return res.json();
+}
+
+async function loadReports(){
+  try{
+    const res = await qaApi({ action: "listPreFinal" });
+    if (!res.ok) throw new Error(res.error || "Failed to load reports");
+    state.reports = Array.isArray(res.reports) ? res.reports : [];
+  }catch(e){
+    try{
+      const raw = localStorage.getItem('prefinal-reports-fallback');
+      state.reports = raw ? JSON.parse(raw) : [];
+    }catch(e2){ state.reports = []; }
+    showToast(QA_API_URL.indexOf("PASTE_YOUR")===0 ? 'Backend not connected yet — saving to this browser only' : 'Could not reach server — showing this browser\'s last saved copy');
+  }
+  state.storageReady = true;
+  render();
+  loadSbuOptions();
+}
+
+async function persistReports(){
+  try{
+    const res = await qaApi({ action: "savePreFinal", reports: state.reports });
+    if (!res.ok) throw new Error(res.error || "Save failed");
+  }catch(e){
+    try{ localStorage.setItem('prefinal-reports-fallback', JSON.stringify(state.reports)); }catch(e2){}
+    showToast(QA_API_URL.indexOf("PASTE_YOUR")===0 ? 'Backend not connected yet — saved to this browser only' : 'Could not reach server — saved to this browser only');
+  }
+}
+
+/* ============================= STYLE LOOKUP (SBU → Buyer → IR) ============================= */
+
+async function loadSbuOptions(){
+  try{
+    const res = await qaApi({ action: "listSbus" });
+    state.sbuOptions = res.ok ? res.sbus : [];
+  }catch(e){ state.sbuOptions = []; }
+  render();
+}
+
+async function loadBuyerOptions(sbu){
+  state.buyerOptions = []; state.irOptions = []; state.styleDetail = null;
+  render();
+  try{
+    const res = await qaApi({ action: "listBuyers", sbu: sbu });
+    state.buyerOptions = res.ok ? res.buyers : [];
+  }catch(e){ state.buyerOptions = []; }
+  render();
+}
+
+async function loadIrOptions(sbu, buyer){
+  state.irOptions = []; state.styleDetail = null;
+  render();
+  try{
+    const res = await qaApi({ action: "listIrs", sbu: sbu, buyer: buyer });
+    state.irOptions = res.ok ? res.irs : [];
+  }catch(e){ state.irOptions = []; }
+  render();
+}
+
+async function loadStyleDetail(sbu, buyer, ir){
+  state.styleDetail = null;
+  render();
+  try{
+    const res = await qaApi({ action: "getOrderDetail", sbu: sbu, buyer: buyer, ir: ir });
+    state.styleDetail = res.ok ? res.detail : null;
+  }catch(e){ state.styleDetail = null; }
+  if (state.styleDetail){
+    const d = state.styleDetail;
+    state.header.styleId = ir || '';
+    state.header.styleName = d.styleName || '';
+    state.header.styleDescription = d.styleDescription || '';
+    state.header.item = d.item || '';
+    state.header.productDept = d.productDept || '';
+    state.header.season = d.season || '';
+    state.header.orderQty = d.totalQty || '';
+    state.colorQty = (d.colors || []).map(c => ({ color: c.color, qty: c.qty, cartonQty:'', selectedCartonNo:'' }));
+    state.sampleOverview = [{
+      styleId: ir || '', styleName: d.styleName || '', orderQty: d.totalQty || '',
+      availableQty:'', cartonsAvailable:'', cartonsSelected:'', actualSampleInspected:'', remarks:''
+    }];
+  }
+  render();
+}
+
+/* ============================= AQL LOGIC ============================= */
+
+function lookupSampleSize(qty){
+  const row = AQL_LOT_TABLE.find(r => qty >= r.min && qty <= r.max);
+  return row || {code:'', size:0};
+}
+
+function lookupAcceptReject(sampleSize){
+  const candidates = AQL_ACCEPT_TABLE.filter(r => r.size <= sampleSize);
+  return candidates.length ? candidates[candidates.length-1] : AQL_ACCEPT_TABLE[0];
+}
+
+function nearestAqlColumn(aql){
+  const supported = [1.0,1.5,2.5,4.0];
+  let best = supported[0], bestDiff = Infinity;
+  supported.forEach(v => { const d = Math.abs(v - Number(aql)); if (d < bestDiff){ bestDiff = d; best = v; } });
+  return best;
+}
+function acceptForAql(acc, aql){
+  const col = nearestAqlColumn(aql);
+  if (col === 1.0) return acc.a1_0;
+  if (col === 1.5) return acc.a1_5;
+  if (col === 2.5) return acc.a2_5;
+  return acc.a4_0;
+}
+
+function computeAQL(availableQty, critical, major, minor, aqlCritical, aqlMajor, aqlMinor){
+  const lot = lookupSampleSize(Number(availableQty)||0);
+  const acc = lookupAcceptReject(lot.size);
+  const criticalAllowed = Number(aqlCritical) > 0 ? acceptForAql(acc, aqlCritical) : 0;
+  const majorAllowed = acceptForAql(acc, aqlMajor != null ? aqlMajor : 2.5);
+  const minorAllowed = acceptForAql(acc, aqlMinor != null ? aqlMinor : 4.0);
+  const fail = critical > criticalAllowed || major > majorAllowed || minor > minorAllowed;
+  return { sampleSize: lot.size, codeLetter: lot.code, criticalAllowed, majorAllowed, minorAllowed, result: (critical||major||minor) ? (fail ? 'FAIL' : 'PASS') : '' };
+}
+
+function defectTotals(defects){
+  const t = {Critical:0, Major:0, Minor:0};
+  (defects||[]).forEach(d => { if (t[d.severity]!==undefined) t[d.severity] += Number(d.qty)||1; });
+  return t;
+}
+
+/* ============================= UTIL ============================= */
+
+function uid(){ return 'p'+Date.now().toString(36)+Math.random().toString(36).slice(2,7); }
+function esc(s){ return (s||'').toString().replace(/[&<>"']/g, c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c])); }
+function fmt1(n){ return (Math.round(n*10)/10).toFixed(1); }
+function showToast(msg){ state.toast = msg; render(); setTimeout(()=>{ state.toast=null; render(); }, 2600); }
+
+/* ============================= PICTURES (each checkpoint, uploaded to Drive) ============================= */
+
+function resolvePictureTarget(section, idx){
+  switch(section){
+    case 'allQty': return state.allQtyCheck;
+    case 'cartonSelection': return state.cartonSelection;
+    case 'measurements': return state.measurements;
+    case 'packing': return state.packingCheckpoints[Number(idx)];
+    case 'defect': return state.defects[Number(idx)];
+    case 'tests': return state.testCheckpoints[Number(idx)];
+    default: return null;
+  }
+}
+
+function pictureWidget(section, idx){
+  const target = resolvePictureTarget(section, idx);
+  const pics = (target && target.pictures) || [];
+  return `
+    <div class="pic-widget">
+      <input type="file" accept="image/*" capture="environment" style="display:none" data-pic-input="${section}:${idx}">
+      <button type="button" class="btn ghost small" data-pic-add="${section}:${idx}">📷 ${pics.length ? pics.length + ' photo' + (pics.length>1?'s':'') : 'Add Photo'}</button>
+      <div class="pic-thumbs">
+        ${pics.map((p,pi)=>`<span class="pic-thumb"><img src="${esc(p.url)}" onclick="window.open('${esc(p.url)}','_blank')"><button type="button" class="pic-del" data-pic-del="${section}:${idx}:${pi}">&times;</button></span>`).join('')}
+      </div>
+    </div>`;
+}
+
+function compressImageToBase64(file, maxW, quality){
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onload = () => {
+      const img = new Image();
+      img.onload = () => {
+        const scale = Math.min(1, maxW / img.width);
+        const canvas = document.createElement('canvas');
+        canvas.width = Math.round(img.width * scale);
+        canvas.height = Math.round(img.height * scale);
+        const ctx = canvas.getContext('2d');
+        ctx.drawImage(img, 0, 0, canvas.width, canvas.height);
+        resolve(canvas.toDataURL('image/jpeg', quality).split(',')[1]);
+      };
+      img.onerror = reject;
+      img.src = reader.result;
+    };
+    reader.onerror = reject;
+    reader.readAsDataURL(file);
+  });
+}
+
+async function handlePictureUpload(section, idx, file){
+  showToast('Uploading photo…');
+  try{
+    const base64 = await compressImageToBase64(file, 1000, 0.62);
+    const res = await qaApi({ action: 'uploadImage', base64: base64, filename: file.name, mimeType: 'image/jpeg' });
+    if (!res.ok) throw new Error(res.error || 'Upload failed');
+    const target = resolvePictureTarget(section, idx);
+    if (target){ target.pictures = target.pictures || []; target.pictures.push({ url: res.url, fileId: res.fileId, name: file.name }); }
+    showToast('Photo added.');
+  }catch(e){
+    showToast('Could not upload photo — ' + e.message);
+  }
+  render();
+}
+
+function collectAllPictures(){
+  const out = [];
+  const push = (label, pics) => (pics||[]).forEach(p => out.push({ label, url: p.url }));
+  push('All Quantities & Cartons Available', state.allQtyCheck.pictures);
+  push('Selected Carton', state.cartonSelection.pictures);
+  state.packingCheckpoints.forEach(cp => push(cp.label, cp.pictures));
+  state.testCheckpoints.forEach(cp => push(cp.label, cp.pictures));
+  state.defects.forEach((d,i) => push('Defect #' + (i+1) + (d.description ? ' — ' + d.description : ''), d.pictures));
+  push('Measurement Report', state.measurements.pictures);
+  return out;
+}
+
+/* ============================= PDF EXPORT (professional, generated from data) ============================= */
+
+function computeOverallResult_(S){
+  S = S || state;
+  const t = defectTotals(S.defects);
+  const totalAvail = S.sampleOverview.reduce((s,r)=>s+(Number(r.availableQty)||0),0) || S.header.orderQty;
+  const aql = computeAQL(totalAvail, t.Critical, t.Major, t.Minor, S.header.aqlCritical, S.header.aqlMajor, S.header.aqlMinor);
+  const packingResults = S.packingCheckpoints.map(c=>c.result).filter(Boolean);
+  const packingResult = packingResults.includes('Fail') ? 'FAIL' : (packingResults.length ? 'PASS' : 'N/A');
+  const testResults = S.testCheckpoints.map(c=>c.result).filter(Boolean);
+  const testsResult = testResults.includes('Fail') ? 'FAIL' : (testResults.length ? 'PASS' : 'N/A');
+  const failCount = [packingResult, aql.result, testsResult].filter(r=>r==='FAIL').length;
+  const anyResult = [packingResult, aql.result, testsResult].some(r=>r==='PASS'||r==='FAIL');
+  return { overall: failCount > 0 ? 'FAIL' : (anyResult ? 'PASS' : 'PENDING'), aql, packingResult, testsResult };
+}
+
+function collectAllPicturesFrom_(S){
+  S = S || state;
+  const out = [];
+  const push = (label, pics) => (pics||[]).forEach(p => out.push({ label, url: p.url, fileId: p.fileId }));
+  push('All Quantities & Cartons Available', S.allQtyCheck.pictures);
+  push('Selected Carton', S.cartonSelection.pictures);
+  S.packingCheckpoints.forEach(cp => push(cp.label, cp.pictures));
+  S.testCheckpoints.forEach(cp => push(cp.label, cp.pictures));
+  S.defects.forEach((d,i) => push('Defect #' + (i+1) + (d.description ? ' — ' + d.description : ''), d.pictures));
+  push('Measurement Report', S.measurements.pictures);
+  return out;
+}
+
+async function fetchImageBase64_(fileId){
+  const res = await qaApi({ action: 'fetchImageBase64', fileId: fileId });
+  if (!res.ok) throw new Error(res.error || 'Could not fetch image');
+  return 'data:' + (res.mimeType||'image/jpeg') + ';base64,' + res.base64;
+}
+
+async function generatePdfReport(srcData){
+  const S = srcData || state;
+  if (!window.jspdf){ showToast('PDF library did not load — check your internet connection and retry.'); return; }
+  showToast('Generating PDF…');
+  try{
+    const { jsPDF } = window.jspdf;
+    const doc = new jsPDF('p','mm','a4');
+    const pageW = doc.internal.pageSize.getWidth();
+    const pageH = doc.internal.pageSize.getHeight();
+    const margin = 12;
+    let y = 16;
+    const h = S.header;
+    const { overall, aql, packingResult, testsResult } = computeOverallResult_(S);
+
+    function ensureRoom(need){ if (y + need > pageH - 14){ doc.addPage(); y = 16; } }
+    function heading(text){
+      ensureRoom(12);
+      doc.setFont('helvetica','bold'); doc.setFontSize(11); doc.setTextColor(20,20,20);
+      doc.text(text, margin, y); y += 5.5;
+    }
+    function note(text){
+      ensureRoom(8);
+      doc.setFont('helvetica','normal'); doc.setFontSize(8.5); doc.setTextColor(90,90,90);
+      doc.text(text, margin, y); y += 5;
+    }
+    function table(opts){
+      ensureRoom(14);
+      doc.autoTable(Object.assign({ startY: y, margin: { left: margin, right: margin }, styles: { fontSize: 8.5, cellPadding: 1.6 } }, opts));
+      y = doc.lastAutoTable.finalY + 6;
+    }
+
+    // ---- Title ----
+    doc.setFont('helvetica','bold'); doc.setFontSize(17); doc.setTextColor(20,20,20);
+    doc.text('Taher Consulting', margin, y); y += 6.5;
+    doc.setFontSize(11); doc.setFont('helvetica','normal');
+    doc.text(h.inspectionType || 'Pre-Final Inspection Report', margin, y); y += 5;
+    doc.setDrawColor(210); doc.line(margin, y, pageW-margin, y); y += 6;
+
+    table({ theme:'plain', body:[
+      ['SBU', h.sbu||'—', 'Buyer', h.buyer||'—'],
+      ['IR No', h.ir||'—', 'Style', h.styleName||'—'],
+      ['Season', h.season||'—', 'Item / Dept', [h.item,h.productDept].filter(Boolean).join(' / ')||'—'],
+      ['Date', h.date||'—', 'Inspector', h.inspectorName||'—'],
+      ['Factory', h.factoryName||'—', 'PO No', h.poNo||'—'],
+    ], columnStyles:{0:{fontStyle:'bold',cellWidth:26},2:{fontStyle:'bold',cellWidth:26}} });
+
+    doc.setFont('helvetica','bold'); doc.setFontSize(12);
+    doc.setTextColor(overall==='FAIL'?200:overall==='PASS'?20:120, overall==='PASS'?120:overall==='FAIL'?30:120, 20);
+    ensureRoom(8);
+    doc.text('OVERALL RESULT: ' + overall, margin, y); y += 8;
+    doc.setTextColor(20,20,20);
+
+    // ---- 01 quantities & AQL ----
+    heading('01. General Information');
+    table({ theme:'grid', head:[['PO Qty','Order Qty','Offer Qty','AQL Crit','AQL Major','AQL Minor','Sample Size']],
+      body:[[h.poQty||'—',h.orderQty||'—',h.offerQty||'—',h.aqlCritical,h.aqlMajor,h.aqlMinor, aql.sampleSize+' (code '+aql.codeLetter+')']] });
+    if (S.allQtyCheck.result || S.allQtyCheck.comments){
+      table({ theme:'plain', body:[['All Qty/Cartons Available', S.allQtyCheck.result||'—', S.allQtyCheck.comments||'']] });
+    }
+    if (S.colorQty.length){
+      table({ theme:'grid', head:[['Color','Order Qty','Carton Qty','Selected Carton No.']],
+        body: S.colorQty.map(c=>[c.color,c.qty,c.cartonQty||'—',c.selectedCartonNo||'—']) });
+    }
+
+    // ---- 02 sample overview ----
+    heading('02. Sample Selection & AQL Plan');
+    table({ theme:'grid', head:[['Style ID','Style Name','Order Qty','Avail. Qty','Cartons Avail.','Cartons Sel.','Sample Insp.','Remarks']],
+      body: S.sampleOverview.map(r=>[r.styleId,r.styleName,r.orderQty,r.availableQty,r.cartonsAvailable,r.cartonsSelected,r.actualSampleInspected,r.remarks]) });
+
+    // ---- 03 packing checkpoints ----
+    heading('03. Quantity & Packing Checkpoints — Section Result: ' + packingResult);
+    table({ theme:'grid', head:[['Checkpoint','Result','Comments']],
+      body: S.packingCheckpoints.map(c=>[c.label,c.result||'—',c.comments||'']),
+      columnStyles:{0:{cellWidth:80}} });
+    if (S.cartonDims.some(r=>r.poNumber||r.cartonNo||r.dims)){
+      table({ theme:'grid', head:[['PO Number','Carton No.','Dimensions / Weight','Comments']],
+        body: S.cartonDims.map(r=>[r.poNumber,r.cartonNo,r.dims,r.comments]) });
+    }
+
+    // ---- 04 workmanship ----
+    heading('04. Workmanship — AQL Result: ' + (aql.result||'N/A'));
+    table({ theme:'grid', head:[['','Critical','Major','Minor']],
+      body:[['Found', defectTotals(S.defects).Critical, defectTotals(S.defects).Major, defectTotals(S.defects).Minor],
+            ['Allowed', aql.criticalAllowed, aql.majorAllowed, aql.minorAllowed]] });
+    if (S.defects.length){
+      table({ theme:'grid', head:[['#','Group','Category','Description','Area','Severity','Qty']],
+        body: S.defects.map((d,i)=>[i+1,d.group,d.category,d.description,d.area,d.severity,d.qty]) });
+    }
+
+    // ---- 05 checkpoints & tests ----
+    heading('05. On-Site Checkpoints & Tests — Section Result: ' + testsResult);
+    table({ theme:'grid', head:[['Group','Checkpoint / Test','Applicable','Result','Comments / Report #']],
+      body: S.testCheckpoints.map(c=>[c.group,c.label,c.applicable,c.result||'—', c.isReport?c.testReportNumber:c.comments]),
+      columnStyles:{1:{cellWidth:60}} });
+
+    // ---- 06 measurements ----
+    heading('06. Measurements');
+    table({ theme:'grid', head:[['POM Description','Size','Tol(-)','Tol(+)','Spec','M1','M2','M3','M4','M5']],
+      body: S.measurements.poms.map(p=>[p.description,p.size,p.tolMinus,p.tolPlus,p.spec,...p.m]) });
+    table({ theme:'plain', body:[
+      ['Total Sample Size', S.measurements.totalSampleSize||'—', 'Total POMs Measured', S.measurements.totalPOMsMeasured||'—'],
+      ['Max Allowed OOT', S.measurements.maxAllowedOOT||'—', '', ''],
+    ]});
+
+    // ---- 08 summary & sign-off ----
+    heading('08. Summary & Sign-Off');
+    table({ theme:'grid', head:[['Section','Result']], body:[
+      ['1. Quantity & Packing', packingResult],
+      ['2. Workmanship', aql.result||'N/A'],
+      ['3. Checkpoints & Tests', testsResult],
+      ['Overall', overall],
+    ]});
+    table({ theme:'grid', head:[['Role','Name','Signature / Date']],
+      body: S.signOff.map(s=>[s.role,s.name||'—',s.signature||'—']) });
+    if (S.remarks){
+      heading('Overall Remarks');
+      doc.setFont('helvetica','normal'); doc.setFontSize(9);
+      const lines = doc.splitTextToSize(S.remarks, pageW - margin*2);
+      ensureRoom(lines.length*4.5);
+      doc.text(lines, margin, y); y += lines.length*4.5 + 4;
+    }
+
+    // ---- 07 pictorial evidence (fetched server-side to dodge Drive CORS) ----
+    const pics = collectAllPicturesFrom_(S);
+    if (pics.length){
+      doc.addPage(); y = 16;
+      doc.setFont('helvetica','bold'); doc.setFontSize(13);
+      doc.text('07. Pictorial / Evidence', margin, y); y += 8;
+      for (const p of pics){
+        try{
+          const dataUrl = await fetchImageBase64_(p.fileId);
+          const props = doc.getImageProperties(dataUrl);
+          const w = pageW - margin*2;
+          const hgt = Math.min(90, w * props.height / props.width);
+          ensureRoom(hgt + 10);
+          doc.addImage(dataUrl, props.fileType || 'JPEG', margin, y, w, hgt);
+          y += hgt + 2;
+          doc.setFont('helvetica','normal'); doc.setFontSize(8.5); doc.setTextColor(90,90,90);
+          doc.text(p.label, margin, y); y += 6;
+          doc.setTextColor(20,20,20);
+        }catch(e){
+          ensureRoom(6);
+          doc.setFontSize(8.5); doc.text('[Photo unavailable: ' + p.label + ']', margin, y); y += 6;
+        }
+      }
+    }
+
+    const name = `Inspection_${(h.ir || 'report').replace(/[^a-zA-Z0-9]/g,'_')}_${h.date || ''}.pdf`;
+    doc.save(name);
+    showToast('PDF downloaded.');
+  }catch(e){
+    showToast('PDF generation failed — ' + e.message);
+  }
+}
+
+function filteredReports(){
+  let list = state.reports.slice();
+  if (state.dashType !== 'All') list = list.filter(r => r.header.inspectionType === state.dashType);
+  if (state.dashRange !== 'all'){
+    const days = Number(state.dashRange);
+    const cutoff = new Date(); cutoff.setDate(cutoff.getDate()-days);
+    list = list.filter(r => new Date(r.header.date) >= cutoff);
+  }
+  return list.sort((a,b)=> new Date(b.header.date)-new Date(a.header.date));
+}
+
+/* ============================= RENDER: SHELL ============================= */
+
+function render(){
+  const app = document.getElementById('app');
+  app.innerHTML = `
+    ${renderTopbar()}
+    ${state.tab==='dashboard' ? renderDashboard() : ''}
+    ${state.tab==='entry' ? renderEntry() : ''}
+    ${state.tab==='log' ? renderLog() : ''}
+    ${state.viewingId ? renderReportModal() : ''}
+    ${state.toast ? `<div class="toast"><span class="d"></span>${esc(state.toast)}</div>` : ''}
+  `;
+  if (state.tab==='entry') redrawDefects_();
+  bindEvents();
+  if (state.tab==='dashboard') drawDashboardCharts();
+}
+
+function renderTopbar(){
+  return `
+  <div class="topbar">
+    <div class="brand">
+      <div class="brand-mark">PF</div>
+      <div><h1>Pre-Final Inspection</h1><div class="sub">Module 7 · QA Inspection · AQL-based lot inspection</div></div>
+    </div>
+    <div class="tabs">
+      <button class="tab-btn ${state.tab==='dashboard'?'active':''}" data-tab="dashboard">Dashboard</button>
+      <button class="tab-btn ${state.tab==='entry'?'active':''}" data-tab="entry">New Inspection</button>
+      <button class="tab-btn ${state.tab==='log'?'active':''}" data-tab="log">Reports Log</button>
+    </div>
+  </div>`;
+}
+
+/* ============================= RENDER: DASHBOARD ============================= */
+
+function renderDashboard(){
+  const reports = filteredReports();
+  if (state.reports.length===0){
+    return `<div class="panel"><div class="empty">
+      <div class="big">🧵</div>
+      <div class="t1">No inspections logged yet</div>
+      <div class="t2">Log your first Pre-Final Inspection to see pass-rate trends and defect breakdowns here.</div>
+      <div style="margin-top:16px;"><button class="btn" data-action="goto-entry">Start New Inspection</button></div>
+    </div></div>`;
+  }
+
+  const passCount = reports.filter(r=>r.result==='PASS').length;
+  const passRate = reports.length ? passCount/reports.length*100 : 0;
+  const totalDefects = reports.reduce((s,r)=>{ const t=defectTotals(r.defects); return s+t.Critical+t.Major+t.Minor; },0);
+  const totalInspected = reports.reduce((s,r)=> s+(Number(r.header.orderQty)||0),0);
+
+  return `
+  <div class="filters">
+    <select data-dashrange>
+      <option value="30" ${state.dashRange==='30'?'selected':''}>Last 30 days</option>
+      <option value="90" ${state.dashRange==='90'?'selected':''}>Last 90 days</option>
+      <option value="all" ${state.dashRange==='all'?'selected':''}>All time</option>
+    </select>
+    <div style="margin-left:auto;color:var(--muted);font-size:11.5px;font-family:'IBM Plex Mono';">${reports.length} report${reports.length!==1?'s':''} in view</div>
+  </div>
+
+  <div class="kpi-grid">
+    <div class="kpi"><div class="k-bar" style="background:var(--brand)"></div><div class="k-label">Inspections</div><div class="k-value">${reports.length}</div><div class="k-sub">in selected range</div></div>
+    <div class="kpi"><div class="k-bar" style="background:var(--good)"></div><div class="k-label">Pass Rate</div><div class="k-value">${fmt1(passRate)}%</div><div class="k-sub">${passCount} of ${reports.length} passed</div></div>
+    <div class="kpi"><div class="k-bar" style="background:var(--crit)"></div><div class="k-label">Total Defects</div><div class="k-value">${totalDefects}</div><div class="k-sub">critical+major+minor</div></div>
+    <div class="kpi"><div class="k-bar" style="background:var(--maj)"></div><div class="k-label">Order Qty (logged)</div><div class="k-value">${totalInspected.toLocaleString()}</div><div class="k-sub">across logged lots</div></div>
+    <div class="kpi"><div class="k-bar" style="background:var(--min)"></div><div class="k-label">Failed Inspections</div><div class="k-value">${reports.length-passCount}</div><div class="k-sub">need CAPA follow-up</div></div>
+  </div>
+
+  <div class="dash-grid">
+    <div class="panel panel-pad"><h2 class="section-title">Pass / Fail Trend <span class="tag">by inspection date</span></h2><div class="chart-wrap tall"><canvas id="trendChart"></canvas></div></div>
+    <div class="panel panel-pad"><h2 class="section-title">Defects by Severity</h2><div class="chart-wrap tall"><canvas id="sevDonut"></canvas></div></div>
+  </div>
+  <div class="dash-grid" style="margin-top:14px;">
+    <div class="panel panel-pad"><h2 class="section-title">Defect Pareto <span class="tag">top categories</span></h2><div class="chart-wrap tall"><canvas id="paretoChart"></canvas></div></div>
+  </div>`;
+}
+
+function drawDashboardCharts(){
+  const reports = filteredReports();
+  if (reports.length===0) return;
+  Chart.defaults.color = '#8A93A3';
+  Chart.defaults.font.family = "'Inter', sans-serif";
+  Chart.defaults.borderColor = '#232833';
+
+  const byDate = {};
+  reports.forEach(r=>{
+    const d = r.header.date;
+    if (!byDate[d]) byDate[d] = {pass:0,fail:0};
+    byDate[d][r.result==='PASS'?'pass':'fail']++;
+  });
+  const dates = Object.keys(byDate).sort();
+  new Chart(document.getElementById('trendChart'), {
+    type:'bar',
+    data:{ labels:dates, datasets:[
+      {label:'Pass', data:dates.map(d=>byDate[d].pass), backgroundColor:'#34D399', borderRadius:4, stack:'s'},
+      {label:'Fail', data:dates.map(d=>byDate[d].fail), backgroundColor:'#EF4444', borderRadius:4, stack:'s'}
+    ]},
+    options:{ responsive:true, maintainAspectRatio:false, plugins:{legend:{position:'top', labels:{boxWidth:10,usePointStyle:true}}},
+      scales:{ y:{beginAtZero:true, grid:{color:'#1D222A'}}, x:{grid:{display:false}, stacked:true }, x2:{} } }
+  });
+
+  let c=0,mj=0,mn=0;
+  reports.forEach(r=>{ const t=defectTotals(r.defects); c+=t.Critical; mj+=t.Major; mn+=t.Minor; });
+  new Chart(document.getElementById('sevDonut'), {
+    type:'doughnut',
+    data:{ labels:['Critical','Major','Minor'], datasets:[{ data:[c,mj,mn], backgroundColor:['#EF4444','#F5A524','#38BDF8'], borderColor:'#171B21', borderWidth:2 }]},
+    options:{ responsive:true, maintainAspectRatio:false, cutout:'62%', plugins:{legend:{position:'bottom', labels:{boxWidth:9,usePointStyle:true,font:{size:10.5}}}} }
+  });
+
+  const byCat = {};
+  reports.forEach(r=> (r.defects||[]).forEach(d=>{ byCat[d.category] = (byCat[d.category]||0) + (Number(d.qty)||1); }));
+  const catEntries = Object.entries(byCat).sort((a,b)=>b[1]-a[1]).slice(0,8);
+  new Chart(document.getElementById('paretoChart'), {
+    type:'bar',
+    data:{ labels: catEntries.map(e=>e[0]), datasets:[{ data: catEntries.map(e=>e[1]), backgroundColor:'#2DD4BF', borderRadius:4 }]},
+    options:{ indexAxis:'y', responsive:true, maintainAspectRatio:false, plugins:{legend:{display:false}},
+      scales:{ x:{beginAtZero:true, grid:{color:'#1D222A'}}, y:{grid:{display:false}} } }
+  });
+}
+
+/* ============================= RENDER: ENTRY FORM ============================= */
+
+function renderEntry(){
+  const h = state.header;
+  const t = defectTotals(state.defects);
+  const aql = computeAQL(
+    state.sampleOverview.reduce((s,r)=>s+(Number(r.availableQty)||0),0) || h.orderQty,
+    t.Critical, t.Major, t.Minor, h.aqlCritical, h.aqlMajor, h.aqlMinor
+  );
+  const d = state.styleDetail;
+  const offerPct = h.orderQty ? (Number(h.offerQty||0) / Number(h.orderQty) * 100) : null;
+
+  return `
+  <div id="printableReport">
+
+  <div class="panel panel-pad section-block">
+    <h2 class="section-title">Select Style <span class="tag">SBU &rarr; Buyer &rarr; IR</span></h2>
+    <div class="header-grid">
+      <div class="f"><span class="field-label">SBU</span>
+        <select data-h="sbu">
+          <option value="">${state.sbuOptions.length ? 'Select SBU…' : 'Loading…'}</option>
+          ${state.sbuOptions.map(s => `<option value="${esc(s)}" ${h.sbu===s?'selected':''}>${esc(s)}</option>`).join('')}
+        </select>
+      </div>
+      <div class="f"><span class="field-label">Buyer</span>
+        <select data-h="buyer" ${!h.sbu ? 'disabled' : ''}>
+          <option value="">${!h.sbu ? 'Select SBU first' : (state.buyerOptions.length ? 'Select Buyer…' : 'Loading…')}</option>
+          ${state.buyerOptions.map(b => `<option value="${esc(b)}" ${h.buyer===b?'selected':''}>${esc(b)}</option>`).join('')}
+        </select>
+      </div>
+      <div class="f"><span class="field-label">IR No</span>
+        <select data-h="ir" ${!h.buyer ? 'disabled' : ''}>
+          <option value="">${!h.buyer ? 'Select Buyer first' : (state.irOptions.length ? 'Select IR…' : 'Loading…')}</option>
+          ${state.irOptions.map(i => `<option value="${esc(i)}" ${h.ir===i?'selected':''}>${esc(i)}</option>`).join('')}
+        </select>
+      </div>
+    </div>
+    <div class="subtle-note" style="margin-top:10px;">
+      ${d ? `<b style="color:var(--text)">${esc(d.styleName)}</b> — ${esc(d.styleDescription||'')}<br>
+        ${esc(d.item)} / ${esc(d.productDept)} &middot; Season ${esc(d.season)} &middot; Total Order Qty ${esc(String(d.totalQty||0))}`
+      : (h.ir ? 'Loading style details…' : 'Select SBU → Buyer → IR to auto-fill order info below.')}
+    </div>
+  </div>
+
+  ${renderSection01(h, aql, offerPct)}
+  ${renderSection02()}
+  ${renderSection03()}
+  ${renderSection04(t, aql)}
+  ${renderSection05()}
+  ${renderSection06()}
+  ${renderSection07()}
+  ${renderSection08(aql)}
+
+  </div>
+
+  <div class="panel panel-pad section-block" style="margin-top:14px;">
+    <div style="display:flex;gap:10px;flex-wrap:wrap;">
+      <button class="btn ghost" data-action="save-draft">Save as Draft</button>
+      <button class="btn" data-action="submit-final">✓ Submit Final Report</button>
+      <button class="btn ghost" data-action="download-pdf">⬇ Download PDF (current form)</button>
+      ${state.editingId ? '<button class="btn ghost" data-action="cancel-edit">Cancel Edit</button>' : ''}
+    </div>
+    <div class="subtle-note">Save as Draft any time — it stays in the Reports Log (marked "Draft") so you can log back in later and pick up where you left off. Submit Final Report locks it in as complete and offers the PDF download right away.</div>
+  </div>`;
+}
+
+/* ---- 01. GENERAL INFORMATION ---- */
+function renderSection01(h, aql, offerPct){
+  return `
+  <div class="panel panel-pad section-block">
+    <h2 class="section-title">01. General Information</h2>
+    <div class="header-grid">
+      <div class="f"><span class="field-label">Date</span><input type="date" data-h="date" value="${esc(h.date)}"></div>
+      <div class="f"><span class="field-label">Inspector Name</span><input type="text" data-h="inspectorName" value="${esc(h.inspectorName)}"></div>
+      <div class="f"><span class="field-label">Inspection Start Time</span><input type="time" data-h="startTime" value="${esc(h.startTime)}"></div>
+      <div class="f"><span class="field-label">Factory Name</span><input type="text" data-h="factoryName" value="${esc(h.factoryName)}"></div>
+      <div class="f"><span class="field-label">Inspection Type</span>
+        <select data-h="inspectionType">${INSPECTION_TYPES.map(o=>`<option ${h.inspectionType===o?'selected':''}>${o}</option>`).join('')}</select>
+      </div>
+      <div class="f"><span class="field-label">Sampling Plan</span>
+        <select data-h="samplingPlan">${SAMPLING_PLANS.map(o=>`<option ${h.samplingPlan===o?'selected':''}>${o}</option>`).join('')}</select>
+      </div>
+      <div class="f"><span class="field-label">PO No</span><input type="text" data-h="poNo" value="${esc(h.poNo)}"></div>
+      <div class="f"><span class="field-label">Inspection Level</span>
+        <select data-h="inspectionLevel">${INSPECTION_LEVELS.map(o=>`<option ${h.inspectionLevel===o?'selected':''}>${o}</option>`).join('')}</select>
+      </div>
+      <div class="f"><span class="field-label">PO Qty</span><input type="number" data-h="poQty" value="${esc(h.poQty)}"></div>
+      <div class="f"><span class="field-label">AQL — Critical</span><select data-h="aqlCritical">${AQL_OPTIONS.map(o=>`<option value="${o}" ${Number(h.aqlCritical)===o?'selected':''}>${o}</option>`).join('')}</select></div>
+      <div class="f"><span class="field-label">Order Qty (auto)</span><input type="text" value="${esc(h.orderQty)}" readonly></div>
+      <div class="f"><span class="field-label">AQL — Major</span><select data-h="aqlMajor">${AQL_OPTIONS.map(o=>`<option value="${o}" ${Number(h.aqlMajor)===o?'selected':''}>${o}</option>`).join('')}</select></div>
+      <div class="f"><span class="field-label">Offer Qty</span><input type="number" data-h="offerQty" value="${esc(h.offerQty)}"></div>
+      <div class="f"><span class="field-label">AQL — Minor</span><select data-h="aqlMinor">${AQL_OPTIONS.map(o=>`<option value="${o}" ${Number(h.aqlMinor)===o?'selected':''}>${o}</option>`).join('')}</select></div>
+      <div class="f"><span class="field-label">Offer % (auto)</span><input type="text" value="${offerPct!=null ? fmt1(offerPct)+'%' : ''}" readonly></div>
+      <div class="f"><span class="field-label">Sample Size (auto)</span><input type="text" value="${aql.sampleSize} (code ${aql.codeLetter})" readonly></div>
+      <div class="f"><span class="field-label">Inspection Level — Measurements</span>
+        <select data-h="inspectionLevelMeasurements">${INSPECTION_LEVELS.map(o=>`<option ${h.inspectionLevelMeasurements===o?'selected':''}>${o}</option>`).join('')}</select>
+      </div>
+    </div>
+    <div class="subtle-note">AQL dropdowns snap to the nearest of the supported chart values (1.0 / 1.5 / 2.5 / 4.0) when computing Accept/Reject numbers — see Section 04.</div>
+
+    <h3 class="section-title" style="margin-top:20px;font-size:12.5px;">All Quantities & Cartons Available?</h3>
+    <div class="row" style="align-items:flex-end;">
+      <div class="f" style="min-width:160px;"><span class="field-label">Result</span>
+        <select data-aq="result"><option value="">--</option><option ${state.allQtyCheck.result==='Pass'?'selected':''}>Pass</option><option ${state.allQtyCheck.result==='Fail'?'selected':''}>Fail</option><option ${state.allQtyCheck.result==='N/A'?'selected':''}>N/A</option></select>
+      </div>
+      <div class="f" style="flex:1;min-width:220px;"><span class="field-label">Comments</span><input type="text" data-aq="comments" value="${esc(state.allQtyCheck.comments)}"></div>
+      <div class="f"><span class="field-label">All Ready Carton Picture</span>${pictureWidget('allQty', '0')}</div>
+    </div>
+
+    <h3 class="section-title" style="margin-top:20px;font-size:12.5px;">Carton Selection</h3>
+    <div class="row" style="align-items:flex-end;">
+      <div class="f"><span class="field-label">Total Carton</span><input type="number" data-cs="totalCarton" value="${esc(state.cartonSelection.totalCarton)}"></div>
+      <div class="f"><span class="field-label">Inspected Carton (√Total, auto)</span><input type="text" value="${state.cartonSelection.totalCarton ? Math.round(Math.sqrt(Number(state.cartonSelection.totalCarton))) : ''}" readonly></div>
+      <div class="f" style="flex:1;min-width:200px;"><span class="field-label">Selected Carton No.</span><input type="text" data-cs="selectedCartonNo" value="${esc(state.cartonSelection.selectedCartonNo)}"></div>
+      <div class="f"><span class="field-label">Selected Carton Picture</span>${pictureWidget('cartonSelection', '0')}</div>
+    </div>
+
+    <h3 class="section-title" style="margin-top:20px;font-size:12.5px;">Quantity by Colour</h3>
+    <table class="rep-table">
+      <thead><tr><th>Color</th><th>Order Qty</th><th>Color-wise Carton Qty</th><th>Sample Carton (√Qty, auto)</th><th>Selected Carton No.</th></tr></thead>
+      <tbody>
+        ${state.colorQty.length ? state.colorQty.map((c,i)=>`
+          <tr>
+            <td>${esc(c.color)}</td><td>${esc(String(c.qty))}</td>
+            <td><input type="number" data-cq="${i}:cartonQty" value="${esc(c.cartonQty)}"></td>
+            <td>${c.cartonQty ? Math.round(Math.sqrt(Number(c.cartonQty))) : ''}</td>
+            <td><input type="text" data-cq="${i}:selectedCartonNo" value="${esc(c.selectedCartonNo)}"></td>
+          </tr>`).join('') : `<tr><td colspan="5" style="color:var(--muted)">Select an IR above to load colours from Order Info.</td></tr>`}
+      </tbody>
+    </table>
+  </div>`;
+}
+
+/* ---- 02. SAMPLE SELECTION & AQL PLAN ---- */
+function renderSection02(){
+  const rows = state.sampleOverview;
+  const totalOrder = rows.reduce((s,r)=>s+(Number(r.orderQty)||0),0);
+  const totalAvail = rows.reduce((s,r)=>s+(Number(r.availableQty)||0),0);
+  const totalCartonsAvail = rows.reduce((s,r)=>s+(Number(r.cartonsAvailable)||0),0);
+  const totalCartonsSel = rows.reduce((s,r)=>s+(Number(r.cartonsSelected)||0),0);
+  const totalActualSample = rows.reduce((s,r)=>s+(Number(r.actualSampleInspected)||0),0);
+  return `
+  <div class="panel panel-pad section-block">
+    <h2 class="section-title">02. Sample Selection & AQL Plan</h2>
+    <h3 class="section-title" style="font-size:12.5px;">Style / Assortment Overview</h3>
+    <table class="rep-table">
+      <thead><tr><th>Style ID</th><th>Style Name / Description</th><th>Order Qty</th><th>Available Qty</th><th>Available %</th><th>Cartons Available</th><th>Cartons Selected</th><th>Actual Sample Inspected</th><th>Remarks</th><th></th></tr></thead>
+      <tbody>
+        ${rows.map((r,i)=>`
+          <tr>
+            <td><input type="text" data-so="${i}:styleId" value="${esc(r.styleId)}"></td>
+            <td><input type="text" data-so="${i}:styleName" value="${esc(r.styleName)}"></td>
+            <td><input type="number" data-so="${i}:orderQty" value="${esc(r.orderQty)}"></td>
+            <td><input type="number" data-so="${i}:availableQty" value="${esc(r.availableQty)}"></td>
+            <td>${r.orderQty ? fmt1((Number(r.availableQty)||0)/Number(r.orderQty)*100)+'%' : ''}</td>
+            <td><input type="number" data-so="${i}:cartonsAvailable" value="${esc(r.cartonsAvailable)}"></td>
+            <td><input type="number" data-so="${i}:cartonsSelected" value="${esc(r.cartonsSelected)}"></td>
+            <td><input type="number" data-so="${i}:actualSampleInspected" value="${esc(r.actualSampleInspected)}"></td>
+            <td><input type="text" data-so="${i}:remarks" value="${esc(r.remarks)}"></td>
+            <td>${rows.length>1?`<button type="button" class="btn danger small" data-so-remove="${i}">✕</button>`:''}</td>
+          </tr>`).join('')}
+        <tr class="rep-group-hd"><td colspan="2">TOTAL</td><td>${totalOrder}</td><td>${totalAvail}</td><td></td><td>${totalCartonsAvail}</td><td>${totalCartonsSel}</td><td>${totalActualSample}</td><td colspan="2"></td></tr>
+      </tbody>
+    </table>
+    <button type="button" class="btn ghost small row-add-btn" data-action="add-overview-row">+ Add Style Row</button>
+
+    <h3 class="section-title" style="margin-top:20px;font-size:12.5px;">Carton / Quantity Selection</h3>
+    <div class="header-grid">
+      <div class="f"><span class="field-label">Total Cartons on Packing List</span><input type="number" data-cqs="totalCartonsPackingList" value="${esc(state.cartonQtySelection.totalCartonsPackingList)}"></div>
+      <div class="f"><span class="field-label">Total Cartons Selected (auto, from above)</span><input type="text" value="${totalCartonsSel}" readonly></div>
+      <div class="f"><span class="field-label">Random Carton Selection Performed?</span>
+        <select data-cqs="randomSelectionPerformed"><option ${state.cartonQtySelection.randomSelectionPerformed==='Yes'?'selected':''}>Yes</option><option ${state.cartonQtySelection.randomSelectionPerformed==='No'?'selected':''}>No</option></select>
+      </div>
+      <div class="f"><span class="field-label">Selected Carton Numbers</span><input type="text" data-cqs="selectedCartonNumbers" value="${esc(state.cartonQtySelection.selectedCartonNumbers)}"></div>
+    </div>
+  </div>`;
+}
+
+/* ---- 03. QUANTITY & PACKING CHECKPOINTS ---- */
+function renderSection03(){
+  const results = state.packingCheckpoints.map(c=>c.result).filter(Boolean);
+  const sectionResult = results.includes('Fail') ? 'FAIL' : (results.length ? 'PASS' : 'N/A');
+  return `
+  <div class="panel panel-pad section-block">
+    <h2 class="section-title">03. Quantity & Packing Checkpoints</h2>
+    <table class="rep-table">
+      <thead><tr><th style="width:34%">Checkpoint</th><th>Result</th><th>Comments</th><th>Pictures</th></tr></thead>
+      <tbody>
+        ${state.packingCheckpoints.map((c,i)=>`
+          <tr>
+            <td>${esc(c.label)}</td>
+            <td><select class="result-select ${c.result==='Pass'?'PASS':c.result==='Fail'?'FAIL':''}" data-pk="${i}:result"><option value="">--</option><option ${c.result==='Pass'?'selected':''}>Pass</option><option ${c.result==='Fail'?'selected':''}>Fail</option><option ${c.result==='N/A'?'selected':''}>N/A</option></select></td>
+            <td><input type="text" data-pk="${i}:comments" value="${esc(c.comments)}"></td>
+            <td>${pictureWidget('packing', i)}</td>
+          </tr>`).join('')}
+      </tbody>
+    </table>
+
+    <h3 class="section-title" style="margin-top:20px;font-size:12.5px;">Carton Assortment, Dimensions & Weight</h3>
+    <table class="rep-table">
+      <thead><tr><th>PO Number</th><th>Carton No.</th><th>L x W x H (cm) / Weight (kg)</th><th>Comments</th><th></th></tr></thead>
+      <tbody>
+        ${state.cartonDims.map((r,i)=>`
+          <tr>
+            <td><input type="text" data-cd="${i}:poNumber" value="${esc(r.poNumber)}"></td>
+            <td><input type="text" data-cd="${i}:cartonNo" value="${esc(r.cartonNo)}"></td>
+            <td><input type="text" data-cd="${i}:dims" value="${esc(r.dims)}"></td>
+            <td><input type="text" data-cd="${i}:comments" value="${esc(r.comments)}"></td>
+            <td>${state.cartonDims.length>1?`<button type="button" class="btn danger small" data-cd-remove="${i}">✕</button>`:''}</td>
+          </tr>`).join('')}
+      </tbody>
+    </table>
+    <button type="button" class="btn ghost small row-add-btn" data-action="add-cartondim-row">+ Add Carton Row</button>
+
+    <div class="subtle-note" style="margin-top:14px;"><b>Quantity & Packing — Section Result:</b> <span class="badge ${sectionResult==='FAIL'?'fail':sectionResult==='PASS'?'pass':''}">${sectionResult}</span></div>
+  </div>`;
+}
+
+/* ---- 04. WORKMANSHIP — AQL RESULT ---- */
+function renderSection04(t, aql){
+  const catTotals = {};
+  DEFECT_CATEGORIES.forEach(cat => {
+    catTotals[cat] = {Critical:0,Major:0,Minor:0};
+    state.defects.forEach(d => { if (d.category===cat && catTotals[cat][d.severity]!==undefined) catTotals[cat][d.severity] += Number(d.qty)||1; });
+  });
+  return `
+  <div class="panel panel-pad section-block">
+    <h2 class="section-title">04. Workmanship — AQL Result</h2>
+    <div class="aql-preview">
+      <div class="aql-cell"><div class="al">Critical Found / Allowed</div><div class="av">${t.Critical} / ${aql.criticalAllowed}</div></div>
+      <div class="aql-cell"><div class="al">Major Found / Allowed</div><div class="av">${t.Major} / ${aql.majorAllowed}</div></div>
+      <div class="aql-cell"><div class="al">Minor Found / Allowed</div><div class="av">${t.Minor} / ${aql.minorAllowed}</div></div>
+      <div class="aql-cell"><div class="al">Result</div><div class="av">${aql.result ? `<span class="badge ${aql.result==='PASS'?'pass':'fail'}">${aql.result}</span>` : '—'}</div></div>
+    </div>
+
+    <h3 class="section-title" style="font-size:12.5px;">Defect Log</h3>
+    <div id="defectList"></div>
+    <button type="button" class="btn ghost small row-add-btn" data-action="add-defect">+ Add Defect</button>
+
+    <h3 class="section-title" style="margin-top:20px;font-size:12.5px;">Defect Summary by Category</h3>
+    <table class="rep-table">
+      <thead><tr><th>Category</th><th>Critical</th><th>Major</th><th>Minor</th><th>Total</th></tr></thead>
+      <tbody>
+        ${DEFECT_CATEGORIES.map(cat => `<tr><td>${esc(cat)}</td><td>${catTotals[cat].Critical}</td><td>${catTotals[cat].Major}</td><td>${catTotals[cat].Minor}</td><td>${catTotals[cat].Critical+catTotals[cat].Major+catTotals[cat].Minor}</td></tr>`).join('')}
+      </tbody>
+    </table>
+  </div>`;
+}
+
+/* ---- 05. ON-SITE CHECKPOINTS & TESTS ---- */
+function renderSection05(){
+  let lastGroup = null;
+  const rowsHtml = state.testCheckpoints.map((c,i) => {
+    const groupHd = c.group !== lastGroup ? `<tr class="rep-group-hd"><td colspan="5">${esc(c.group)}</td></tr>` : '';
+    lastGroup = c.group;
+    return groupHd + `
+      <tr>
+        <td>${esc(c.label)}</td>
+        <td><select data-tc="${i}:applicable"><option ${c.applicable==='Yes'?'selected':''}>Yes</option><option ${c.applicable==='No'?'selected':''}>No</option></select></td>
+        <td><select class="result-select ${c.result==='Pass'?'PASS':c.result==='Fail'?'FAIL':''}" data-tc="${i}:result"><option value="">--</option><option ${c.result==='Pass'?'selected':''}>Pass</option><option ${c.result==='Fail'?'selected':''}>Fail</option><option ${c.result==='N/A'?'selected':''}>N/A</option></select></td>
+        <td>${c.isReport
+          ? `<input type="text" placeholder="Test report #" data-tc="${i}:testReportNumber" value="${esc(c.testReportNumber)}">`
+          : `<input type="text" placeholder="Comments" data-tc="${i}:comments" value="${esc(c.comments)}">`}
+        </td>
+        <td>${pictureWidget('tests', i)}</td>
+      </tr>`;
+  }).join('');
+  const results = state.testCheckpoints.map(c=>c.result).filter(Boolean);
+  const sectionResult = results.includes('Fail') ? 'FAIL' : (results.length ? 'PASS' : 'N/A');
+  return `
+  <div class="panel panel-pad section-block">
+    <h2 class="section-title">05. On-Site Checkpoints & Tests</h2>
+    <table class="rep-table">
+      <thead><tr><th style="width:34%">Checkpoint / Test</th><th>Applicable</th><th>Result</th><th>Comments / Report #</th><th>Picture</th></tr></thead>
+      <tbody>${rowsHtml}</tbody>
+    </table>
+    <div class="subtle-note" style="margin-top:10px;"><b>Checkpoints & Tests — Section Result:</b> <span class="badge ${sectionResult==='FAIL'?'fail':sectionResult==='PASS'?'pass':''}">${sectionResult}</span></div>
+  </div>`;
+}
+
+/* ---- 06. MEASUREMENTS ---- */
+function renderSection06(){
+  const m = state.measurements;
+  const pomsWithOot = m.poms.map(p => {
+    const vals = p.m.map(Number).filter(v => !isNaN(v) && p.m[p.m.indexOf(v)] !== '');
+    const nums = p.m.filter(x=>x!=='').map(Number);
+    let oot = '';
+    if (p.spec !== '' && nums.length){
+      const min = Math.min(...nums), max = Math.max(...nums);
+      const lo = p.tolMinus !== '' ? Number(p.spec) + Number(p.tolMinus) : null;
+      const hi = p.tolPlus !== '' ? Number(p.spec) + Number(p.tolPlus) : null;
+      if ((lo!==null && min<lo) || (hi!==null && max>hi)) oot = 'OOT';
+    }
+    return oot;
+  });
+  const totalOOT = pomsWithOot.filter(x=>x==='OOT').length;
+  const pctOOT = m.totalPOMsMeasured ? (totalOOT / Number(m.totalPOMsMeasured) * 100) : null;
+  const measResult = m.maxAllowedOOT !== '' ? (totalOOT <= Number(m.maxAllowedOOT) ? 'PASS' : 'FAIL') : '';
+  return `
+  <div class="panel panel-pad section-block">
+    <h2 class="section-title">06. Measurements</h2>
+    <h3 class="section-title" style="font-size:12.5px;">Point-of-Measure (POM) Findings</h3>
+    <table class="rep-table">
+      <thead><tr><th>POM Description</th><th>Size</th><th>Tol (-)</th><th>Tol (+)</th><th>Spec</th><th>M1</th><th>M2</th><th>M3</th><th>M4</th><th>M5</th><th>OOT?</th><th></th></tr></thead>
+      <tbody>
+        ${m.poms.map((p,i)=>`
+          <tr>
+            <td><input type="text" data-pom="${i}:description" value="${esc(p.description)}"></td>
+            <td><input type="text" data-pom="${i}:size" value="${esc(p.size)}" style="width:50px"></td>
+            <td><input type="number" step="0.1" data-pom="${i}:tolMinus" value="${esc(p.tolMinus)}" style="width:55px"></td>
+            <td><input type="number" step="0.1" data-pom="${i}:tolPlus" value="${esc(p.tolPlus)}" style="width:55px"></td>
+            <td><input type="number" step="0.1" data-pom="${i}:spec" value="${esc(p.spec)}" style="width:60px"></td>
+            ${p.m.map((v,mi)=>`<td><input type="number" step="0.1" data-pomm="${i}:${mi}" value="${esc(v)}" style="width:55px"></td>`).join('')}
+            <td>${pomsWithOot[i] ? `<span class="badge fail">OOT</span>` : ''}</td>
+            <td>${m.poms.length>1?`<button type="button" class="btn danger small" data-pom-remove="${i}">✕</button>`:''}</td>
+          </tr>`).join('')}
+      </tbody>
+    </table>
+    <button type="button" class="btn ghost small row-add-btn" data-action="add-pom-row">+ Add POM Row</button>
+
+    <div class="row" style="align-items:flex-end;margin-top:14px;">
+      <div class="f"><span class="field-label">Or Measurement Report Pictures</span>${pictureWidget('measurements', '0')}</div>
+    </div>
+
+    <h3 class="section-title" style="margin-top:20px;font-size:12.5px;">Measurement Summary</h3>
+    <div class="header-grid">
+      <div class="f"><span class="field-label">Total Sample Size (Pcs)</span><input type="number" data-mm="totalSampleSize" value="${esc(m.totalSampleSize)}"></div>
+      <div class="f"><span class="field-label">Total POMs Measured</span><input type="number" data-mm="totalPOMsMeasured" value="${esc(m.totalPOMsMeasured)}"></div>
+      <div class="f"><span class="field-label">Total Pieces Out of Tolerance (auto)</span><input type="text" value="${totalOOT}" readonly></div>
+      <div class="f"><span class="field-label">Maximum Allowed (per AQL)</span><input type="number" data-mm="maxAllowedOOT" value="${esc(m.maxAllowedOOT)}"></div>
+      <div class="f"><span class="field-label">% POM Out of Tolerance (auto)</span><input type="text" value="${pctOOT!=null?fmt1(pctOOT)+'%':''}" readonly></div>
+      <div class="f"><span class="field-label">Result (auto)</span><input type="text" value="${measResult}" readonly></div>
+    </div>
+  </div>`;
+}
+
+/* ---- 07. PICTORIAL / EVIDENCE ---- */
+function renderSection07(){
+  const pics = collectAllPictures();
+  return `
+  <div class="panel panel-pad section-block">
+    <h2 class="section-title">07. Pictorial / Evidence</h2>
+    ${pics.length ? `<div class="gallery">${pics.map(p=>`<figure><img src="${esc(p.url)}" onclick="window.open('${esc(p.url)}','_blank')"><figcaption>${esc(p.label)}</figcaption></figure>`).join('')}</div>`
+      : `<div class="subtle-note">No photos added yet — use the "Add Photo" button next to any checkpoint above; every photo collected across the whole report automatically appears here.</div>`}
+  </div>`;
+}
+
+/* ---- 08. SUMMARY & SIGN-OFF ---- */
+function renderSection08(aql){
+  const packingResults = state.packingCheckpoints.map(c=>c.result).filter(Boolean);
+  const packingResult = packingResults.includes('Fail') ? 'FAIL' : (packingResults.length ? 'PASS' : 'N/A');
+  const testResults = state.testCheckpoints.map(c=>c.result).filter(Boolean);
+  const testsResult = testResults.includes('Fail') ? 'FAIL' : (testResults.length ? 'PASS' : 'N/A');
+  const m = state.measurements;
+  const failCount = [packingResult, aql.result, testsResult].filter(r=>r==='FAIL').length;
+  const anyResult = [packingResult, aql.result, testsResult].some(r=>r==='PASS'||r==='FAIL');
+  const overall = failCount > 0 ? 'FAIL' : (anyResult ? 'PASS' : 'PENDING');
+  return `
+  <div class="panel panel-pad section-block">
+    <h2 class="section-title">08. Summary & Sign-Off</h2>
+    <table class="rep-table">
+      <thead><tr><th>Section</th><th>Result</th></tr></thead>
+      <tbody>
+        <tr><td>1. Quantity & Packing</td><td><span class="badge ${packingResult==='FAIL'?'fail':packingResult==='PASS'?'pass':''}">${packingResult}</span></td></tr>
+        <tr><td>2. Workmanship</td><td>${aql.result ? `<span class="badge ${aql.result==='FAIL'?'fail':'pass'}">${aql.result}</span>` : 'N/A'}</td></tr>
+        <tr><td>3. Checkpoints & Tests</td><td><span class="badge ${testsResult==='FAIL'?'fail':testsResult==='PASS'?'pass':''}">${testsResult}</span></td></tr>
+        <tr><td>4. Measurements</td><td>${(() => {
+          if (m.maxAllowedOOT === '') return 'N/A';
+          const oot = state.measurements.poms.filter(p => {
+            const nums = p.m.filter(x=>x!=='').map(Number);
+            if (p.spec==='' || !nums.length) return false;
+            const min = Math.min(...nums), max = Math.max(...nums);
+            const lo = p.tolMinus!=='' ? Number(p.spec)+Number(p.tolMinus) : null;
+            const hi = p.tolPlus!=='' ? Number(p.spec)+Number(p.tolPlus) : null;
+            return (lo!==null && min<lo) || (hi!==null && max>hi);
+          }).length;
+          const r = oot <= Number(m.maxAllowedOOT) ? 'PASS' : 'FAIL';
+          return `<span class="badge ${r==='FAIL'?'fail':'pass'}">${r}</span>`;
+        })()}</td></tr>
+      </tbody>
+    </table>
+    <div class="subtle-note" style="margin:10px 0 16px;"><b>Overall Inspection Result:</b> <span class="badge ${overall==='FAIL'?'fail':overall==='PASS'?'pass':''}">${overall}</span></div>
+
+    <h3 class="section-title" style="font-size:12.5px;">Acknowledgements & Sign-Off</h3>
+    <table class="rep-table">
+      <thead><tr><th>Role</th><th>Name</th><th>Signature / Date</th></tr></thead>
+      <tbody>
+        ${state.signOff.map((s,i)=>`
+          <tr>
+            <td>${esc(s.role)}</td>
+            <td><input type="text" data-so2="${i}:name" value="${esc(s.name)}"></td>
+            <td><input type="text" data-so2="${i}:signature" value="${esc(s.signature)}" placeholder="Name / date"></td>
+          </tr>`).join('')}
+      </tbody>
+    </table>
+
+    <h3 class="section-title" style="margin-top:20px;font-size:12.5px;">Overall Remarks</h3>
+    <textarea id="f_remarks" rows="3" style="width:100%;">${esc(state.remarks)}</textarea>
+  </div>`;
+}
+
+function redrawDefects_(){
+  const el = document.getElementById('defectList');
+  if (!el) return;
+  const libOptions = DEFECT_LIBRARY.map(d => `<option value="${d.category}|||${d.name}|||${d.sev}">${d.category} — ${d.name}</option>`).join('');
+  el.innerHTML = `
+    <table class="rep-table">
+      <thead><tr><th>SL</th><th>Group</th><th>Category</th><th>Description</th><th>Area</th><th>Severity</th><th>Qty</th><th>Picture</th><th></th></tr></thead>
+      <tbody>
+        ${state.defects.map((d,i) => `
+          <tr>
+            <td>${i+1}</td>
+            <td><select data-def="${i}:group">${DEFECT_GROUPS.map(g=>`<option ${d.group===g?'selected':''}>${esc(g)}</option>`).join('')}</select></td>
+            <td><select data-def="${i}:category">${DEFECT_CATEGORIES.map(c=>`<option ${d.category===c?'selected':''}>${esc(c)}</option>`).join('')}</select></td>
+            <td>
+              <select data-defect-pick="${i}" style="margin-bottom:4px;width:100%;"><option value="">-- pick from library --</option>${libOptions}</select>
+              <input type="text" placeholder="Description" data-def="${i}:description" value="${esc(d.description)}">
+            </td>
+            <td><input type="text" placeholder="Area" data-def="${i}:area" value="${esc(d.area)}" style="width:70px"></td>
+            <td><select data-def="${i}:severity"><option ${d.severity==='Critical'?'selected':''}>Critical</option><option ${d.severity==='Major'?'selected':''}>Major</option><option ${d.severity==='Minor'?'selected':''}>Minor</option></select></td>
+            <td><input type="number" data-def="${i}:qty" value="${d.qty||1}" style="width:55px"></td>
+            <td>${pictureWidget('defect', i)}</td>
+            <td><button type="button" class="btn danger small" data-remove-defect="${i}">✕</button></td>
+          </tr>`).join('') || `<tr><td colspan="9" style="color:var(--muted)">No defects logged yet.</td></tr>`}
+      </tbody>
+    </table>`;
+}
+
+/* ============================= RENDER: LOG ============================= */
+
+function renderLog(){
+  const rows = state.reports.slice().sort((a,b)=> new Date(b.header.date)-new Date(a.header.date)).map(r => `
+    <tr>
+      <td>${esc(r.header.date)}</td>
+      <td><span class="pill ${r.header.inspectionType==='Final Inspection'?'final':'prefinal'}">${esc(r.header.inspectionType)}</span></td>
+      <td>${esc(r.header.buyer)}</td>
+      <td>${esc(r.header.styleName)}</td>
+      <td>${esc(r.header.ir)}</td>
+      <td>${r.status==='Draft' ? '<span class="pill" style="color:var(--maj);border-color:#3a2a10;background:var(--maj-dim);">Draft</span>' : '<span class="pill" style="color:var(--good);border-color:#164a3a;background:#122a20;">Submitted</span>'}</td>
+      <td><span class="badge ${r.result==='PASS'?'pass':r.result==='FAIL'?'fail':''}">${esc(r.result||'PENDING')}</span></td>
+      <td class="actions-cell">
+        <button class="btn ghost small" data-view="${r.id}">View</button>
+        <button class="btn ghost small" data-edit="${r.id}">${r.status==='Draft'?'Resume':'Edit'}</button>
+        <button class="btn ghost small" data-download-pdf-saved="${r.id}">PDF</button>
+        <button class="btn danger small" data-delete="${r.id}">Delete</button>
+      </td>
+    </tr>`).join('');
+  return `
+  <div class="panel panel-pad">
+    <h2 class="section-title">All Inspection Reports</h2>
+    <table class="log">
+      <tr><th>Date</th><th>Type</th><th>Buyer</th><th>Style</th><th>IR</th><th>Status</th><th>Result</th><th></th></tr>
+      ${rows || '<tr><td colspan="8" class="subtle-note">No reports yet.</td></tr>'}
+    </table>
+  </div>`;
+}
+
+/* ============================= REPORT MODAL (view / print) ============================= */
+
+function renderReportModal(){
+  const r = state.reports.find(x=>x.id===state.viewingId);
+  if (!r) return '';
+  const t = defectTotals(r.defects);
+  const defectRows = (r.defects||[]).map(d => `
+    <tr><td>${esc(d.severity)}</td><td>${esc(d.category)}</td><td>${esc(d.description)}</td><td>${esc(d.area)}</td><td>${esc(d.qty)}</td></tr>`).join('');
+  const pics = [];
+  (r.packingCheckpoints||[]).forEach(cp => (cp.pictures||[]).forEach(p=>pics.push(p)));
+  (r.testCheckpoints||[]).forEach(cp => (cp.pictures||[]).forEach(p=>pics.push(p)));
+  (r.defects||[]).forEach(d => (d.pictures||[]).forEach(p=>pics.push(p)));
+  (r.allQtyCheck && r.allQtyCheck.pictures || []).forEach(p=>pics.push(p));
+  (r.cartonSelection && r.cartonSelection.pictures || []).forEach(p=>pics.push(p));
+  (r.measurements && r.measurements.pictures || []).forEach(p=>pics.push(p));
+  return `
+  <div class="modal-bg" data-close-modal="1">
+    <div class="modal" onclick="event.stopPropagation()">
+      <div class="modal-head">
+        <div><b>Inspection Report</b> <span class="badge ${r.result==='PASS'?'pass':r.result==='FAIL'?'fail':''}">${esc(r.result||'PENDING')}</span></div>
+        <div>
+          <button class="btn ghost small" data-download-pdf-saved="${r.id}">Download PDF</button>
+          <button class="close-x" data-close-modal="1">&times;</button>
+        </div>
+      </div>
+      <div class="modal-body">
+        <div class="header-grid">
+          <div><div class="field-label">Type</div>${esc(r.header.inspectionType)}</div>
+          <div><div class="field-label">Date</div>${esc(r.header.date)}</div>
+          <div><div class="field-label">SBU</div>${esc(r.header.sbu)}</div>
+          <div><div class="field-label">Buyer</div>${esc(r.header.buyer)}</div>
+          <div><div class="field-label">IR No</div>${esc(r.header.ir)}</div>
+          <div><div class="field-label">Style</div>${esc(r.header.styleName)}</div>
+          <div><div class="field-label">Season</div>${esc(r.header.season)}</div>
+          <div><div class="field-label">PO No</div>${esc(r.header.poNo)}</div>
+          <div><div class="field-label">Sample Size</div>${esc(r.sampleSize)}</div>
+          <div><div class="field-label">Inspector</div>${esc(r.header.inspectorName)}</div>
+        </div>
+        <h2 class="section-title" style="margin-top:20px;">Defects</h2>
+        <table class="log"><tr><th>Severity</th><th>Category</th><th>Description</th><th>Area</th><th>Qty</th></tr>
+        ${defectRows || '<tr><td colspan="5">No defects recorded.</td></tr>'}</table>
+        ${pics.length ? `<h2 class="section-title" style="margin-top:20px;">Pictorial Evidence (${pics.length})</h2><div class="gallery">${pics.map(p=>`<figure><img src="${esc(p.url)}" onclick="window.open('${esc(p.url)}','_blank')"></figure>`).join('')}</div>` : ''}
+        <h2 class="section-title" style="margin-top:20px;">Overall Remarks</h2>
+        <p>${esc(r.remarks)||'-'}</p>
+      </div>
+    </div>
+  </div>`;
+}
+
+/* ============================= EVENTS ============================= */
+
+function bindEvents(){
+  document.querySelectorAll('[data-tab]').forEach(el => el.onclick = () => { state.tab = el.dataset.tab; render(); });
+  const gotoEntry = document.querySelector('[data-action="goto-entry"]');
+  if (gotoEntry) gotoEntry.onclick = () => { state.tab='entry'; render(); };
+
+  document.querySelectorAll('[data-dashtype]').forEach(el => el.onclick = () => { state.dashType = el.dataset.dashtype; render(); });
+  const rangeSel = document.querySelector('[data-dashrange]');
+  if (rangeSel) rangeSel.onchange = (e) => { state.dashRange = e.target.value; render(); };
+
+  // ---- 01/general header ----
+  document.querySelectorAll('[data-h]').forEach(el => el.onchange = (e) => {
+    const key = el.dataset.h;
+    const val = e.target.value;
+    state.header[key] = val;
+    if (key === 'sbu') {
+      state.header.buyer = ''; state.header.ir = '';
+      state.header.styleId = ''; state.header.styleName = ''; state.header.styleDescription = ''; state.header.item = '';
+      state.header.productDept = ''; state.header.season = ''; state.header.orderQty = ''; state.colorQty = [];
+      loadBuyerOptions(val);
+    } else if (key === 'buyer') {
+      state.header.ir = '';
+      state.header.styleId = ''; state.header.styleName = ''; state.header.styleDescription = ''; state.header.item = '';
+      state.header.productDept = ''; state.header.season = ''; state.header.orderQty = ''; state.colorQty = [];
+      loadIrOptions(state.header.sbu, val);
+    } else if (key === 'ir') {
+      loadStyleDetail(state.header.sbu, state.header.buyer, val);
+    } else {
+      render();
+    }
+  });
+
+  // ---- All Quantities / Carton Selection / Carton-Quantity Selection ----
+  document.querySelectorAll('[data-aq]').forEach(el => el.onchange = (e) => { state.allQtyCheck[el.dataset.aq] = e.target.value; render(); });
+  document.querySelectorAll('[data-cs]').forEach(el => el.onchange = (e) => { state.cartonSelection[el.dataset.cs] = e.target.value; render(); });
+  document.querySelectorAll('[data-cqs]').forEach(el => el.onchange = (e) => { state.cartonQtySelection[el.dataset.cqs] = e.target.value; render(); });
+  document.querySelectorAll('[data-cq]').forEach(el => el.onchange = (e) => {
+    const [i, field] = el.dataset.cq.split(':');
+    state.colorQty[Number(i)][field] = e.target.value;
+    render();
+  });
+
+  // ---- 02. Sample overview rows ----
+  document.querySelectorAll('[data-so]').forEach(el => el.onchange = (e) => {
+    const [i, field] = el.dataset.so.split(':');
+    state.sampleOverview[Number(i)][field] = e.target.value;
+    render();
+  });
+  document.querySelectorAll('[data-so-remove]').forEach(el => el.onclick = () => {
+    state.sampleOverview.splice(Number(el.dataset.soRemove), 1);
+    render();
+  });
+  const addOverviewBtn = document.querySelector('[data-action="add-overview-row"]');
+  if (addOverviewBtn) addOverviewBtn.onclick = () => {
+    state.sampleOverview.push({ styleId:'', styleName:'', orderQty:'', availableQty:'', cartonsAvailable:'', cartonsSelected:'', actualSampleInspected:'', remarks:'' });
+    render();
+  };
+
+  // ---- 03. Packing checkpoints / carton dims ----
+  document.querySelectorAll('[data-pk]').forEach(el => el.onchange = (e) => {
+    const [i, field] = el.dataset.pk.split(':');
+    state.packingCheckpoints[Number(i)][field] = e.target.value;
+    render();
+  });
+  document.querySelectorAll('[data-cd]').forEach(el => el.onchange = (e) => {
+    const [i, field] = el.dataset.cd.split(':');
+    state.cartonDims[Number(i)][field] = e.target.value;
+    render();
+  });
+  document.querySelectorAll('[data-cd-remove]').forEach(el => el.onclick = () => {
+    state.cartonDims.splice(Number(el.dataset.cdRemove), 1);
+    render();
+  });
+  const addCartonDimBtn = document.querySelector('[data-action="add-cartondim-row"]');
+  if (addCartonDimBtn) addCartonDimBtn.onclick = () => {
+    state.cartonDims.push({ poNumber:'', cartonNo:'', dims:'', comments:'' });
+    render();
+  };
+
+  // ---- 04. Defect log ----
+  const addBtn = document.querySelector('[data-action="add-defect"]');
+  if (addBtn) addBtn.onclick = () => {
+    if (tcBlockIfGuest('Adding a defect')) return;
+    state.defects.push({group:'Group-B',category:'Assembling / Sewing',description:'',area:'',severity:'Major',qty:1,pictures:[]});
+    render();
+  };
+  document.querySelectorAll('[data-defect-pick]').forEach(el => el.onchange = (e) => {
+    const i = Number(el.dataset.defectPick);
+    if (!e.target.value) return;
+    const [category,description,severity] = e.target.value.split('|||');
+    Object.assign(state.defects[i], {category,description,severity});
+    render();
+  });
+  document.querySelectorAll('[data-def]').forEach(el => el.onchange = (e) => {
+    const [i, field] = el.dataset.def.split(':');
+    state.defects[Number(i)][field] = e.target.value;
+    render();
+  });
+  document.querySelectorAll('[data-remove-defect]').forEach(el => el.onclick = () => {
+    if (tcBlockIfGuest('Removing a defect')) return;
+    state.defects.splice(Number(el.dataset.removeDefect),1);
+    render();
+  });
+
+  // ---- 05. Test checkpoints ----
+  document.querySelectorAll('[data-tc]').forEach(el => el.onchange = (e) => {
+    const [i, field] = el.dataset.tc.split(':');
+    state.testCheckpoints[Number(i)][field] = e.target.value;
+    render();
+  });
+
+  // ---- 06. Measurements ----
+  document.querySelectorAll('[data-pom]').forEach(el => el.onchange = (e) => {
+    const [i, field] = el.dataset.pom.split(':');
+    state.measurements.poms[Number(i)][field] = e.target.value;
+    render();
+  });
+  document.querySelectorAll('[data-pomm]').forEach(el => el.onchange = (e) => {
+    const [i, mi] = el.dataset.pomm.split(':');
+    state.measurements.poms[Number(i)].m[Number(mi)] = e.target.value;
+    render();
+  });
+  document.querySelectorAll('[data-pom-remove]').forEach(el => el.onclick = () => {
+    state.measurements.poms.splice(Number(el.dataset.pomRemove), 1);
+    render();
+  });
+  const addPomBtn = document.querySelector('[data-action="add-pom-row"]');
+  if (addPomBtn) addPomBtn.onclick = () => {
+    state.measurements.poms.push({ description:'', size:'', tolMinus:'', tolPlus:'', spec:'', m:['','','','',''] });
+    render();
+  };
+  document.querySelectorAll('[data-mm]').forEach(el => el.onchange = (e) => { state.measurements[el.dataset.mm] = e.target.value; render(); });
+
+  // ---- 08. Sign-off ----
+  document.querySelectorAll('[data-so2]').forEach(el => el.onchange = (e) => {
+    const [i, field] = el.dataset.so2.split(':');
+    state.signOff[Number(i)][field] = e.target.value;
+  });
+
+  // ---- Pictures (every section) ----
+  document.querySelectorAll('[data-pic-add]').forEach(el => el.onclick = () => {
+    document.querySelector(`[data-pic-input="${el.dataset.picAdd}"]`).click();
+  });
+  document.querySelectorAll('[data-pic-input]').forEach(el => el.onchange = async (e) => {
+    if (tcBlockIfGuest('Adding a photo')) return;
+    const [section, idx] = el.dataset.picInput.split(':');
+    const file = e.target.files[0];
+    if (!file) return;
+    await handlePictureUpload(section, idx, file);
+  });
+  document.querySelectorAll('[data-pic-del]').forEach(el => el.onclick = () => {
+    const [section, idx, pi] = el.dataset.picDel.split(':');
+    const target = resolvePictureTarget(section, idx);
+    if (target && target.pictures) target.pictures.splice(Number(pi), 1);
+    render();
+  });
+
+  // ---- Save draft / submit final / PDF / cancel ----
+  const draftBtn = document.querySelector('[data-action="save-draft"]');
+  if (draftBtn) draftBtn.onclick = () => {
+    if (tcBlockIfGuest('Saving a draft')) return;
+    state.remarks = document.getElementById('f_remarks').value;
+    saveCurrentReport_(false);
+  };
+  const submitBtn = document.querySelector('[data-action="submit-final"]');
+  if (submitBtn) submitBtn.onclick = () => {
+    if (tcBlockIfGuest('Submitting a report')) return;
+    state.remarks = document.getElementById('f_remarks').value;
+    saveCurrentReport_(true);
+  };
+  const pdfBtn = document.querySelector('[data-action="download-pdf"]');
+  if (pdfBtn) pdfBtn.onclick = () => {
+    state.remarks = document.getElementById('f_remarks').value;
+    generatePdfReport();
+  };
+  const cancelBtn = document.querySelector('[data-action="cancel-edit"]');
+  if (cancelBtn) cancelBtn.onclick = () => { resetEntryForm_(); render(); };
+
+  document.querySelectorAll('[data-view]').forEach(el => el.onclick = () => { state.viewingId = el.dataset.view; render(); });
+  document.querySelectorAll('[data-edit]').forEach(el => el.onclick = () => {
+    if (tcBlockIfGuest('Editing a report')) return;
+    loadReportIntoForm_(el.dataset.edit);
+  });
+  document.querySelectorAll('[data-download-pdf-saved]').forEach(el => el.onclick = () => {
+    loadReportIntoForm_(el.dataset.downloadPdfSaved, true);
+  });
+  document.querySelectorAll('[data-delete]').forEach(el => el.onclick = () => {
+    if (tcBlockIfGuest('Deleting a report')) return;
+    if (!confirm('Delete this report? This cannot be undone.')) return;
+    state.reports = state.reports.filter(x=>x.id!==el.dataset.delete);
+    persistReports();
+    render();
+  });
+  document.querySelectorAll('[data-close-modal]').forEach(el => el.onclick = () => { state.viewingId = null; render(); });
+}
+
+function loadReportIntoForm_(reportId, thenDownloadPdf){
+  const r = state.reports.find(x=>x.id===reportId);
+  if (!r) return;
+  Object.assign(state, emptyReportState(), JSON.parse(JSON.stringify(r)));
+  state.editingId = r.id;
+  state.tab = 'entry';
+  state.viewingId = null;
+  render();
+  const h = state.header;
+  const afterLoad = () => { if (thenDownloadPdf) generatePdfReport(); };
+  if (h.sbu) {
+    loadBuyerOptions(h.sbu).then(() => {
+      if (h.buyer) loadIrOptions(h.sbu, h.buyer).then(() => {
+        if (h.ir) loadStyleDetail(h.sbu, h.buyer, h.ir).then(afterLoad);
+        else afterLoad();
+      });
+      else afterLoad();
+    });
+  } else afterLoad();
+}
+
+function resetEntryForm_(){
+  Object.assign(state, emptyReportState());
+  state.editingId = null;
+  state.styleDetail = null;
+  state.buyerOptions = []; state.irOptions = [];
+}
+
+async function saveCurrentReport_(isFinal){
+  const { overall, aql } = computeOverallResult_();
+
+  const record = Object.assign({}, JSON.parse(JSON.stringify(emptyReportState())), JSON.parse(JSON.stringify({
+    header: state.header, allQtyCheck: state.allQtyCheck, cartonSelection: state.cartonSelection, colorQty: state.colorQty,
+    sampleOverview: state.sampleOverview, cartonQtySelection: state.cartonQtySelection, packingCheckpoints: state.packingCheckpoints,
+    cartonDims: state.cartonDims, defects: state.defects, testCheckpoints: state.testCheckpoints, measurements: state.measurements,
+    signOff: state.signOff, remarks: state.remarks,
+  })));
+  record.id = state.editingId || uid();
+  record.sampleSize = aql.sampleSize;
+  record.result = overall === 'PENDING' ? (aql.result || 'PENDING') : overall;
+  record.status = isFinal ? 'Submitted' : 'Draft';
+  record.savedAt = new Date().toISOString();
+
+  if (state.editingId){
+    state.reports = state.reports.map(r => r.id===state.editingId ? record : r);
+  } else {
+    state.reports.push(record);
+  }
+  persistReports();
+
+  if (isFinal){
+    showToast('Report submitted — overall result: ' + record.result + '. Preparing PDF…');
+    await generatePdfReport(record); // snapshot passed explicitly — the form gets reset right after
+  } else {
+    showToast('Draft saved — you can resume it any time from the Reports Log.');
+  }
+  resetEntryForm_();
+  state.tab = 'log';
+  render();
+}
+
+/* ============================= INIT ============================= */
+
+// Pre-fill from Style Tracking's "+ Add Entry" link (?sbu=&buyer=&ir=)
+(function applyUrlPrefill(){
+  const p = new URLSearchParams(window.location.search);
+  const sbu = p.get('sbu'), buyer = p.get('buyer'), ir = p.get('ir');
+  if (!sbu && !buyer && !ir) return;
+  state.tab = 'entry';
+  if (sbu) state.header.sbu = sbu;
+  if (buyer) state.header.buyer = buyer;
+  if (ir) state.header.ir = ir;
+})();
+
+loadReports().then(() => {
+  const h = state.header;
+  if (h.sbu) loadBuyerOptions(h.sbu).then(() => {
+    if (h.buyer) loadIrOptions(h.sbu, h.buyer).then(() => {
+      if (h.ir) loadStyleDetail(h.sbu, h.buyer, h.ir);
+    });
+  });
+});
+</script>
+</body>
+</html>

@@ -13,14 +13,16 @@
   .qa-side{width:260px;flex:none;background:var(--ink);color:#C7CCC7;padding:22px 0;overflow-y:auto;transition:width .2s,padding .2s;}
   .qa-shell.collapsed .qa-side{width:0;padding:0;overflow:hidden;border:none;}
   .qa-side h6{font-family:var(--mono);font-size:10px;letter-spacing:.1em;text-transform:uppercase;color:var(--gold);padding:14px 20px 8px;}
-  .qa-side button{
+  .qa-side button, .qa-side a.navlink{
     display:flex;align-items:center;gap:10px;width:100%;text-align:left;background:none;border:none;
     color:#C7CCC7;font-family:var(--body);font-size:13.5px;padding:9px 20px;cursor:pointer;border-left:3px solid transparent;
+    text-decoration:none;box-sizing:border-box;
   }
-  .qa-side button:hover{background:rgba(255,255,255,.06);color:#fff;}
+  .qa-side button:hover, .qa-side a.navlink:hover{background:rgba(255,255,255,.06);color:#fff;}
   .qa-side button.active{background:rgba(47,110,82,.18);color:#fff;border-left-color:var(--pass);font-weight:600;}
-  .qa-side button .dot{width:6px;height:6px;border-radius:50%;background:#5b6459;flex:none;}
+  .qa-side button .dot, .qa-side a.navlink .dot{width:6px;height:6px;border-radius:50%;background:#5b6459;flex:none;}
   .qa-side button.active .dot{background:var(--pass);}
+  .qa-side a.navlink .ext{margin-left:auto;font-size:11px;color:#8a938a;}
   .qa-main{flex:1;padding:32px 36px 60px;overflow-y:auto;max-width:1180px;}
   .qa-head{margin-bottom:26px;}
   .qa-head .eyebrow{margin-bottom:8px;}
@@ -162,7 +164,7 @@ const QA_STAGES = [
 ];
 const ALL_STAGES = [...PROCESS_STAGES, ...QA_STAGES];
 
-const QA_API_URL = "https://script.google.com/macros/s/AKfycbyqzmKkbmXUd50kWKFtSmWwbHgU_lEUL2Y799Rtgt_DmIvXuQiMsB28fQeM4qIUs1lE/exec";
+const QA_API_URL = "https://script.google.com/macros/s/AKfycbwsPJcvf_0pa3Pyt3fhR3AOOo5TfDkoiGq_gwDpH9Tgpd5uJ2MQM_rzhFHIavPtnUakxw/exec";
 
 function esc(s){ return (s||"").toString().replace(/[&<>"]/g, c => ({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;"}[c])); }
 
@@ -175,7 +177,20 @@ PROCESS_STAGES.forEach(s => {
   processNav.appendChild(btn);
 });
 const qaNav = document.getElementById("qaNav");
+// "Pre-Final Inspection" and "Final Inspection" open their own
+// dedicated AQL-based inspection tools instead of the generic in-page
+// stage form — each is a separate file/sheet, both share the same
+// OrderInfo lookup, so Style Tracking still sees these stages.
+const EXTERNAL_STAGE_LINKS = { prefinal: "pre-final-inspection.html", final: "final-inspection.html" };
 QA_STAGES.forEach(s => {
+  if (EXTERNAL_STAGE_LINKS[s.id]) {
+    const a = document.createElement("a");
+    a.className = "navlink";
+    a.href = EXTERNAL_STAGE_LINKS[s.id];
+    a.innerHTML = `<span class="dot"></span>${esc(s.label)}<span class="ext">↗</span>`;
+    qaNav.appendChild(a);
+    return;
+  }
   const btn = document.createElement("button");
   btn.dataset.tab = s.id;
   btn.innerHTML = `<span class="dot"></span>${esc(s.label)}`;
@@ -695,6 +710,11 @@ async function loadStyleTrackingResults() {
 }
 
 function goToStageForTracking(stageId) {
+  if (EXTERNAL_STAGE_LINKS[stageId]) {
+    const q = new URLSearchParams({ sbu: stSelected.sbu, buyer: stSelected.buyer, ir: stSelected.ir });
+    window.location.href = EXTERNAL_STAGE_LINKS[stageId] + "?" + q.toString();
+    return;
+  }
   const stage = ALL_STAGES.find(s => s.id === stageId);
   if (!stage) return;
   document.querySelectorAll(".qa-side button").forEach(b => b.classList.remove("active"));
@@ -1145,15 +1165,6 @@ async function loadStageEntries(stageId) {
 
 // Initial tab
 renderOverview();
-</script>
-
-<script src="js/module-auth.js"></script>
-<script>
-  tcInitModuleAuth({
-    moduleKey: "qa",
-    sheetName: "QAUsers",
-    displayLabel: "QA Process"
-  });
 </script>
 </body>
 </html>
