@@ -29,39 +29,73 @@ async function handleLogin(event) {
   submitBtn.textContent = "Checking…";
   msg.className = "form-msg";
 
-  try {
-    const res = await fetch(USERS_API_URL, {
-      method: "POST",
-      headers: { "Content-Type": "text/plain;charset=utf-8" },
-      body: JSON.stringify({
-        action: "login",
-        userId: idInput.value,
-        password: pwInput.value,
-      }),
-    });
-    const data = await res.json();
+  // Apps Script can be briefly slow/overloaded, which shows up as a
+  // failed fetch or a non-JSON response. Try up to 2 times before
+  // giving up, and log the *real* reason to the console so it can be
+  // diagnosed (open DevTools > Console after a failed login).
+  const MAX_ATTEMPTS = 2;
+  let lastErrorDetail = "";
 
-    if (!data.ok) {
-      msg.textContent = data.error || "Incorrect user ID or password. Please try again.";
+  for (let attempt = 1; attempt <= MAX_ATTEMPTS; attempt++) {
+    try {
+      const res = await fetch(USERS_API_URL, {
+        method: "POST",
+        headers: { "Content-Type": "text/plain;charset=utf-8" },
+        body: JSON.stringify({
+          action: "login",
+          userId: idInput.value,
+          password: pwInput.value,
+        }),
+      });
+
+      const rawText = await res.text();
+      let data;
+      try {
+        data = JSON.parse(rawText);
+      } catch (parseErr) {
+        // Server responded, but not with the JSON we expect — this is
+        // usually an Apps Script quota/auth error page, not a network
+        // problem. Log the actual body so the cause is visible.
+        lastErrorDetail = `HTTP ${res.status}, non-JSON response: ${rawText.slice(0, 300)}`;
+        console.error("[login] Unexpected response from login server:", lastErrorDetail);
+        throw new Error("non_json_response");
+      }
+
+      if (!data.ok) {
+        msg.textContent = data.error || "Incorrect user ID or password. Please try again.";
+        msg.className = "form-msg err show";
+        submitBtn.disabled = false;
+        submitBtn.textContent = "Sign In →";
+        return;
+      }
+
+      const session = { name: data.name, role: data.role, loggedInAt: Date.now() };
+      const store = remember ? localStorage : sessionStorage;
+      store.setItem("tc_session", JSON.stringify(session));
+
+      msg.textContent = "Login successful — redirecting…";
+      msg.className = "form-msg ok show";
+
+      setTimeout(() => { window.location.href = "dashboard.html"; }, 400);
+      return;
+    } catch (err) {
+      lastErrorDetail = lastErrorDetail || (err && err.message) || "unknown fetch error";
+      console.error(`[login] Attempt ${attempt} failed:`, err);
+
+      if (attempt < MAX_ATTEMPTS) {
+        msg.textContent = "Connection issue, retrying…";
+        msg.className = "form-msg";
+        await new Promise((r) => setTimeout(r, 1000)); // brief pause, then retry
+        continue;
+      }
+
+      // Final attempt failed — show the user a normal message, but the
+      // real cause is now in the console (see lastErrorDetail above).
+      msg.textContent = "Could not reach the login server. Please try again in a moment.";
       msg.className = "form-msg err show";
       submitBtn.disabled = false;
       submitBtn.textContent = "Sign In →";
-      return;
     }
-
-    const session = { name: data.name, role: data.role, loggedInAt: Date.now() };
-    const store = remember ? localStorage : sessionStorage;
-    store.setItem("tc_session", JSON.stringify(session));
-
-    msg.textContent = "Login successful — redirecting…";
-    msg.className = "form-msg ok show";
-
-    setTimeout(() => { window.location.href = "dashboard.html"; }, 400);
-  } catch (err) {
-    msg.textContent = "Could not reach the login server. Check your internet connection and try again.";
-    msg.className = "form-msg err show";
-    submitBtn.disabled = false;
-    submitBtn.textContent = "Sign In →";
   }
 }
 
