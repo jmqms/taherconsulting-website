@@ -20,6 +20,16 @@
  *                 Physical Testing), differentiated by a TestType column
  *      Entries  — generic entries for the remaining process/QA stages
  *      QAUsers  — this module's own login (UserID, Password, Name, Role)
+ *      PreFinalReports / FinalReports — Module 7 Pre-Final and Final
+ *                 Inspection reports, one row per report. These two tabs are
+ *                 deliberately separate so neither dashboard can pick up the
+ *                 other's inspections.
+ * NOTE: Module 7 also stores inspection photos in a Drive folder called
+ *       "JM Fabrics Inspection Photos", created automatically on first
+ *       upload. After pasting this file in, run any function once and accept
+ *       the Drive permission prompt, then RE-DEPLOY the web app (Deploy ->
+ *       Manage deployments -> edit -> New version) so the new actions go
+ *       live at the same /exec URL.
  * 3. Extensions -> Apps Script, paste this file in, Save.
  * 4. Deploy -> New deployment -> Web app -> Execute as: Me ->
  *    Who has access: Anyone -> Deploy -> authorize -> copy the /exec URL.
@@ -44,6 +54,22 @@ const RARECORDS_SHEET = "RARecords";
 const QARA_SHEET = "QualityRA";
 const QARA_HEADERS = ["Timestamp","SBU","Buyer","IR","StyleNo","RADate","RAby","OrderType","ChangesJSON","RiskDecision","ActionComments"];
 const QARA_CHANGE_ROWS = ["Fabric","Pattern (Measurements)","Construction","Print","Embroidery","Wash","Additional Changes (If Any)"];
+
+// ---- Module 7: Pre-Final / Final Inspection ------------------------------
+// Each module gets its OWN tab so the two dashboards can never show each
+// other's reports. Photos go to one shared Drive folder.
+const PREFINAL_SHEET = "PreFinalReports";
+const FINAL_SHEET    = "FinalReports";
+const INSPECTION_PHOTO_FOLDER = "JM Fabrics Inspection Photos";
+// A full inspection report is a single JSON blob. A Sheets cell tops out at
+// 50,000 characters, so the blob is split across several columns and glued
+// back together on read.
+const INSP_JSON_COLS = 8;
+const INSP_CHUNK = 45000;
+const INSPECTION_HEADERS = [
+  "Id","Type","SBU","Buyer","IR","StyleName","Date","Inspector","Result","Status","SampleSize","SavedAt",
+  "J1","J2","J3","J4","J5","J6","J7","J8"
+];
 
 function doPost(e) {
   const body = JSON.parse(e.postData.contents);
@@ -77,6 +103,14 @@ function doPost(e) {
   if (action === "listIrs") return jsonResponse_({ ok: true, irs: listDistinctFiltered_(2, { 0: body.sbu, 1: body.buyer }) });
   if (action === "getOrderDetail") return jsonResponse_({ ok: true, detail: getOrderDetail_(body.sbu, body.buyer, body.ir) });
   if (action === "getRA") return jsonResponse_({ ok: true, record: getRAForIr_(body.sbu, body.buyer, body.ir) });
+
+  // ---- Module 7: Pre-Final / Final Inspection ----
+  if (action === "listPreFinal") return jsonResponse_({ ok: true, reports: listInspectionReports_(PREFINAL_SHEET) });
+  if (action === "savePreFinal") return saveInspectionReports_(PREFINAL_SHEET, body.reports);
+  if (action === "listFinal")    return jsonResponse_({ ok: true, reports: listInspectionReports_(FINAL_SHEET) });
+  if (action === "saveFinal")    return saveInspectionReports_(FINAL_SHEET, body.reports);
+  if (action === "uploadImage")  return uploadInspectionImage_(body);
+  if (action === "fetchImageBase64") return fetchInspectionImage_(body.fileId);
 
   if (action === "saveQualityRA") return saveQualityRA_(body.entry);
   if (action === "listQualityRA") return jsonResponse_({ ok: true, entries: listQualityRA_() });
@@ -300,10 +334,12 @@ function getOrderDetail_(sbu, buyer, ir) {
     total += qty;
   });
   return {
+    sbu: normValOI_(first[0]), buyer: normValOI_(first[1]), ir: normValOI_(first[2]),
     styleName: first[3], styleDescription: first[4], season: first[5],
     item: first[6], productDept: first[7], embellishmentCategory: first[9],
+    shipDate: normValOI_(first[10]),
     colors: Object.keys(colorMap).map(c => ({ color: c, qty: colorMap[c] })),
-    totalQty: total
+    totalQty: total, lineCount: rows.length
   };
 }
 
@@ -421,6 +457,104 @@ function buildOverview_(startStr, endStr) {
     strategic: strategic,
     byStage: byStage
   };
+}
+
+// ---------- Module 7: Pre-Final / Final Inspection reports ----------
+// The client always POSTs its complete report array, so a save rewrites the
+// tab wholesale. That keeps edits, deletes and drafts in sync with what the
+// inspector sees on screen.
+
+function saveInspectionReports_(sheetName, reports) {
+  reports = reports || [];
+  const sheet = getSheet_(sheetName, INSPECTION_HEADERS);
+  const rows = [];
+
+  for (let i = 0; i < reports.length; i++) {
+    const r = reports[i] || {};
+    const h = r.header || {};
+    const json = JSON.stringify(r);
+    if (json.length > INSP_JSON_COLS * INSP_CHUNK) {
+      return jsonResponse_({
+        ok: false,
+        error: "Report " + (h.ir || r.id || i) + " is too large to store (" +
+               json.length + " characters). Remove a few photos and save again."
+      });
+    }
+    const parts = [];
+    for (let c = 0; c < INSP_JSON_COLS; c++) parts.push(json.substr(c * INSP_CHUNK, INSP_CHUNK));
+    rows.push([
+      r.id || "", h.inspectionType || "", h.sbu || "", h.buyer || "", h.ir || "",
+      h.styleName || "", h.date || "", h.inspectorName || "", r.result || "",
+      r.status || "", r.sampleSize || "", r.savedAt || ""
+    ].concat(parts));
+  }
+
+  const last = sheet.getLastRow();
+  if (last > 1) sheet.getRange(2, 1, last - 1, INSPECTION_HEADERS.length).clearContent();
+  if (rows.length) sheet.getRange(2, 1, rows.length, INSPECTION_HEADERS.length).setValues(rows);
+  return jsonResponse_({ ok: true, count: rows.length });
+}
+
+function listInspectionReports_(sheetName) {
+  const sheet = getSheet_(sheetName, INSPECTION_HEADERS);
+  const rows = sheet.getDataRange().getValues();
+  const out = [];
+  for (let i = 1; i < rows.length; i++) {
+    const r = rows[i];
+    if (!r[0]) continue;
+    let json = "";
+    for (let c = 12; c < 12 + INSP_JSON_COLS; c++) json += (r[c] === null || r[c] === undefined ? "" : String(r[c]));
+    try { out.push(JSON.parse(json)); } catch (e) { /* skip an unreadable row rather than failing the load */ }
+  }
+  return out;
+}
+
+// ---------- Module 7: inspection photos ----------
+// Photos are uploaded one at a time as base64 straight from the phone. The
+// file is made link-viewable so the thumbnail renders in the form, and
+// fetchImageBase64 reads it back for the PDF (Drive blocks direct canvas
+// reads from the browser, which is why the PDF has to come through here).
+
+function uploadInspectionImage_(body) {
+  try {
+    if (!body || !body.base64) return jsonResponse_({ ok: false, error: "No image data received" });
+    const folder = getOrCreateInspectionFolder_();
+    const bytes = Utilities.base64Decode(body.base64);
+    const blob = Utilities.newBlob(bytes, body.mimeType || "image/jpeg",
+                                   body.filename || ("photo_" + Date.now() + ".jpg"));
+    const file = folder.createFile(blob);
+    try { file.setSharing(DriveApp.Access.ANYONE_WITH_LINK, DriveApp.Permission.VIEW); } catch (e) {}
+    const id = file.getId();
+    return jsonResponse_({
+      ok: true,
+      fileId: id,
+      url: "https://drive.google.com/file/d/" + id + "/view",
+      thumbUrl: "https://drive.google.com/thumbnail?id=" + id + "&sz=w600"
+    });
+  } catch (err) {
+    return jsonResponse_({ ok: false, error: String(err) });
+  }
+}
+
+function fetchInspectionImage_(fileId) {
+  try {
+    if (!fileId) return jsonResponse_({ ok: false, error: "No file id given" });
+    const blob = DriveApp.getFileById(fileId).getBlob();
+    return jsonResponse_({
+      ok: true,
+      mimeType: blob.getContentType() || "image/jpeg",
+      base64: Utilities.base64Encode(blob.getBytes())
+    });
+  } catch (err) {
+    return jsonResponse_({ ok: false, error: String(err) });
+  }
+}
+
+function getOrCreateInspectionFolder_() {
+  const parent = DriveApp.getRootFolder();
+  const it = parent.getFoldersByName(INSPECTION_PHOTO_FOLDER);
+  if (it.hasNext()) return it.next();
+  return parent.createFolder(INSPECTION_PHOTO_FOLDER);
 }
 
 // ---------- Shared helpers ----------

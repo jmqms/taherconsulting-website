@@ -187,34 +187,50 @@ tcInitModuleAuth({
 <script>
 /* ============================= REFERENCE DATA ============================= */
 
-// ISO 2859-1 General Inspection Level II sample-size-by-lot-size table.
-// Capped at 315 for very large lots — common garment-industry practice
-// (matches the sample buyer reports this was built from). Edit here if a
-// buyer requires the uncapped standard sizes (500/800/1250).
-const AQL_LOT_TABLE = [
-  {min:2,max:8,code:'A',size:2},{min:9,max:15,code:'B',size:3},{min:16,max:25,code:'C',size:5},
-  {min:26,max:50,code:'D',size:8},{min:51,max:90,code:'E',size:13},{min:91,max:150,code:'F',size:20},
-  {min:151,max:280,code:'G',size:32},{min:281,max:500,code:'H',size:50},{min:501,max:1200,code:'J',size:80},
-  {min:1201,max:3200,code:'K',size:125},{min:3201,max:10000,code:'L',size:200},{min:10001,max:35000,code:'M',size:315},
-  {min:35001,max:150000,code:'N',size:315},{min:150001,max:500000,code:'P',size:315},{min:500001,max:Infinity,code:'Q',size:315}
+/* ============================================================================
+   ISO 2859-1 / ANSI-ASQ Z1.4 — sampling tables (single & double, normal)
+   ----------------------------------------------------------------------------
+   Table 1 gives the sample-size CODE LETTER from lot size x inspection level.
+   Table 2-A gives sample size n and Ac/Re from code letter x AQL, with the
+   standard arrow rule: if a cell has no plan, step DOWN a code letter (bigger
+   sample) for AQLs that are too tight, or UP for AQLs that are too loose.
+   Everything below is live data - edit a cell here if a buyer's chart differs.
+   ========================================================================== */
+
+// Full AQL column set of the master table (we expose a subset in the UI).
+const AQL_COLS = [0.010,0.015,0.025,0.040,0.065,0.10,0.15,0.25,0.40,0.65,1.0,1.5,2.5,4.0,6.5,10];
+const CODE_LETTERS = ['A','B','C','D','E','F','G','H','J','K','L','M','N','P','Q','R'];
+const CODE_SIZE = { A:2,B:3,C:5,D:8,E:13,F:20,G:32,H:50,J:80,K:125,L:200,M:315,N:500,P:800,Q:1250,R:2000 };
+// Column index (into AQL_COLS) where each code letter's Ac=0 / Re=1 plan sits.
+// Everything to the LEFT of it is an arrow-down; 9 columns to the right is the
+// Ac sequence below, after which it is an arrow-up.
+const CODE_ZERO_COL = { A:15,B:14,C:13,D:12,E:11,F:11,G:10,H:9,J:8,K:7,L:6,M:5,N:4,P:3,Q:2,R:1 };
+const AC_SEQ = [0,1,2,3,5,7,10,14,21];
+// Table 3-A double sampling, indexed by (single Ac index - 1). n1 = n2 = the
+// sample size one code letter below the single plan (approx 0.63 x n).
+const DOUBLE_SEQ = [
+  {ac1:0,re1:2,ac2:1,re2:2},{ac1:0,re1:3,ac2:3,re2:4},{ac1:1,re1:4,ac2:4,re2:5},
+  {ac1:2,re1:5,ac2:6,re2:7},{ac1:3,re1:7,ac2:8,re2:9},{ac1:5,re1:9,ac2:12,re2:13},
+  {ac1:7,re1:11,ac2:18,re2:19},{ac1:11,re1:16,ac2:26,re2:27}
 ];
-// Ac (accept) / Re (reject) numbers, Normal inspection, single sampling.
-const AQL_ACCEPT_TABLE = [
-  {size:2,  a1_0:0,r1_0:1, a1_5:0,r1_5:1, a2_5:0,r2_5:1, a4_0:0,r4_0:1},
-  {size:3,  a1_0:0,r1_0:1, a1_5:0,r1_5:1, a2_5:0,r2_5:1, a4_0:0,r4_0:1},
-  {size:5,  a1_0:0,r1_0:1, a1_5:0,r1_5:1, a2_5:0,r2_5:1, a4_0:1,r4_0:2},
-  {size:8,  a1_0:0,r1_0:1, a1_5:0,r1_5:1, a2_5:1,r2_5:2, a4_0:1,r4_0:2},
-  {size:13, a1_0:0,r1_0:1, a1_5:1,r1_5:2, a2_5:1,r2_5:2, a4_0:2,r4_0:3},
-  {size:20, a1_0:1,r1_0:2, a1_5:1,r1_5:2, a2_5:2,r2_5:3, a4_0:3,r4_0:4},
-  {size:32, a1_0:1,r1_0:2, a1_5:2,r1_5:3, a2_5:3,r2_5:4, a4_0:5,r4_0:6},
-  {size:50, a1_0:2,r1_0:3, a1_5:3,r1_5:4, a2_5:5,r2_5:6, a4_0:7,r4_0:8},
-  {size:80, a1_0:2,r1_0:3, a1_5:3,r1_5:4, a2_5:5,r2_5:6, a4_0:7,r4_0:8},
-  {size:125,a1_0:3,r1_0:4, a1_5:5,r1_5:6, a2_5:7,r2_5:8, a4_0:10,r4_0:11},
-  {size:200,a1_0:5,r1_0:6, a1_5:7,r1_5:8, a2_5:10,r2_5:11, a4_0:14,r4_0:15},
-  {size:315,a1_0:7,r1_0:8, a1_5:10,r1_5:11, a2_5:14,r2_5:15, a4_0:21,r4_0:22},
-  {size:500,a1_0:10,r1_0:11, a1_5:14,r1_5:15, a2_5:21,r2_5:22, a4_0:21,r4_0:22},
-  {size:800,a1_0:14,r1_0:15, a1_5:21,r1_5:22, a2_5:21,r2_5:22, a4_0:21,r4_0:22},
-  {size:1250,a1_0:21,r1_0:22, a1_5:21,r1_5:22, a2_5:21,r2_5:22, a4_0:21,r4_0:22}
+
+// Table 1 - sample size code letters.
+const LOT_BANDS = [
+  {min:2,      max:8,       c:{'S-1':'A','S-2':'A','S-3':'A','S-4':'A','General I':'A','General II':'A','General III':'B'}},
+  {min:9,      max:15,      c:{'S-1':'A','S-2':'A','S-3':'A','S-4':'A','General I':'A','General II':'B','General III':'C'}},
+  {min:16,     max:25,      c:{'S-1':'A','S-2':'A','S-3':'B','S-4':'B','General I':'B','General II':'C','General III':'D'}},
+  {min:26,     max:50,      c:{'S-1':'A','S-2':'B','S-3':'B','S-4':'C','General I':'C','General II':'D','General III':'E'}},
+  {min:51,     max:90,      c:{'S-1':'B','S-2':'B','S-3':'C','S-4':'C','General I':'C','General II':'E','General III':'F'}},
+  {min:91,     max:150,     c:{'S-1':'B','S-2':'B','S-3':'C','S-4':'D','General I':'D','General II':'F','General III':'G'}},
+  {min:151,    max:280,     c:{'S-1':'B','S-2':'C','S-3':'D','S-4':'E','General I':'E','General II':'G','General III':'H'}},
+  {min:281,    max:500,     c:{'S-1':'B','S-2':'C','S-3':'D','S-4':'E','General I':'F','General II':'H','General III':'J'}},
+  {min:501,    max:1200,    c:{'S-1':'C','S-2':'C','S-3':'E','S-4':'F','General I':'G','General II':'J','General III':'K'}},
+  {min:1201,   max:3200,    c:{'S-1':'C','S-2':'D','S-3':'E','S-4':'G','General I':'H','General II':'K','General III':'L'}},
+  {min:3201,   max:10000,   c:{'S-1':'C','S-2':'D','S-3':'F','S-4':'G','General I':'J','General II':'L','General III':'M'}},
+  {min:10001,  max:35000,   c:{'S-1':'C','S-2':'D','S-3':'F','S-4':'H','General I':'K','General II':'M','General III':'N'}},
+  {min:35001,  max:150000,  c:{'S-1':'D','S-2':'E','S-3':'G','S-4':'J','General I':'L','General II':'N','General III':'P'}},
+  {min:150001, max:500000,  c:{'S-1':'D','S-2':'E','S-3':'G','S-4':'J','General I':'M','General II':'P','General III':'Q'}},
+  {min:500001, max:Infinity,c:{'S-1':'D','S-2':'E','S-3':'H','S-4':'K','General I':'N','General II':'Q','General III':'R'}}
 ];
 
 const DEFECT_LIBRARY = [
@@ -240,6 +256,8 @@ const SEV_META = {
 
 // ---- Report structure config (matches JMF_PreFinal_Final_Inspection_Report.xlsx) ----
 const INSPECTION_TYPES = ['Final Inspection','Final Inspection (Re-Inspection)'];
+const MODULE_KIND = 'final';
+const MODULE_STORAGE_KEY = 'final-reports-fallback';
 const SAMPLING_PLANS = ['Single','Double'];
 const INSPECTION_LEVELS = ['General I','General II','General III','S-1','S-2','S-3','S-4'];
 const AQL_OPTIONS = [0,0.065,0.1,0.15,0.25,0.4,0.65,1.0,1.5,2.5,4.0,6.5,10];
@@ -291,10 +309,11 @@ function flatTestCheckpoints(){
 function emptyHeader(){
   return {
     sbu:'', buyer:'', ir:'', styleId:'', styleName:'', styleDescription:'', item:'', productDept:'', season:'',
-    date:new Date().toISOString().slice(0,10), startTime:'', inspectorName:'', factoryName:'',
+    date:new Date().toISOString().slice(0,10), startTime:'', inspectorName:'', factoryName:'J.M. Fabrics Ltd.',
     inspectionType:'Final Inspection', samplingPlan:'Single', inspectionLevel:'General II',
     poNo:'', poQty:'', orderQty:'', offerQty:'',
     aqlCritical:0, aqlMajor:2.5, aqlMinor:4.0, inspectionLevelMeasurements:'S-2',
+    sampleSizeOverride:'',
   };
 }
 function emptyReportState(){
@@ -309,7 +328,7 @@ function emptyReportState(){
     cartonDims: [ { poNumber:'', cartonNo:'', dims:'', comments:'' } ],
     defects: [],
     testCheckpoints: flatTestCheckpoints().map(c => ({ group:c.group, label:c.label, isReport:c.isReport, applicable:'Yes', result:'', comments:'', testReportNumber:'', pictures:[] })),
-    measurements: { poms: [ { description:'', size:'', tolMinus:'', tolPlus:'', spec:'', m:['','','','',''] } ], pictures:[], totalSampleSize:'', totalPOMsMeasured:'', maxAllowedOOT:'' },
+    measurements: { poms: [ { description:'', size:'', tolMinus:'', tolPlus:'', spec:'', m:[] } ], pictures:[], pieceCount:0 },
     signOff: SIGNOFF_ROLES.map(role => ({ role, name:'', signature:'' })),
     remarks:'',
   };
@@ -349,15 +368,22 @@ async function qaApi(payload){
   return res.json();
 }
 
+// A report belongs to this module only if its inspection type is one this
+// module issues. Stops Pre-Final and Final ever showing each other's data.
+function isOwnReport_(r){
+  const t = (r && r.header && r.header.inspectionType) || '';
+  return !t || INSPECTION_TYPES.indexOf(t) !== -1;
+}
+
 async function loadReports(){
   try{
     const res = await qaApi({ action: "listFinal" });
     if (!res.ok) throw new Error(res.error || "Failed to load reports");
-    state.reports = Array.isArray(res.reports) ? res.reports : [];
+    state.reports = (Array.isArray(res.reports) ? res.reports : []).filter(isOwnReport_);
   }catch(e){
     try{
-      const raw = localStorage.getItem('prefinal-reports-fallback');
-      state.reports = raw ? JSON.parse(raw) : [];
+      const raw = localStorage.getItem(MODULE_STORAGE_KEY);
+      state.reports = (raw ? JSON.parse(raw) : []).filter(isOwnReport_);
     }catch(e2){ state.reports = []; }
     showToast(QA_API_URL.indexOf("PASTE_YOUR")===0 ? 'Backend not connected yet — saving to this browser only' : 'Could not reach server — showing this browser\'s last saved copy');
   }
@@ -371,7 +397,7 @@ async function persistReports(){
     const res = await qaApi({ action: "saveFinal", reports: state.reports });
     if (!res.ok) throw new Error(res.error || "Save failed");
   }catch(e){
-    try{ localStorage.setItem('prefinal-reports-fallback', JSON.stringify(state.reports)); }catch(e2){}
+    try{ localStorage.setItem(MODULE_STORAGE_KEY, JSON.stringify(state.reports)); }catch(e2){}
     showToast(QA_API_URL.indexOf("PASTE_YOUR")===0 ? 'Backend not connected yet — saved to this browser only' : 'Could not reach server — saved to this browser only');
   }
 }
@@ -433,38 +459,169 @@ async function loadStyleDetail(sbu, buyer, ir){
 
 /* ============================= AQL LOGIC ============================= */
 
-function lookupSampleSize(qty){
-  const row = AQL_LOT_TABLE.find(r => qty >= r.min && qty <= r.max);
-  return row || {code:'', size:0};
+function codeLetterFor(lotSize, level){
+  const q = Number(lotSize)||0;
+  if (q < 2) return '';
+  const band = LOT_BANDS.find(b => q >= b.min && q <= b.max);
+  if (!band) return '';
+  return band.c[level] || band.c['General II'];
 }
 
-function lookupAcceptReject(sampleSize){
-  const candidates = AQL_ACCEPT_TABLE.filter(r => r.size <= sampleSize);
-  return candidates.length ? candidates[candidates.length-1] : AQL_ACCEPT_TABLE[0];
-}
-
-function nearestAqlColumn(aql){
-  const supported = [1.0,1.5,2.5,4.0];
-  let best = supported[0], bestDiff = Infinity;
-  supported.forEach(v => { const d = Math.abs(v - Number(aql)); if (d < bestDiff){ bestDiff = d; best = v; } });
+function aqlColIndex(aql){
+  const v = Number(aql);
+  let best = 0, bd = Infinity;
+  AQL_COLS.forEach((c,i)=>{ const d = Math.abs(c - v); if (d < bd){ bd = d; best = i; } });
   return best;
 }
-function acceptForAql(acc, aql){
-  const col = nearestAqlColumn(aql);
-  if (col === 1.0) return acc.a1_0;
-  if (col === 1.5) return acc.a1_5;
-  if (col === 2.5) return acc.a2_5;
-  return acc.a4_0;
+
+// Single sampling plan, normal inspection. Follows the arrows, so the returned
+// code/n can differ from the starting code letter - that is the standard.
+function singlePlan(codeLetter, aql){
+  if (!codeLetter) return null;
+  if (Number(aql) === 0){
+    return { code: codeLetter, n: CODE_SIZE[codeLetter], ac: 0, re: 1, shifted:false, zeroTolerance:true };
+  }
+  const ai = aqlColIndex(aql);
+  let ci = CODE_LETTERS.indexOf(codeLetter);
+  const start = ci;
+  let guard = 0;
+  while (ci >= 0 && ci < CODE_LETTERS.length && guard++ < 40){
+    const L = CODE_LETTERS[ci];
+    const k = ai - CODE_ZERO_COL[L];
+    if (k < 0){ ci++; continue; }
+    if (k > AC_SEQ.length - 1){ ci--; continue; }
+    return { code:L, n:CODE_SIZE[L], ac:AC_SEQ[k], re:AC_SEQ[k]+1, shifted: ci !== start };
+  }
+  return null;
 }
 
-function computeAQL(availableQty, critical, major, minor, aqlCritical, aqlMajor, aqlMinor){
-  const lot = lookupSampleSize(Number(availableQty)||0);
-  const acc = lookupAcceptReject(lot.size);
-  const criticalAllowed = Number(aqlCritical) > 0 ? acceptForAql(acc, aqlCritical) : 0;
-  const majorAllowed = acceptForAql(acc, aqlMajor != null ? aqlMajor : 2.5);
-  const minorAllowed = acceptForAql(acc, aqlMinor != null ? aqlMinor : 4.0);
+function doublePlan(codeLetter, aql){
+  const s = singlePlan(codeLetter, aql);
+  if (!s) return null;
+  const ci = CODE_LETTERS.indexOf(s.code);
+  const n1 = ci > 0 ? CODE_SIZE[CODE_LETTERS[ci-1]] : CODE_SIZE[s.code];
+  const k = AC_SEQ.indexOf(s.ac);
+  const d = (k >= 1) ? DOUBLE_SEQ[k-1] : null;
+  if (!d) return { code:s.code, n1:n1, n2:n1, unavailable:true, single:s };
+  return { code:s.code, n1:n1, n2:n1, ac1:d.ac1, re1:d.re1, ac2:d.ac2, re2:d.re2, single:s };
+}
+
+function planLabel(p, isDouble){
+  if (!p) return '-';
+  if (isDouble){
+    if (p.unavailable) return 'use single plan';
+    return '1st ' + p.n1 + ' (Ac ' + p.ac1 + '/Re ' + p.re1 + ') - 2nd +' + p.n2 + ' (cum Ac ' + p.ac2 + '/Re ' + p.re2 + ')';
+  }
+  return p.n + ' pcs - Ac ' + p.ac + ' / Re ' + p.re;
+}
+
+// The lot size that sampling is drawn from: OFFER QTY first (that is what is
+// actually presented for inspection), then available qty, then order qty.
+function lotBasisQty(S){
+  S = S || state;
+  const h = S.header || {};
+  const offer = Number(h.offerQty) || 0;
+  if (offer > 0) return offer;
+  const avail = (S.sampleOverview||[]).reduce((s,r)=>s+(Number(r.availableQty)||0),0);
+  if (avail > 0) return avail;
+  return Number(h.orderQty) || 0;
+}
+
+function computeAQL(lotQty, critical, major, minor, aqlCritical, aqlMajor, aqlMinor, level, plan){
+  level = level || 'General II';
+  plan  = plan  || 'Single';
+  const lot  = Number(lotQty) || 0;
+  const code = codeLetterFor(lot, level);
+  const pC = singlePlan(code, aqlCritical);
+  const pM = singlePlan(code, aqlMajor);
+  const pN = singlePlan(code, aqlMinor);
+  const sampleSize = Math.max(pC?pC.n:0, pM?pM.n:0, pN?pN.n:0);
+  const criticalAllowed = Number(aqlCritical) > 0 ? (pC?pC.ac:0) : 0;
+  const majorAllowed = pM ? pM.ac : 0;
+  const minorAllowed = pN ? pN.ac : 0;
+  const dbl = plan === 'Double'
+    ? { critical: doublePlan(code, aqlCritical), major: doublePlan(code, aqlMajor), minor: doublePlan(code, aqlMinor) }
+    : null;
   const fail = critical > criticalAllowed || major > majorAllowed || minor > minorAllowed;
-  return { sampleSize: lot.size, codeLetter: lot.code, criticalAllowed, majorAllowed, minorAllowed, result: (critical||major||minor) ? (fail ? 'FAIL' : 'PASS') : '' };
+  return {
+    sampleSize: sampleSize, codeLetter: code, lotQty: lot, level: level, plan: plan,
+    criticalAllowed: criticalAllowed, majorAllowed: majorAllowed, minorAllowed: minorAllowed,
+    singlePlans: { critical:pC, major:pM, minor:pN }, doublePlans: dbl,
+    result: (critical||major||minor) ? (fail ? 'FAIL' : 'PASS') : ''
+  };
+}
+
+function aqlFor(S){
+  S = S || state;
+  const h = S.header, t = defectTotals(S.defects);
+  return computeAQL(lotBasisQty(S), t.Critical, t.Major, t.Minor,
+                    h.aqlCritical, h.aqlMajor, h.aqlMinor, h.inspectionLevel, h.samplingPlan);
+}
+
+/* ---- Measurement AQL (own inspection level, own sample size, auto Ac/Re) ---- */
+function computeMeasurement(S){
+  S = S || state;
+  const h = S.header, m = S.measurements;
+  const lot = lotBasisQty(S);
+  const level = h.inspectionLevelMeasurements || 'S-2';
+  const code = codeLetterFor(lot, level);
+  const plan = singlePlan(code, h.aqlMajor) || { n:0, ac:0, re:1, code:code };
+  const pieces = Number(m.pieceCount) || plan.n || 0;
+
+  // One garment is "out of tolerance" if ANY of its POMs is outside spec.
+  const pieceOot = [];
+  for (let j = 0; j < pieces; j++){
+    let bad = false;
+    (m.poms||[]).forEach(p => {
+      const v = p.m[j];
+      if (v === '' || v === undefined || v === null) return;
+      if (p.spec === '' || p.spec === undefined) return;
+      const val = Number(v), spec = Number(p.spec);
+      const lo = p.tolMinus !== '' && p.tolMinus !== undefined ? spec + Number(p.tolMinus) : null;
+      const hi = p.tolPlus  !== '' && p.tolPlus  !== undefined ? spec + Number(p.tolPlus)  : null;
+      if ((lo !== null && val < lo) || (hi !== null && val > hi)) bad = true;
+    });
+    pieceOot.push(bad);
+  }
+  const oot = pieceOot.filter(Boolean).length;
+
+  let readings = 0, ootReadings = 0;
+  (m.poms||[]).forEach(p => p.m.slice(0, pieces).forEach((v,j) => {
+    if (v === '' || v === undefined || v === null) return;
+    readings++;
+    if (p.spec === '' || p.spec === undefined) return;
+    const val = Number(v), spec = Number(p.spec);
+    const lo = p.tolMinus !== '' && p.tolMinus !== undefined ? spec + Number(p.tolMinus) : null;
+    const hi = p.tolPlus  !== '' && p.tolPlus  !== undefined ? spec + Number(p.tolPlus)  : null;
+    if ((lo !== null && val < lo) || (hi !== null && val > hi)) ootReadings++;
+  }));
+
+  const maxAllowed = plan.ac;
+  const result = readings ? (oot <= maxAllowed ? 'PASS' : 'FAIL') : '';
+  return {
+    level: level, codeLetter: plan.code || code, sampleSize: plan.n, pieces: pieces,
+    ac: plan.ac, re: plan.re, maxAllowed: maxAllowed,
+    pieceOot: pieceOot, ootPieces: oot, readings: readings, ootReadings: ootReadings,
+    pctOot: readings ? (ootReadings / readings * 100) : null, result: result
+  };
+}
+
+// Keeps every POM row's measurement array the same width as the piece count.
+function normalizeMeasurementColumns_(S){
+  S = S || state;
+  const m = S.measurements;
+  if (!m) return;
+  if (!m.pieceCount){
+    const auto = computeMeasurement(S);
+    m.pieceCount = Math.min(Math.max(auto.sampleSize || 5, 1), 15);
+  }
+  const n = Math.min(Math.max(Number(m.pieceCount) || 5, 1), 15);
+  m.pieceCount = n;
+  (m.poms||[]).forEach(p => {
+    if (!Array.isArray(p.m)) p.m = [];
+    while (p.m.length < n) p.m.push('');
+    if (p.m.length > n) p.m = p.m.slice(0, n);
+  });
 }
 
 function defectTotals(defects){
@@ -500,11 +657,17 @@ function pictureWidget(section, idx){
   return `
     <div class="pic-widget">
       <input type="file" accept="image/*" capture="environment" style="display:none" data-pic-input="${section}:${idx}">
-      <button type="button" class="btn ghost small" data-pic-add="${section}:${idx}">📷 ${pics.length ? pics.length + ' photo' + (pics.length>1?'s':'') : 'Add Photo'}</button>
+      <button type="button" class="btn ghost small" data-pic-add="${section}:${idx}">&#128247; ${pics.length ? pics.length + ' photo' + (pics.length>1?'s':'') : 'Add Photo'}</button>
       <div class="pic-thumbs">
-        ${pics.map((p,pi)=>`<span class="pic-thumb"><img src="${esc(p.url)}" onclick="window.open('${esc(p.url)}','_blank')"><button type="button" class="pic-del" data-pic-del="${section}:${idx}:${pi}">&times;</button></span>`).join('')}
+        ${pics.map((p,pi)=>`<span class="pic-thumb"><img src="${esc(picThumbSrc_(p))}" onclick="window.open('${esc(p.url||'')}','_blank')"><button type="button" class="pic-del" data-pic-del="${section}:${idx}:${pi}">&times;</button></span>`).join('')}
       </div>
     </div>`;
+}
+
+// Prefer the in-session data URL (always renders), then Drive's thumbnail
+// endpoint (renders in an <img>), and only then the plain Drive view link.
+function picThumbSrc_(p){
+  return p.dataUrl || p.thumbUrl || p.url || '';
 }
 
 function compressImageToBase64(file, maxW, quality){
@@ -515,45 +678,128 @@ function compressImageToBase64(file, maxW, quality){
       img.onload = () => {
         const scale = Math.min(1, maxW / img.width);
         const canvas = document.createElement('canvas');
-        canvas.width = Math.round(img.width * scale);
-        canvas.height = Math.round(img.height * scale);
+        canvas.width = Math.max(1, Math.round(img.width * scale));
+        canvas.height = Math.max(1, Math.round(img.height * scale));
         const ctx = canvas.getContext('2d');
+        ctx.fillStyle = '#ffffff';
+        ctx.fillRect(0, 0, canvas.width, canvas.height);
         ctx.drawImage(img, 0, 0, canvas.width, canvas.height);
-        resolve(canvas.toDataURL('image/jpeg', quality).split(',')[1]);
+        resolve(canvas.toDataURL('image/jpeg', quality));
       };
-      img.onerror = reject;
+      img.onerror = () => reject(new Error('That file could not be read as an image.'));
       img.src = reader.result;
     };
-    reader.onerror = reject;
+    reader.onerror = () => reject(new Error('That file could not be read.'));
     reader.readAsDataURL(file);
   });
 }
 
 async function handlePictureUpload(section, idx, file){
-  showToast('Uploading photo…');
+  showToast('Uploading photo\u2026');
+  let dataUrl = null;
   try{
-    const base64 = await compressImageToBase64(file, 1000, 0.62);
+    dataUrl = await compressImageToBase64(file, 1400, 0.7);
+  }catch(e){
+    showToast('Could not read that photo \u2014 try a JPG or PNG. (' + e.message + ')');
+    render();
+    return;
+  }
+  const base64 = dataUrl.split(',')[1];
+  const target = resolvePictureTarget(section, idx);
+  if (!target){ render(); return; }
+  target.pictures = target.pictures || [];
+  try{
     const res = await qaApi({ action: 'uploadImage', base64: base64, filename: file.name, mimeType: 'image/jpeg' });
     if (!res.ok) throw new Error(res.error || 'Upload failed');
-    const target = resolvePictureTarget(section, idx);
-    if (target){ target.pictures = target.pictures || []; target.pictures.push({ url: res.url, fileId: res.fileId, name: file.name }); }
+    target.pictures.push({ url: res.url, thumbUrl: res.thumbUrl, fileId: res.fileId, name: file.name, dataUrl: dataUrl });
     showToast('Photo added.');
   }catch(e){
-    showToast('Could not upload photo — ' + e.message);
+    // Keep the photo in the report even if Drive is unreachable - it still
+    // renders on screen and still goes into the PDF for this session.
+    target.pictures.push({ url:'', thumbUrl:'', fileId:'', name: file.name, dataUrl: dataUrl, localOnly:true });
+    showToast('Photo kept locally \u2014 could not reach Drive (' + e.message + ')');
   }
   render();
 }
 
-function collectAllPictures(){
-  const out = [];
-  const push = (label, pics) => (pics||[]).forEach(p => out.push({ label, url: p.url }));
-  push('All Quantities & Cartons Available', state.allQtyCheck.pictures);
-  push('Selected Carton', state.cartonSelection.pictures);
-  state.packingCheckpoints.forEach(cp => push(cp.label, cp.pictures));
-  state.testCheckpoints.forEach(cp => push(cp.label, cp.pictures));
-  state.defects.forEach((d,i) => push('Defect #' + (i+1) + (d.description ? ' — ' + d.description : ''), d.pictures));
-  push('Measurement Report', state.measurements.pictures);
-  return out;
+function picsOf_(label, arr){ return (arr||[]).map(p => Object.assign({}, p, { label: label })); }
+
+// Photos belonging to one report section, used to place them next to the
+// matching section in the PDF rather than dumping them all at the end.
+function sectionPics_(S, section){
+  S = S || state;
+  switch(section){
+    case '01': return picsOf_('All Quantities & Cartons Available', S.allQtyCheck.pictures)
+                 .concat(picsOf_('Selected Carton', S.cartonSelection.pictures));
+    case '03': return [].concat.apply([], S.packingCheckpoints.map(c => picsOf_(c.label, c.pictures)));
+    case '04': return [].concat.apply([], S.defects.map((d,i) => picsOf_('Defect #' + (i+1) + (d.description ? ' \u2014 ' + d.description : ''), d.pictures)));
+    case '05': return [].concat.apply([], S.testCheckpoints.map(c => picsOf_(c.label, c.pictures)));
+    case '06': return picsOf_('Measurement Report', S.measurements.pictures);
+  }
+  return [];
+}
+
+function collectAllPicturesFrom_(S){
+  S = S || state;
+  return ['01','03','04','05','06'].reduce((out, sec) => out.concat(sectionPics_(S, sec)), []);
+}
+function collectAllPictures(){ return collectAllPicturesFrom_(state); }
+
+async function fetchImageBase64_(fileId){
+  const res = await qaApi({ action: 'fetchImageBase64', fileId: fileId });
+  if (!res.ok) throw new Error(res.error || 'Could not fetch image');
+  return 'data:' + (res.mimeType || 'image/jpeg') + ';base64,' + res.base64;
+}
+
+// jsPDF is fussy about image encodings, and a photo straight off a phone can
+// be a format it refuses ("picture could not be recognized"). Re-drawing every
+// image through a canvas guarantees a plain baseline JPEG it will always take.
+function normalizeToJpegDataUrl_(dataUrl){
+  return new Promise((resolve, reject) => {
+    const img = new Image();
+    img.onload = () => {
+      try{
+        const scale = Math.min(1, 1400 / (img.width || 1));
+        const c = document.createElement('canvas');
+        c.width = Math.max(1, Math.round((img.width||1) * scale));
+        c.height = Math.max(1, Math.round((img.height||1) * scale));
+        const ctx = c.getContext('2d');
+        ctx.fillStyle = '#ffffff';
+        ctx.fillRect(0, 0, c.width, c.height);
+        ctx.drawImage(img, 0, 0, c.width, c.height);
+        resolve(c.toDataURL('image/jpeg', 0.75));
+      }catch(err){ reject(err); }
+    };
+    img.onerror = () => reject(new Error('image decode failed'));
+    img.src = dataUrl;
+  });
+}
+
+const PIC_JPEG_CACHE = {};
+async function picJpegDataUrl_(p){
+  const key = p.fileId || p.url || p.name || JSON.stringify(p).slice(0, 60);
+  if (PIC_JPEG_CACHE[key]) return PIC_JPEG_CACHE[key];
+  let raw = p.dataUrl || null;
+  if (!raw && p.fileId){
+    try { raw = await fetchImageBase64_(p.fileId); } catch(e){ raw = null; }
+  }
+  if (!raw) return null;
+  try {
+    const jpeg = await normalizeToJpegDataUrl_(raw);
+    PIC_JPEG_CACHE[key] = jpeg;
+    return jpeg;
+  } catch(e){ return null; }
+}
+
+// Strips the in-memory data URLs before a report is saved - the full image
+// already lives in Drive, and keeping the copies would blow the row size.
+function stripPictureData_(obj){
+  if (Array.isArray(obj)) { obj.forEach(stripPictureData_); return obj; }
+  if (obj && typeof obj === 'object'){
+    if (Array.isArray(obj.pictures)) obj.pictures.forEach(p => { if (p && p.fileId) delete p.dataUrl; });
+    Object.keys(obj).forEach(k => { if (k !== 'pictures') stripPictureData_(obj[k]); });
+  }
+  return obj;
 }
 
 /* ============================= PDF EXPORT (professional, generated from data) ============================= */
@@ -561,188 +807,251 @@ function collectAllPictures(){
 function computeOverallResult_(S){
   S = S || state;
   const t = defectTotals(S.defects);
-  const totalAvail = S.sampleOverview.reduce((s,r)=>s+(Number(r.availableQty)||0),0) || S.header.orderQty;
-  const aql = computeAQL(totalAvail, t.Critical, t.Major, t.Minor, S.header.aqlCritical, S.header.aqlMajor, S.header.aqlMinor);
+  const aql = aqlFor(S);
+  const meas = computeMeasurement(S);
   const packingResults = S.packingCheckpoints.map(c=>c.result).filter(Boolean);
   const packingResult = packingResults.includes('Fail') ? 'FAIL' : (packingResults.length ? 'PASS' : 'N/A');
   const testResults = S.testCheckpoints.map(c=>c.result).filter(Boolean);
   const testsResult = testResults.includes('Fail') ? 'FAIL' : (testResults.length ? 'PASS' : 'N/A');
-  const failCount = [packingResult, aql.result, testsResult].filter(r=>r==='FAIL').length;
-  const anyResult = [packingResult, aql.result, testsResult].some(r=>r==='PASS'||r==='FAIL');
-  return { overall: failCount > 0 ? 'FAIL' : (anyResult ? 'PASS' : 'PENDING'), aql, packingResult, testsResult };
-}
-
-function collectAllPicturesFrom_(S){
-  S = S || state;
-  const out = [];
-  const push = (label, pics) => (pics||[]).forEach(p => out.push({ label, url: p.url, fileId: p.fileId }));
-  push('All Quantities & Cartons Available', S.allQtyCheck.pictures);
-  push('Selected Carton', S.cartonSelection.pictures);
-  S.packingCheckpoints.forEach(cp => push(cp.label, cp.pictures));
-  S.testCheckpoints.forEach(cp => push(cp.label, cp.pictures));
-  S.defects.forEach((d,i) => push('Defect #' + (i+1) + (d.description ? ' — ' + d.description : ''), d.pictures));
-  push('Measurement Report', S.measurements.pictures);
-  return out;
-}
-
-async function fetchImageBase64_(fileId){
-  const res = await qaApi({ action: 'fetchImageBase64', fileId: fileId });
-  if (!res.ok) throw new Error(res.error || 'Could not fetch image');
-  return 'data:' + (res.mimeType||'image/jpeg') + ';base64,' + res.base64;
+  const measResult = meas.result || 'N/A';
+  const failCount = [packingResult, aql.result, testsResult, measResult].filter(r=>r==='FAIL').length;
+  const anyResult = [packingResult, aql.result, testsResult, measResult].some(r=>r==='PASS'||r==='FAIL');
+  return { overall: failCount > 0 ? 'FAIL' : (anyResult ? 'PASS' : 'PENDING'), aql, packingResult, testsResult, meas, measResult };
 }
 
 async function generatePdfReport(srcData){
   const S = srcData || state;
-  if (!window.jspdf){ showToast('PDF library did not load — check your internet connection and retry.'); return; }
-  showToast('Generating PDF…');
+  if (!window.jspdf){ showToast('PDF library did not load \u2014 check your internet connection and retry.'); return; }
+  showToast('Generating PDF\u2026');
   try{
     const { jsPDF } = window.jspdf;
     const doc = new jsPDF('p','mm','a4');
     const pageW = doc.internal.pageSize.getWidth();
     const pageH = doc.internal.pageSize.getHeight();
     const margin = 12;
-    let y = 16;
+    const ctx = { y: 16 };
     const h = S.header;
-    const { overall, aql, packingResult, testsResult } = computeOverallResult_(S);
+    const { overall, aql, packingResult, testsResult, meas, measResult } = computeOverallResult_(S);
+    const isDouble = h.samplingPlan === 'Double';
 
-    function ensureRoom(need){ if (y + need > pageH - 14){ doc.addPage(); y = 16; } }
+    function ensureRoom(need){ if (ctx.y + need > pageH - 14){ doc.addPage(); ctx.y = 16; } }
     function heading(text){
       ensureRoom(12);
       doc.setFont('helvetica','bold'); doc.setFontSize(11); doc.setTextColor(20,20,20);
-      doc.text(text, margin, y); y += 5.5;
-    }
-    function note(text){
-      ensureRoom(8);
-      doc.setFont('helvetica','normal'); doc.setFontSize(8.5); doc.setTextColor(90,90,90);
-      doc.text(text, margin, y); y += 5;
+      doc.text(text, margin, ctx.y); ctx.y += 5.5;
     }
     function table(opts){
       ensureRoom(14);
-      doc.autoTable(Object.assign({ startY: y, margin: { left: margin, right: margin }, styles: { fontSize: 8.5, cellPadding: 1.6 } }, opts));
-      y = doc.lastAutoTable.finalY + 6;
+      doc.autoTable(Object.assign({ startY: ctx.y, margin: { left: margin, right: margin }, styles: { fontSize: 8.5, cellPadding: 1.6 } }, opts));
+      ctx.y = doc.lastAutoTable.finalY + 6;
     }
 
-    // ---- Title ----
-    doc.setFont('helvetica','bold'); doc.setFontSize(17); doc.setTextColor(20,20,20);
-    doc.text('Taher Consulting', margin, y); y += 6.5;
-    doc.setFontSize(11); doc.setFont('helvetica','normal');
-    doc.text(h.inspectionType || 'Final Inspection Report', margin, y); y += 5;
-    doc.setDrawColor(210); doc.line(margin, y, pageW-margin, y); y += 6;
+    // ---------------- Photo blocks, placed right under their own section ----
+    async function photos(section, caption){
+      const pics = sectionPics_(S, section);
+      if (!pics.length) return;
+      ensureRoom(14);
+      doc.setFont('helvetica','bold'); doc.setFontSize(9); doc.setTextColor(40,40,40);
+      doc.text(caption, margin, ctx.y); ctx.y += 4.5;
+      doc.setTextColor(20,20,20);
+
+      const colW = (pageW - margin*2 - 6) / 2;
+      const maxH = 50;
+      let col = 0, rowTop = ctx.y, rowH = 0, capH = 0;
+
+      for (const p of pics){
+        const data = await picJpegDataUrl_(p);
+        if (col === 0){ ensureRoom(maxH + 14); rowTop = ctx.y; rowH = 0; capH = 0; }
+        const x = margin + col * (colW + 6);
+        let drawnH = 8;
+        if (data){
+          let props = null;
+          try { props = doc.getImageProperties(data); } catch(e){ props = null; }
+          let w = colW, hgt = maxH;
+          if (props && props.width && props.height){
+            hgt = colW * props.height / props.width;
+            if (hgt > maxH){ hgt = maxH; w = maxH * props.width / props.height; }
+          }
+          try {
+            doc.addImage(data, 'JPEG', x, rowTop, w, hgt);
+            drawnH = hgt;
+          } catch(e){
+            doc.setFont('helvetica','italic'); doc.setFontSize(7.5); doc.setTextColor(170,70,70);
+            doc.text('[image could not be embedded]', x, rowTop + 5);
+            doc.setTextColor(20,20,20);
+          }
+        } else {
+          doc.setFont('helvetica','italic'); doc.setFontSize(7.5); doc.setTextColor(170,70,70);
+          doc.text('[photo not retrievable \u2014 open the Drive link]', x, rowTop + 5);
+          doc.setTextColor(20,20,20);
+        }
+        rowH = Math.max(rowH, drawnH);
+
+        doc.setFont('helvetica','normal'); doc.setFontSize(7); doc.setTextColor(90,90,90);
+        const cap = doc.splitTextToSize(String(p.label||''), colW).slice(0,2);
+        doc.text(cap, x, rowTop + rowH + 3.2);
+        doc.setTextColor(20,20,20);
+        capH = Math.max(capH, cap.length * 2.9);
+
+        col++;
+        if (col === 2){ col = 0; ctx.y = rowTop + rowH + 3.2 + capH + 4; }
+      }
+      if (col === 1) ctx.y = rowTop + rowH + 3.2 + capH + 4;
+      ctx.y += 2;
+    }
+
+    // ---------------- Letterhead -------------------------------------------
+    doc.setFont('helvetica','bold'); doc.setFontSize(16); doc.setTextColor(20,20,20);
+    doc.text('J.M. FABRICS LTD.', pageW/2, ctx.y, { align:'center' }); ctx.y += 5.5;
+    doc.setFont('helvetica','normal'); doc.setFontSize(8.5); doc.setTextColor(90,90,90);
+    doc.text('South Nayapara, 6 No Dogri, Bhawal Mirzapur, Gazipur, Bangladesh', pageW/2, ctx.y, { align:'center' }); ctx.y += 6.5;
+    doc.setFont('helvetica','bold'); doc.setFontSize(12.5); doc.setTextColor(20,20,20);
+    doc.text('Pre-Shipment Inspection Report', pageW/2, ctx.y, { align:'center' }); ctx.y += 5;
+    doc.setFont('helvetica','normal'); doc.setFontSize(9.5); doc.setTextColor(70,70,70);
+    doc.text(h.inspectionType || 'Final Inspection', pageW/2, ctx.y, { align:'center' }); ctx.y += 4;
+    doc.setDrawColor(150); doc.setLineWidth(0.5); doc.line(margin, ctx.y, pageW-margin, ctx.y);
+    doc.setLineWidth(0.2); doc.setTextColor(20,20,20); ctx.y += 6;
 
     table({ theme:'plain', body:[
-      ['SBU', h.sbu||'—', 'Buyer', h.buyer||'—'],
-      ['IR No', h.ir||'—', 'Style', h.styleName||'—'],
-      ['Season', h.season||'—', 'Item / Dept', [h.item,h.productDept].filter(Boolean).join(' / ')||'—'],
-      ['Date', h.date||'—', 'Inspector', h.inspectorName||'—'],
-      ['Factory', h.factoryName||'—', 'PO No', h.poNo||'—'],
+      ['SBU', h.sbu||'-', 'Buyer', h.buyer||'-'],
+      ['IR No', h.ir||'-', 'Style', h.styleName||'-'],
+      ['Season', h.season||'-', 'Item / Dept', [h.item,h.productDept].filter(Boolean).join(' / ')||'-'],
+      ['Date', h.date||'-', 'Inspector', h.inspectorName||'-'],
+      ['Factory', h.factoryName||'J.M. FABRICS LTD.', 'PO No', h.poNo||'-'],
     ], columnStyles:{0:{fontStyle:'bold',cellWidth:26},2:{fontStyle:'bold',cellWidth:26}} });
 
     doc.setFont('helvetica','bold'); doc.setFontSize(12);
     doc.setTextColor(overall==='FAIL'?200:overall==='PASS'?20:120, overall==='PASS'?120:overall==='FAIL'?30:120, 20);
     ensureRoom(8);
-    doc.text('OVERALL RESULT: ' + overall, margin, y); y += 8;
+    doc.text('OVERALL RESULT: ' + overall, margin, ctx.y); ctx.y += 8;
     doc.setTextColor(20,20,20);
 
-    // ---- 01 quantities & AQL ----
+    // ---------------- 00 sampling plan & AQL --------------------------------
+    heading('00. Sampling Plan & AQL');
+    table({ theme:'grid', head:[['Lot Size (Offer Qty)','Inspection Level','Sampling Plan','Code Letter','Sample Size']],
+      body:[[ (aql.lotQty||0).toLocaleString(), h.inspectionLevel||'-', h.samplingPlan||'Single', aql.codeLetter||'-', aql.sampleSize||'-' ]] });
+    const planRow = (sev, aqlVal, key) => {
+      const sp = (aql.singlePlans||{})[key];
+      const p = isDouble ? (aql.doublePlans||{})[key] : sp;
+      return [sev, aqlVal == 0 ? '0 (zero tol.)' : String(aqlVal), sp ? sp.code : '-', planLabel(p, isDouble)];
+    };
+    table({ theme:'grid', head:[['Severity','AQL','Code','Sample Size / Accept-Reject']], body:[
+      planRow('Critical', h.aqlCritical, 'critical'),
+      planRow('Major', h.aqlMajor, 'major'),
+      planRow('Minor', h.aqlMinor, 'minor'),
+      ['Measurements', String(h.aqlMajor), meas.codeLetter||'-', meas.sampleSize ? meas.sampleSize + ' pcs - Ac ' + meas.ac + ' / Re ' + meas.re : '-'],
+    ]});
+
+    // ---------------- 01 general information --------------------------------
     heading('01. General Information');
-    table({ theme:'grid', head:[['PO Qty','Order Qty','Offer Qty','AQL Crit','AQL Major','AQL Minor','Sample Size']],
-      body:[[h.poQty||'—',h.orderQty||'—',h.offerQty||'—',h.aqlCritical,h.aqlMajor,h.aqlMinor, aql.sampleSize+' (code '+aql.codeLetter+')']] });
+    table({ theme:'grid', head:[['PO Qty','Order Qty','Offer Qty','Offer %','Start Time','Factory']],
+      body:[[ h.poQty||'-', h.orderQty||'-', h.offerQty||'-',
+              (h.orderQty ? fmt1(Number(h.offerQty||0)/Number(h.orderQty)*100)+'%' : '-'),
+              h.startTime||'-', h.factoryName||'J.M. FABRICS LTD.' ]] });
     if (S.allQtyCheck.result || S.allQtyCheck.comments){
-      table({ theme:'plain', body:[['All Qty/Cartons Available', S.allQtyCheck.result||'—', S.allQtyCheck.comments||'']] });
+      table({ theme:'plain', body:[['All Qty/Cartons Available', S.allQtyCheck.result||'-', S.allQtyCheck.comments||'']] });
+    }
+    if (S.cartonSelection.totalCarton || S.cartonSelection.selectedCartonNo){
+      table({ theme:'grid', head:[['Total Cartons','Cartons Inspected (sqrt)','Selected Carton No.']],
+        body:[[ S.cartonSelection.totalCarton||'-',
+                S.cartonSelection.totalCarton ? Math.round(Math.sqrt(Number(S.cartonSelection.totalCarton))) : '-',
+                S.cartonSelection.selectedCartonNo||'-' ]] });
     }
     if (S.colorQty.length){
       table({ theme:'grid', head:[['Color','Order Qty','Carton Qty','Selected Carton No.']],
-        body: S.colorQty.map(c=>[c.color,c.qty,c.cartonQty||'—',c.selectedCartonNo||'—']) });
+        body: S.colorQty.map(c=>[c.color,c.qty,c.cartonQty||'-',c.selectedCartonNo||'-']) });
     }
+    await photos('01', 'Photos \u2014 Quantity & Carton Selection');
 
-    // ---- 02 sample overview ----
+    // ---------------- 02 sample overview -------------------------------------
     heading('02. Sample Selection & AQL Plan');
     table({ theme:'grid', head:[['Style ID','Style Name','Order Qty','Avail. Qty','Cartons Avail.','Cartons Sel.','Sample Insp.','Remarks']],
       body: S.sampleOverview.map(r=>[r.styleId,r.styleName,r.orderQty,r.availableQty,r.cartonsAvailable,r.cartonsSelected,r.actualSampleInspected,r.remarks]) });
 
-    // ---- 03 packing checkpoints ----
-    heading('03. Quantity & Packing Checkpoints — Section Result: ' + packingResult);
+    // ---------------- 03 packing checkpoints ---------------------------------
+    heading('03. Quantity & Packing Checkpoints \u2014 Section Result: ' + packingResult);
     table({ theme:'grid', head:[['Checkpoint','Result','Comments']],
-      body: S.packingCheckpoints.map(c=>[c.label,c.result||'—',c.comments||'']),
+      body: S.packingCheckpoints.map(c=>[c.label,c.result||'-',c.comments||'']),
       columnStyles:{0:{cellWidth:80}} });
     if (S.cartonDims.some(r=>r.poNumber||r.cartonNo||r.dims)){
       table({ theme:'grid', head:[['PO Number','Carton No.','Dimensions / Weight','Comments']],
         body: S.cartonDims.map(r=>[r.poNumber,r.cartonNo,r.dims,r.comments]) });
     }
+    await photos('03', 'Photos \u2014 Quantity & Packing Checkpoints');
 
-    // ---- 04 workmanship ----
-    heading('04. Workmanship — AQL Result: ' + (aql.result||'N/A'));
+    // ---------------- 04 workmanship ------------------------------------------
+    heading('04. Workmanship \u2014 AQL Result: ' + (aql.result||'N/A'));
+    const dt = defectTotals(S.defects);
     table({ theme:'grid', head:[['','Critical','Major','Minor']],
-      body:[['Found', defectTotals(S.defects).Critical, defectTotals(S.defects).Major, defectTotals(S.defects).Minor],
-            ['Allowed', aql.criticalAllowed, aql.majorAllowed, aql.minorAllowed]] });
+      body:[['Found', dt.Critical, dt.Major, dt.Minor],
+            ['Allowed (Ac)', aql.criticalAllowed, aql.majorAllowed, aql.minorAllowed]] });
     if (S.defects.length){
       table({ theme:'grid', head:[['#','Group','Category','Description','Area','Severity','Qty']],
         body: S.defects.map((d,i)=>[i+1,d.group,d.category,d.description,d.area,d.severity,d.qty]) });
     }
+    await photos('04', 'Photos \u2014 Defects');
 
-    // ---- 05 checkpoints & tests ----
-    heading('05. On-Site Checkpoints & Tests — Section Result: ' + testsResult);
+    // ---------------- 05 checkpoints & tests -----------------------------------
+    heading('05. On-Site Checkpoints & Tests \u2014 Section Result: ' + testsResult);
     table({ theme:'grid', head:[['Group','Checkpoint / Test','Applicable','Result','Comments / Report #']],
-      body: S.testCheckpoints.map(c=>[c.group,c.label,c.applicable,c.result||'—', c.isReport?c.testReportNumber:c.comments]),
+      body: S.testCheckpoints.map(c=>[c.group,c.label,c.applicable,c.result||'-', c.isReport?c.testReportNumber:c.comments]),
       columnStyles:{1:{cellWidth:60}} });
+    await photos('05', 'Photos \u2014 Checkpoints & Tests');
 
-    // ---- 06 measurements ----
-    heading('06. Measurements');
-    table({ theme:'grid', head:[['POM Description','Size','Tol(-)','Tol(+)','Spec','M1','M2','M3','M4','M5']],
-      body: S.measurements.poms.map(p=>[p.description,p.size,p.tolMinus,p.tolPlus,p.spec,...p.m]) });
-    table({ theme:'plain', body:[
-      ['Total Sample Size', S.measurements.totalSampleSize||'—', 'Total POMs Measured', S.measurements.totalPOMsMeasured||'—'],
-      ['Max Allowed OOT', S.measurements.maxAllowedOOT||'—', '', ''],
-    ]});
+    // ---------------- 06 measurements -------------------------------------------
+    heading('06. Measurements \u2014 Result: ' + (measResult||'N/A'));
+    const pieceCols = Array.from({length: meas.pieces}, (_,j)=>'#'+(j+1));
+    table({ theme:'grid', head:[['POM Description','Size','Tol(-)','Tol(+)','Spec'].concat(pieceCols).concat(['OOT'])],
+      body: S.measurements.poms.map(p => {
+        const cells = p.m.slice(0, meas.pieces).map(v => (v===''||v==null) ? '' : String(v));
+        let bad = false;
+        p.m.slice(0, meas.pieces).forEach(v => {
+          if (v===''||v==null||p.spec===''||p.spec==null) return;
+          const val=Number(v), spec=Number(p.spec);
+          const lo = p.tolMinus!=='' && p.tolMinus!=null ? spec+Number(p.tolMinus) : null;
+          const hi = p.tolPlus !=='' && p.tolPlus !=null ? spec+Number(p.tolPlus)  : null;
+          if ((lo!==null && val<lo) || (hi!==null && val>hi)) bad = true;
+        });
+        return [p.description,p.size,p.tolMinus,p.tolPlus,p.spec].concat(cells).concat([bad?'OOT':'']);
+      }), styles:{ fontSize: meas.pieces > 8 ? 6.5 : 8, cellPadding: 1.2 } });
+    table({ theme:'grid', head:[['Insp. Level','Code','Sample Size','POM Readings','Readings OOT','Pieces OOT','Max Allowed (Ac)','% OOT','Result']],
+      body:[[ meas.level, meas.codeLetter||'-', meas.sampleSize||'-', meas.readings, meas.ootReadings,
+              meas.ootPieces, meas.maxAllowed, meas.pctOot!=null?fmt1(meas.pctOot)+'%':'-', measResult||'N/A' ]] });
+    await photos('06', 'Photos \u2014 Measurement Report');
 
-    // ---- 08 summary & sign-off ----
-    heading('08. Summary & Sign-Off');
+    // ---------------- 07 summary & sign-off --------------------------------------
+    heading('07. Summary & Sign-Off');
     table({ theme:'grid', head:[['Section','Result']], body:[
       ['1. Quantity & Packing', packingResult],
-      ['2. Workmanship', aql.result||'N/A'],
+      ['2. Workmanship (AQL)', aql.result||'N/A'],
       ['3. Checkpoints & Tests', testsResult],
+      ['4. Measurements', measResult||'N/A'],
       ['Overall', overall],
     ]});
     table({ theme:'grid', head:[['Role','Name','Signature / Date']],
-      body: S.signOff.map(s=>[s.role,s.name||'—',s.signature||'—']) });
+      body: S.signOff.map(s=>[s.role,s.name||'-',s.signature||'-']) });
     if (S.remarks){
       heading('Overall Remarks');
       doc.setFont('helvetica','normal'); doc.setFontSize(9);
       const lines = doc.splitTextToSize(S.remarks, pageW - margin*2);
       ensureRoom(lines.length*4.5);
-      doc.text(lines, margin, y); y += lines.length*4.5 + 4;
+      doc.text(lines, margin, ctx.y); ctx.y += lines.length*4.5 + 4;
     }
 
-    // ---- 07 pictorial evidence (fetched server-side to dodge Drive CORS) ----
-    const pics = collectAllPicturesFrom_(S);
-    if (pics.length){
-      doc.addPage(); y = 16;
-      doc.setFont('helvetica','bold'); doc.setFontSize(13);
-      doc.text('07. Pictorial / Evidence', margin, y); y += 8;
-      for (const p of pics){
-        try{
-          const dataUrl = await fetchImageBase64_(p.fileId);
-          const props = doc.getImageProperties(dataUrl);
-          const w = pageW - margin*2;
-          const hgt = Math.min(90, w * props.height / props.width);
-          ensureRoom(hgt + 10);
-          doc.addImage(dataUrl, props.fileType || 'JPEG', margin, y, w, hgt);
-          y += hgt + 2;
-          doc.setFont('helvetica','normal'); doc.setFontSize(8.5); doc.setTextColor(90,90,90);
-          doc.text(p.label, margin, y); y += 6;
-          doc.setTextColor(20,20,20);
-        }catch(e){
-          ensureRoom(6);
-          doc.setFontSize(8.5); doc.text('[Photo unavailable: ' + p.label + ']', margin, y); y += 6;
-        }
-      }
+    // ---------------- Footer on every page ----------------------------------------
+    const total = doc.internal.getNumberOfPages();
+    for (let i = 1; i <= total; i++){
+      doc.setPage(i);
+      doc.setFont('helvetica','normal'); doc.setFontSize(7.5); doc.setTextColor(130,130,130);
+      doc.text('J.M. FABRICS LTD. \u00b7 Pre-Shipment Inspection Report \u00b7 ' + (h.ir||'') + ' \u00b7 ' + (h.date||''), margin, pageH - 7);
+      doc.text('Page ' + i + ' of ' + total, pageW - margin, pageH - 7, { align:'right' });
     }
 
-    const name = `Inspection_${(h.ir || 'report').replace(/[^a-zA-Z0-9]/g,'_')}_${h.date || ''}.pdf`;
+    const name = `Pre-Shipment_Inspection_${(h.ir || 'report').replace(/[^a-zA-Z0-9]/g,'_')}_${h.date || ''}.pdf`;
     doc.save(name);
     showToast('PDF downloaded.');
   }catch(e){
-    showToast('PDF generation failed — ' + e.message);
+    showToast('PDF generation failed \u2014 ' + e.message);
   }
 }
 
@@ -880,14 +1189,10 @@ function drawDashboardCharts(){
 /* ============================= RENDER: ENTRY FORM ============================= */
 
 function renderEntry(){
+  normalizeMeasurementColumns_(state);
   const h = state.header;
   const t = defectTotals(state.defects);
-  const aql = computeAQL(
-    state.sampleOverview.reduce((s,r)=>s+(Number(r.availableQty)||0),0) || h.orderQty,
-    t.Critical, t.Major, t.Minor, h.aqlCritical, h.aqlMajor, h.aqlMinor
-  );
-  const d = state.styleDetail;
-  const offerPct = h.orderQty ? (Number(h.offerQty||0) / Number(h.orderQty) * 100) : null;
+  const aql = aqlFor(state);
 
   return `
   <div id="printableReport">
@@ -914,14 +1219,11 @@ function renderEntry(){
         </select>
       </div>
     </div>
-    <div class="subtle-note" style="margin-top:10px;">
-      ${d ? `<b style="color:var(--text)">${esc(d.styleName)}</b> — ${esc(d.styleDescription||'')}<br>
-        ${esc(d.item)} / ${esc(d.productDept)} &middot; Season ${esc(d.season)} &middot; Total Order Qty ${esc(String(d.totalQty||0))}`
-      : (h.ir ? 'Loading style details…' : 'Select SBU → Buyer → IR to auto-fill order info below.')}
-    </div>
   </div>
 
-  ${renderSection01(h, aql, offerPct)}
+  ${renderOrderInfoPanel()}
+  ${renderSection00(h, aql)}
+  ${renderSection01(h, aql)}
   ${renderSection02()}
   ${renderSection03()}
   ${renderSection04(t, aql)}
@@ -943,41 +1245,103 @@ function renderEntry(){
   </div>`;
 }
 
-/* ---- 01. GENERAL INFORMATION ---- */
-function renderSection01(h, aql, offerPct){
+/* ---- 00. SAMPLING PLAN & AQL ---- */
+function renderSection00(h, aql){
+  const isDouble = h.samplingPlan === 'Double';
+  const meas = computeMeasurement(state);
+  const lot = lotBasisQty(state);
+  const basis = Number(h.offerQty) > 0 ? 'Offer Qty'
+              : ((state.sampleOverview||[]).reduce((s,r)=>s+(Number(r.availableQty)||0),0) > 0 ? 'Available Qty (Section 02)' : 'Order Qty');
+  const offerPct = h.orderQty ? (Number(h.offerQty||0) / Number(h.orderQty) * 100) : null;
+  const P = isDouble ? (aql.doublePlans||{}) : (aql.singlePlans||{});
+  const shifted = ['critical','major','minor'].some(k => {
+    const p = (aql.singlePlans||{})[k];
+    return p && p.shifted;
+  });
+
+  const row = (sev, aqlVal, key) => {
+    const p = P[key];
+    const single = (aql.singlePlans||{})[key];
+    return `<tr>
+      <td><b>${sev}</b></td>
+      <td>${aqlVal == 0 ? '0 (zero tolerance)' : aqlVal}</td>
+      <td>${single ? single.code : '-'}</td>
+      <td>${planLabel(p, isDouble)}</td>
+    </tr>`;
+  };
+
   return `
   <div class="panel panel-pad section-block">
-    <h2 class="section-title">01. General Information</h2>
+    <h2 class="section-title">00. Sampling Plan &amp; AQL <span class="tag">ISO 2859-1 / ANSI-ASQ Z1.4 &middot; normal inspection</span></h2>
+
     <div class="header-grid">
-      <div class="f"><span class="field-label">Date</span><input type="date" data-h="date" value="${esc(h.date)}"></div>
-      <div class="f"><span class="field-label">Inspector Name</span><input type="text" data-h="inspectorName" value="${esc(h.inspectorName)}"></div>
-      <div class="f"><span class="field-label">Inspection Start Time</span><input type="time" data-h="startTime" value="${esc(h.startTime)}"></div>
-      <div class="f"><span class="field-label">Factory Name</span><input type="text" data-h="factoryName" value="${esc(h.factoryName)}"></div>
       <div class="f"><span class="field-label">Inspection Type</span>
         <select data-h="inspectionType">${INSPECTION_TYPES.map(o=>`<option ${h.inspectionType===o?'selected':''}>${o}</option>`).join('')}</select>
       </div>
       <div class="f"><span class="field-label">Sampling Plan</span>
         <select data-h="samplingPlan">${SAMPLING_PLANS.map(o=>`<option ${h.samplingPlan===o?'selected':''}>${o}</option>`).join('')}</select>
       </div>
-      <div class="f"><span class="field-label">PO No</span><input type="text" data-h="poNo" value="${esc(h.poNo)}"></div>
-      <div class="f"><span class="field-label">Inspection Level</span>
+      <div class="f"><span class="field-label">Inspection Level (workmanship)</span>
         <select data-h="inspectionLevel">${INSPECTION_LEVELS.map(o=>`<option ${h.inspectionLevel===o?'selected':''}>${o}</option>`).join('')}</select>
       </div>
-      <div class="f"><span class="field-label">PO Qty</span><input type="number" data-h="poQty" value="${esc(h.poQty)}"></div>
-      <div class="f"><span class="field-label">AQL — Critical</span><select data-h="aqlCritical">${AQL_OPTIONS.map(o=>`<option value="${o}" ${Number(h.aqlCritical)===o?'selected':''}>${o}</option>`).join('')}</select></div>
-      <div class="f"><span class="field-label">Order Qty (auto)</span><input type="text" value="${esc(h.orderQty)}" readonly></div>
-      <div class="f"><span class="field-label">AQL — Major</span><select data-h="aqlMajor">${AQL_OPTIONS.map(o=>`<option value="${o}" ${Number(h.aqlMajor)===o?'selected':''}>${o}</option>`).join('')}</select></div>
-      <div class="f"><span class="field-label">Offer Qty</span><input type="number" data-h="offerQty" value="${esc(h.offerQty)}"></div>
-      <div class="f"><span class="field-label">AQL — Minor</span><select data-h="aqlMinor">${AQL_OPTIONS.map(o=>`<option value="${o}" ${Number(h.aqlMinor)===o?'selected':''}>${o}</option>`).join('')}</select></div>
-      <div class="f"><span class="field-label">Offer % (auto)</span><input type="text" value="${offerPct!=null ? fmt1(offerPct)+'%' : ''}" readonly></div>
-      <div class="f"><span class="field-label">Sample Size (auto)</span><input type="text" value="${aql.sampleSize} (code ${aql.codeLetter})" readonly></div>
-      <div class="f"><span class="field-label">Inspection Level — Measurements</span>
+      <div class="f"><span class="field-label">Inspection Level (measurements)</span>
         <select data-h="inspectionLevelMeasurements">${INSPECTION_LEVELS.map(o=>`<option ${h.inspectionLevelMeasurements===o?'selected':''}>${o}</option>`).join('')}</select>
       </div>
+      <div class="f"><span class="field-label">AQL &mdash; Critical</span><select data-h="aqlCritical">${AQL_OPTIONS.map(o=>`<option value="${o}" ${Number(h.aqlCritical)===o?'selected':''}>${o}</option>`).join('')}</select></div>
+      <div class="f"><span class="field-label">AQL &mdash; Major</span><select data-h="aqlMajor">${AQL_OPTIONS.map(o=>`<option value="${o}" ${Number(h.aqlMajor)===o?'selected':''}>${o}</option>`).join('')}</select></div>
+      <div class="f"><span class="field-label">AQL &mdash; Minor</span><select data-h="aqlMinor">${AQL_OPTIONS.map(o=>`<option value="${o}" ${Number(h.aqlMinor)===o?'selected':''}>${o}</option>`).join('')}</select></div>
     </div>
-    <div class="subtle-note">AQL dropdowns snap to the nearest of the supported chart values (1.0 / 1.5 / 2.5 / 4.0) when computing Accept/Reject numbers — see Section 04.</div>
 
-    <h3 class="section-title" style="margin-top:20px;font-size:12.5px;">All Quantities & Cartons Available?</h3>
+    <h3 class="section-title" style="margin-top:20px;font-size:12.5px;">Lot Size for Sampling</h3>
+    <div class="header-grid">
+      <div class="f"><span class="field-label">Order Qty (auto, from Order Info)</span><input type="text" value="${esc(h.orderQty)}" readonly></div>
+      <div class="f"><span class="field-label">PO Qty</span><input type="number" data-h="poQty" value="${esc(h.poQty)}"></div>
+      <div class="f"><span class="field-label">Offer Qty &mdash; sampling is based on this</span><input type="number" data-h="offerQty" value="${esc(h.offerQty)}" placeholder="qty presented for inspection"></div>
+      <div class="f"><span class="field-label">Offer % (auto)</span><input type="text" value="${offerPct!=null ? fmt1(offerPct)+'%' : ''}" readonly></div>
+    </div>
+
+    <h3 class="section-title" style="margin-top:20px;font-size:12.5px;">Calculated Sampling Plan <span class="tag">updates live</span></h3>
+    <div class="kpi-grid" style="grid-template-columns:repeat(auto-fit,minmax(140px,1fr));margin:0 0 12px;">
+      <div class="kpi"><div class="k-bar" style="background:var(--brand)"></div><div class="k-label">Lot Size Used</div><div class="k-value">${lot ? lot.toLocaleString() : '-'}</div><div class="k-sub">${esc(basis)}</div></div>
+      <div class="kpi"><div class="k-bar" style="background:var(--good)"></div><div class="k-label">Code Letter</div><div class="k-value">${aql.codeLetter || '-'}</div><div class="k-sub">${esc(h.inspectionLevel)}</div></div>
+      <div class="kpi"><div class="k-bar" style="background:var(--maj)"></div><div class="k-label">Sample Size</div><div class="k-value">${aql.sampleSize || '-'}</div><div class="k-sub">${isDouble ? 'double sampling' : 'single sampling'}</div></div>
+      <div class="kpi"><div class="k-bar" style="background:var(--min)"></div><div class="k-label">Measurement Sample</div><div class="k-value">${meas.sampleSize || '-'}</div><div class="k-sub">code ${meas.codeLetter||'-'} &middot; ${esc(meas.level)}</div></div>
+    </div>
+
+    <table class="rep-table">
+      <thead><tr><th>Severity</th><th>AQL</th><th>Code</th><th>${isDouble ? 'Double Sampling Plan (Ac / Re)' : 'Sample Size &amp; Accept / Reject'}</th></tr></thead>
+      <tbody>
+        ${row('Critical', h.aqlCritical, 'critical')}
+        ${row('Major', h.aqlMajor, 'major')}
+        ${row('Minor', h.aqlMinor, 'minor')}
+        <tr><td><b>Measurements</b></td><td>${h.aqlMajor}</td><td>${meas.codeLetter||'-'}</td><td>${meas.sampleSize ? meas.sampleSize + ' pcs - Ac ' + meas.ac + ' / Re ' + meas.re : '-'}</td></tr>
+      </tbody>
+    </table>
+    <div class="subtle-note" style="margin-top:10px;">
+      ${lot ? '' : 'Enter an <b>Offer Qty</b> above (or an Available Qty in Section 02) to calculate the plan. '}
+      ${shifted ? 'One or more AQL columns fall on an arrow in the master table, so the standard sends the inspection to a different code letter &mdash; the code shown per row is the one actually used. ' : ''}
+      Sample size, code letter and Accept/Reject numbers recalculate the moment you change the sampling plan, inspection level, AQL or Offer Qty.
+    </div>
+  </div>`;
+}
+
+/* ---- 01. GENERAL INFORMATION ---- */
+function renderSection01(h, aql){
+  return `
+  <div class="panel panel-pad section-block">
+    <h2 class="section-title">01. General Information</h2>
+    <div class="header-grid">
+      <div class="f"><span class="field-label">Date</span><input type="date" data-h="date" value="${esc(h.date)}"></div>
+      <div class="f"><span class="field-label">Inspection Start Time</span><input type="time" data-h="startTime" value="${esc(h.startTime)}"></div>
+      <div class="f"><span class="field-label">Inspector Name</span><input type="text" data-h="inspectorName" value="${esc(h.inspectorName)}"></div>
+      <div class="f"><span class="field-label">Factory Name</span><input type="text" data-h="factoryName" value="${esc(h.factoryName)}" placeholder="J.M. Fabrics Ltd."></div>
+      <div class="f"><span class="field-label">PO No</span><input type="text" data-h="poNo" value="${esc(h.poNo)}"></div>
+      <div class="f"><span class="field-label">Sampling Plan (from 00)</span><input type="text" value="${esc(h.samplingPlan)} / ${esc(h.inspectionLevel)}" readonly></div>
+      <div class="f"><span class="field-label">Sample Size (from 00)</span><input type="text" value="${aql.sampleSize ? aql.sampleSize + ' (code ' + aql.codeLetter + ')' : '-'}" readonly></div>
+      <div class="f"><span class="field-label">AQL C / Ma / Mi (from 00)</span><input type="text" value="${h.aqlCritical} / ${h.aqlMajor} / ${h.aqlMinor}" readonly></div>
+    </div>
+
+    <h3 class="section-title" style="margin-top:20px;font-size:12.5px;">All Quantities &amp; Cartons Available?</h3>
     <div class="row" style="align-items:flex-end;">
       <div class="f" style="min-width:160px;"><span class="field-label">Result</span>
         <select data-aq="result"><option value="">--</option><option ${state.allQtyCheck.result==='Pass'?'selected':''}>Pass</option><option ${state.allQtyCheck.result==='Fail'?'selected':''}>Fail</option><option ${state.allQtyCheck.result==='N/A'?'selected':''}>N/A</option></select>
@@ -989,14 +1353,14 @@ function renderSection01(h, aql, offerPct){
     <h3 class="section-title" style="margin-top:20px;font-size:12.5px;">Carton Selection</h3>
     <div class="row" style="align-items:flex-end;">
       <div class="f"><span class="field-label">Total Carton</span><input type="number" data-cs="totalCarton" value="${esc(state.cartonSelection.totalCarton)}"></div>
-      <div class="f"><span class="field-label">Inspected Carton (√Total, auto)</span><input type="text" value="${state.cartonSelection.totalCarton ? Math.round(Math.sqrt(Number(state.cartonSelection.totalCarton))) : ''}" readonly></div>
+      <div class="f"><span class="field-label">Inspected Carton (&radic;Total, auto)</span><input type="text" value="${state.cartonSelection.totalCarton ? Math.round(Math.sqrt(Number(state.cartonSelection.totalCarton))) : ''}" readonly></div>
       <div class="f" style="flex:1;min-width:200px;"><span class="field-label">Selected Carton No.</span><input type="text" data-cs="selectedCartonNo" value="${esc(state.cartonSelection.selectedCartonNo)}"></div>
       <div class="f"><span class="field-label">Selected Carton Picture</span>${pictureWidget('cartonSelection', '0')}</div>
     </div>
 
     <h3 class="section-title" style="margin-top:20px;font-size:12.5px;">Quantity by Colour</h3>
     <table class="rep-table">
-      <thead><tr><th>Color</th><th>Order Qty</th><th>Color-wise Carton Qty</th><th>Sample Carton (√Qty, auto)</th><th>Selected Carton No.</th></tr></thead>
+      <thead><tr><th>Color</th><th>Order Qty</th><th>Color-wise Carton Qty</th><th>Sample Carton (&radic;Qty, auto)</th><th>Selected Carton No.</th></tr></thead>
       <tbody>
         ${state.colorQty.length ? state.colorQty.map((c,i)=>`
           <tr>
@@ -1005,6 +1369,42 @@ function renderSection01(h, aql, offerPct){
             <td>${c.cartonQty ? Math.round(Math.sqrt(Number(c.cartonQty))) : ''}</td>
             <td><input type="text" data-cq="${i}:selectedCartonNo" value="${esc(c.selectedCartonNo)}"></td>
           </tr>`).join('') : `<tr><td colspan="5" style="color:var(--muted)">Select an IR above to load colours from Order Info.</td></tr>`}
+      </tbody>
+    </table>
+  </div>`;
+}
+
+/* ---- Order Information (mirrors the QA Process / Risk Assessment modules) ---- */
+function renderOrderInfoPanel(){
+  const d = state.styleDetail;
+  const h = state.header;
+  if (!d){
+    return `<div class="panel panel-pad section-block">
+      <h2 class="section-title">Order Information</h2>
+      <div class="subtle-note">${h.ir ? 'Loading order information&hellip; (if this stays here, no matching row was found in OrderInfo for this SBU / Buyer / IR)' : 'Select SBU &rarr; Buyer &rarr; IR above to pull the full order information across from the other modules.'}</div>
+    </div>`;
+  }
+  const rows = [
+    ['SBU', h.sbu], ['Buyer', h.buyer], ['IR No', h.ir],
+    ['Style Name', d.styleName], ['Style Description', d.styleDescription],
+    ['Item / Product Dept', [d.item, d.productDept].filter(Boolean).join(' / ')],
+    ['Season', d.season], ['Embellishment Category', d.embellishmentCategory],
+    ['Ship Date', d.shipDate], ['Total Order Qty', d.totalQty != null ? String(d.totalQty) : '']
+  ];
+  return `
+  <div class="panel panel-pad section-block">
+    <h2 class="section-title">Order Information <span class="tag">from OrderInfo master</span></h2>
+    <table class="rep-table">
+      <tbody>
+        ${rows.map(([k,v])=>`<tr><td style="width:34%;color:var(--muted)">${esc(k)}</td><td><b>${esc(v||'-')}</b></td></tr>`).join('')}
+      </tbody>
+    </table>
+    <h3 class="section-title" style="margin-top:18px;font-size:12.5px;">Colour-wise Order Qty</h3>
+    <table class="rep-table">
+      <thead><tr><th>Colour</th><th>Order Qty</th><th>% of Order</th></tr></thead>
+      <tbody>
+        ${(d.colors||[]).map(c=>`<tr><td>${esc(c.color)}</td><td>${esc(String(c.qty))}</td><td>${d.totalQty ? fmt1(Number(c.qty)/Number(d.totalQty)*100)+'%' : ''}</td></tr>`).join('')}
+        <tr class="rep-group-hd"><td>TOTAL</td><td>${esc(String(d.totalQty||0))}</td><td>100%</td></tr>
       </tbody>
     </table>
   </div>`;
@@ -1160,56 +1560,65 @@ function renderSection05(){
 /* ---- 06. MEASUREMENTS ---- */
 function renderSection06(){
   const m = state.measurements;
-  const pomsWithOot = m.poms.map(p => {
-    const vals = p.m.map(Number).filter(v => !isNaN(v) && p.m[p.m.indexOf(v)] !== '');
-    const nums = p.m.filter(x=>x!=='').map(Number);
-    let oot = '';
-    if (p.spec !== '' && nums.length){
-      const min = Math.min(...nums), max = Math.max(...nums);
-      const lo = p.tolMinus !== '' ? Number(p.spec) + Number(p.tolMinus) : null;
-      const hi = p.tolPlus !== '' ? Number(p.spec) + Number(p.tolPlus) : null;
-      if ((lo!==null && min<lo) || (hi!==null && max>hi)) oot = 'OOT';
-    }
-    return oot;
-  });
-  const totalOOT = pomsWithOot.filter(x=>x==='OOT').length;
-  const pctOOT = m.totalPOMsMeasured ? (totalOOT / Number(m.totalPOMsMeasured) * 100) : null;
-  const measResult = m.maxAllowedOOT !== '' ? (totalOOT <= Number(m.maxAllowedOOT) ? 'PASS' : 'FAIL') : '';
+  const meas = computeMeasurement(state);
+  const n = meas.pieces;
+  const pieceHead = Array.from({length:n}, (_,j)=>`<th style="${meas.pieceOot[j]?'color:var(--crit)':''}">#${j+1}</th>`).join('');
+
+  const isOot = (p, j) => {
+    const v = p.m[j];
+    if (v === '' || v === undefined || v === null || p.spec === '' || p.spec === undefined) return false;
+    const val = Number(v), spec = Number(p.spec);
+    const lo = p.tolMinus !== '' && p.tolMinus !== undefined ? spec + Number(p.tolMinus) : null;
+    const hi = p.tolPlus  !== '' && p.tolPlus  !== undefined ? spec + Number(p.tolPlus)  : null;
+    return (lo !== null && val < lo) || (hi !== null && val > hi);
+  };
+
   return `
   <div class="panel panel-pad section-block">
-    <h2 class="section-title">06. Measurements</h2>
+    <h2 class="section-title">06. Measurements <span class="tag">AQL ${esc(String(state.header.aqlMajor))} &middot; level ${esc(meas.level)} &middot; code ${esc(meas.codeLetter||'-')}</span></h2>
+
+    <div class="row" style="align-items:flex-end;margin-bottom:10px;">
+      <div class="f"><span class="field-label">Measurement Sample Size (auto, per AQL)</span><input type="text" value="${meas.sampleSize || '-'}" readonly></div>
+      <div class="f"><span class="field-label">Pieces Measured (columns shown)</span><input type="number" min="1" max="15" data-mm="pieceCount" value="${esc(String(m.pieceCount||n))}"></div>
+      <div class="f"><span class="field-label">Max Allowed OOT Pieces (auto, Ac)</span><input type="text" value="${meas.maxAllowed}" readonly></div>
+    </div>
+
     <h3 class="section-title" style="font-size:12.5px;">Point-of-Measure (POM) Findings</h3>
+    <div style="overflow-x:auto;">
     <table class="rep-table">
-      <thead><tr><th>POM Description</th><th>Size</th><th>Tol (-)</th><th>Tol (+)</th><th>Spec</th><th>M1</th><th>M2</th><th>M3</th><th>M4</th><th>M5</th><th>OOT?</th><th></th></tr></thead>
+      <thead><tr><th>POM Description</th><th>Size</th><th>Tol (-)</th><th>Tol (+)</th><th>Spec</th>${pieceHead}<th>OOT?</th><th></th></tr></thead>
       <tbody>
         ${m.poms.map((p,i)=>`
           <tr>
             <td><input type="text" data-pom="${i}:description" value="${esc(p.description)}"></td>
             <td><input type="text" data-pom="${i}:size" value="${esc(p.size)}" style="width:50px"></td>
-            <td><input type="number" step="0.1" data-pom="${i}:tolMinus" value="${esc(p.tolMinus)}" style="width:55px"></td>
-            <td><input type="number" step="0.1" data-pom="${i}:tolPlus" value="${esc(p.tolPlus)}" style="width:55px"></td>
-            <td><input type="number" step="0.1" data-pom="${i}:spec" value="${esc(p.spec)}" style="width:60px"></td>
-            ${p.m.map((v,mi)=>`<td><input type="number" step="0.1" data-pomm="${i}:${mi}" value="${esc(v)}" style="width:55px"></td>`).join('')}
-            <td>${pomsWithOot[i] ? `<span class="badge fail">OOT</span>` : ''}</td>
-            <td>${m.poms.length>1?`<button type="button" class="btn danger small" data-pom-remove="${i}">✕</button>`:''}</td>
+            <td><input type="number" step="0.01" data-pom="${i}:tolMinus" value="${esc(p.tolMinus)}" style="width:55px"></td>
+            <td><input type="number" step="0.01" data-pom="${i}:tolPlus" value="${esc(p.tolPlus)}" style="width:55px"></td>
+            <td><input type="number" step="0.01" data-pom="${i}:spec" value="${esc(p.spec)}" style="width:60px"></td>
+            ${p.m.slice(0,n).map((v,mi)=>`<td><input type="number" step="0.01" data-pomm="${i}:${mi}" value="${esc(v)}" style="width:52px;${isOot(p,mi)?'color:var(--crit);font-weight:600;':''}"></td>`).join('')}
+            <td>${p.m.slice(0,n).some((v,mi)=>isOot(p,mi)) ? `<span class="badge fail">OOT</span>` : ''}</td>
+            <td>${m.poms.length>1?`<button type="button" class="btn danger small" data-pom-remove="${i}">&times;</button>`:''}</td>
           </tr>`).join('')}
       </tbody>
     </table>
+    </div>
     <button type="button" class="btn ghost small row-add-btn" data-action="add-pom-row">+ Add POM Row</button>
 
     <div class="row" style="align-items:flex-end;margin-top:14px;">
       <div class="f"><span class="field-label">Or Measurement Report Pictures</span>${pictureWidget('measurements', '0')}</div>
     </div>
 
-    <h3 class="section-title" style="margin-top:20px;font-size:12.5px;">Measurement Summary</h3>
+    <h3 class="section-title" style="margin-top:20px;font-size:12.5px;">Measurement Summary <span class="tag">all auto</span></h3>
     <div class="header-grid">
-      <div class="f"><span class="field-label">Total Sample Size (Pcs)</span><input type="number" data-mm="totalSampleSize" value="${esc(m.totalSampleSize)}"></div>
-      <div class="f"><span class="field-label">Total POMs Measured</span><input type="number" data-mm="totalPOMsMeasured" value="${esc(m.totalPOMsMeasured)}"></div>
-      <div class="f"><span class="field-label">Total Pieces Out of Tolerance (auto)</span><input type="text" value="${totalOOT}" readonly></div>
-      <div class="f"><span class="field-label">Maximum Allowed (per AQL)</span><input type="number" data-mm="maxAllowedOOT" value="${esc(m.maxAllowedOOT)}"></div>
-      <div class="f"><span class="field-label">% POM Out of Tolerance (auto)</span><input type="text" value="${pctOOT!=null?fmt1(pctOOT)+'%':''}" readonly></div>
-      <div class="f"><span class="field-label">Result (auto)</span><input type="text" value="${measResult}" readonly></div>
+      <div class="f"><span class="field-label">Total Sample Size (Pcs)</span><input type="text" value="${meas.pieces}" readonly></div>
+      <div class="f"><span class="field-label">Total POM Readings Taken</span><input type="text" value="${meas.readings}" readonly></div>
+      <div class="f"><span class="field-label">POM Readings Out of Tolerance</span><input type="text" value="${meas.ootReadings}" readonly></div>
+      <div class="f"><span class="field-label">Pieces Out of Tolerance (defective)</span><input type="text" value="${meas.ootPieces}" readonly></div>
+      <div class="f"><span class="field-label">Max Allowed (per AQL)</span><input type="text" value="${meas.maxAllowed}" readonly></div>
+      <div class="f"><span class="field-label">% POM Out of Tolerance</span><input type="text" value="${meas.pctOot!=null?fmt1(meas.pctOot)+'%':''}" readonly></div>
+      <div class="f"><span class="field-label">Measurement Result (auto)</span><input type="text" value="${meas.result}" readonly></div>
     </div>
+    <div class="subtle-note" style="margin-top:8px;">A piece counts as one measurement defective if <b>any</b> of its POMs falls outside tolerance &mdash; that count is what is compared against the Accept number, exactly as the AQL chart intends.</div>
   </div>`;
 }
 
@@ -1219,21 +1628,16 @@ function renderSection07(){
   return `
   <div class="panel panel-pad section-block">
     <h2 class="section-title">07. Pictorial / Evidence</h2>
-    ${pics.length ? `<div class="gallery">${pics.map(p=>`<figure><img src="${esc(p.url)}" onclick="window.open('${esc(p.url)}','_blank')"><figcaption>${esc(p.label)}</figcaption></figure>`).join('')}</div>`
+    ${pics.length ? `<div class="gallery">${pics.map(p=>`<figure><img src="${esc(picThumbSrc_(p))}" onclick="${p.url ? `window.open('${esc(p.url)}','_blank')` : ''}"><figcaption>${esc(p.label)}</figcaption></figure>`).join('')}</div>`
       : `<div class="subtle-note">No photos added yet — use the "Add Photo" button next to any checkpoint above; every photo collected across the whole report automatically appears here.</div>`}
   </div>`;
 }
 
 /* ---- 08. SUMMARY & SIGN-OFF ---- */
 function renderSection08(aql){
-  const packingResults = state.packingCheckpoints.map(c=>c.result).filter(Boolean);
-  const packingResult = packingResults.includes('Fail') ? 'FAIL' : (packingResults.length ? 'PASS' : 'N/A');
-  const testResults = state.testCheckpoints.map(c=>c.result).filter(Boolean);
-  const testsResult = testResults.includes('Fail') ? 'FAIL' : (testResults.length ? 'PASS' : 'N/A');
-  const m = state.measurements;
-  const failCount = [packingResult, aql.result, testsResult].filter(r=>r==='FAIL').length;
-  const anyResult = [packingResult, aql.result, testsResult].some(r=>r==='PASS'||r==='FAIL');
-  const overall = failCount > 0 ? 'FAIL' : (anyResult ? 'PASS' : 'PENDING');
+  const R = computeOverallResult_(state);
+  const packingResult = R.packingResult, testsResult = R.testsResult;
+  const measResult = R.measResult, overall = R.overall;
   return `
   <div class="panel panel-pad section-block">
     <h2 class="section-title">08. Summary & Sign-Off</h2>
@@ -1243,19 +1647,7 @@ function renderSection08(aql){
         <tr><td>1. Quantity & Packing</td><td><span class="badge ${packingResult==='FAIL'?'fail':packingResult==='PASS'?'pass':''}">${packingResult}</span></td></tr>
         <tr><td>2. Workmanship</td><td>${aql.result ? `<span class="badge ${aql.result==='FAIL'?'fail':'pass'}">${aql.result}</span>` : 'N/A'}</td></tr>
         <tr><td>3. Checkpoints & Tests</td><td><span class="badge ${testsResult==='FAIL'?'fail':testsResult==='PASS'?'pass':''}">${testsResult}</span></td></tr>
-        <tr><td>4. Measurements</td><td>${(() => {
-          if (m.maxAllowedOOT === '') return 'N/A';
-          const oot = state.measurements.poms.filter(p => {
-            const nums = p.m.filter(x=>x!=='').map(Number);
-            if (p.spec==='' || !nums.length) return false;
-            const min = Math.min(...nums), max = Math.max(...nums);
-            const lo = p.tolMinus!=='' ? Number(p.spec)+Number(p.tolMinus) : null;
-            const hi = p.tolPlus!=='' ? Number(p.spec)+Number(p.tolPlus) : null;
-            return (lo!==null && min<lo) || (hi!==null && max>hi);
-          }).length;
-          const r = oot <= Number(m.maxAllowedOOT) ? 'PASS' : 'FAIL';
-          return `<span class="badge ${r==='FAIL'?'fail':'pass'}">${r}</span>`;
-        })()}</td></tr>
+        <tr><td>4. Measurements</td><td>${measResult && measResult!=='N/A' ? `<span class="badge ${measResult==='FAIL'?'fail':'pass'}">${measResult}</span>` : 'N/A'}</td></tr>
       </tbody>
     </table>
     <div class="subtle-note" style="margin:10px 0 16px;"><b>Overall Inspection Result:</b> <span class="badge ${overall==='FAIL'?'fail':overall==='PASS'?'pass':''}">${overall}</span></div>
@@ -1375,7 +1767,7 @@ function renderReportModal(){
         <h2 class="section-title" style="margin-top:20px;">Defects</h2>
         <table class="log"><tr><th>Severity</th><th>Category</th><th>Description</th><th>Area</th><th>Qty</th></tr>
         ${defectRows || '<tr><td colspan="5">No defects recorded.</td></tr>'}</table>
-        ${pics.length ? `<h2 class="section-title" style="margin-top:20px;">Pictorial Evidence (${pics.length})</h2><div class="gallery">${pics.map(p=>`<figure><img src="${esc(p.url)}" onclick="window.open('${esc(p.url)}','_blank')"></figure>`).join('')}</div>` : ''}
+        ${pics.length ? `<h2 class="section-title" style="margin-top:20px;">Pictorial Evidence (${pics.length})</h2><div class="gallery">${pics.map(p=>`<figure><img src="${esc(picThumbSrc_(p))}" onclick="${p.url ? `window.open('${esc(p.url)}','_blank')` : ''}"></figure>`).join('')}</div>` : ''}
         <h2 class="section-title" style="margin-top:20px;">Overall Remarks</h2>
         <p>${esc(r.remarks)||'-'}</p>
       </div>
@@ -1512,10 +1904,15 @@ function bindEvents(){
   });
   const addPomBtn = document.querySelector('[data-action="add-pom-row"]');
   if (addPomBtn) addPomBtn.onclick = () => {
-    state.measurements.poms.push({ description:'', size:'', tolMinus:'', tolPlus:'', spec:'', m:['','','','',''] });
+    state.measurements.poms.push({ description:'', size:'', tolMinus:'', tolPlus:'', spec:'', m:[] });
+    normalizeMeasurementColumns_();
     render();
   };
-  document.querySelectorAll('[data-mm]').forEach(el => el.onchange = (e) => { state.measurements[el.dataset.mm] = e.target.value; render(); });
+  document.querySelectorAll('[data-mm]').forEach(el => el.onchange = (e) => {
+    state.measurements[el.dataset.mm] = el.dataset.mm === 'pieceCount' ? Math.min(Math.max(Number(e.target.value)||1,1),15) : e.target.value;
+    normalizeMeasurementColumns_(state);
+    render();
+  });
 
   // ---- 08. Sign-off ----
   document.querySelectorAll('[data-so2]').forEach(el => el.onchange = (e) => {
@@ -1617,6 +2014,7 @@ async function saveCurrentReport_(isFinal){
     cartonDims: state.cartonDims, defects: state.defects, testCheckpoints: state.testCheckpoints, measurements: state.measurements,
     signOff: state.signOff, remarks: state.remarks,
   })));
+  stripPictureData_(record);
   record.id = state.editingId || uid();
   record.sampleSize = aql.sampleSize;
   record.result = overall === 'PENDING' ? (aql.result || 'PENDING') : overall;
