@@ -742,6 +742,25 @@ function sectionPics_(S, section){
   return [];
 }
 
+// Same idea as sectionPics_, but keeps every checkpoint/option that CAN carry
+// a photo - even ones with none attached yet - so the photo appendix at the
+// end of the PDF lists every option and simply leaves the empty ones blank,
+// instead of silently dropping them.
+function sectionPicGroups_(S, section){
+  S = S || state;
+  switch(section){
+    case '01': return [
+        { label: 'All Quantities & Cartons Available', pics: S.allQtyCheck.pictures || [] },
+        { label: 'Selected Carton', pics: S.cartonSelection.pictures || [] }
+      ];
+    case '03': return S.packingCheckpoints.map(c => ({ label: c.label, pics: c.pictures || [] }));
+    case '04': return S.defects.map((d,i) => ({ label: 'Defect #' + (i+1) + (d.description ? ' \u2014 ' + d.description : ''), pics: d.pictures || [] }));
+    case '05': return S.testCheckpoints.map(c => ({ label: c.label, pics: c.pictures || [] }));
+    case '06': return [{ label: 'Measurement Report', pics: S.measurements.pictures || [] }];
+  }
+  return [];
+}
+
 function collectAllPicturesFrom_(S){
   S = S || state;
   return ['01','03','04','05','06'].reduce((out, sec) => out.concat(sectionPics_(S, sec)), []);
@@ -849,57 +868,69 @@ async function generatePdfReport(srcData){
       ctx.y = doc.lastAutoTable.finalY + 6;
     }
 
-    // ---------------- Photo blocks, placed right under their own section ----
+    // ---------------- Photo appendix, grouped by checkpoint -----------------
+    // Every checkpoint that can carry a photo gets its own labeled block here;
+    // checkpoints with nothing attached still appear, just left blank, so the
+    // full list of photo options is visible at a glance (matches the sample
+    // report's layout, where every photo slot is accounted for at the end).
     async function photos(section, caption){
-      const pics = sectionPics_(S, section);
-      if (!pics.length) return;
+      const groups = sectionPicGroups_(S, section);
+      if (!groups.length) return;
       ensureRoom(14);
-      doc.setFont('helvetica','bold'); doc.setFontSize(9); doc.setTextColor(40,40,40);
-      doc.text(caption, margin, ctx.y); ctx.y += 4.5;
+      doc.setFont('helvetica','bold'); doc.setFontSize(10); doc.setTextColor(20,20,20);
+      doc.text(caption, margin, ctx.y); ctx.y += 5.5;
       doc.setTextColor(20,20,20);
 
       const colW = (pageW - margin*2 - 6) / 2;
       const maxH = 50;
-      let col = 0, rowTop = ctx.y, rowH = 0, capH = 0;
 
-      for (const p of pics){
-        const data = await picJpegDataUrl_(p);
-        if (col === 0){ ensureRoom(maxH + 14); rowTop = ctx.y; rowH = 0; capH = 0; }
-        const x = margin + col * (colW + 6);
-        let drawnH = 8;
-        if (data){
-          let props = null;
-          try { props = doc.getImageProperties(data); } catch(e){ props = null; }
-          let w = colW, hgt = maxH;
-          if (props && props.width && props.height){
-            hgt = colW * props.height / props.width;
-            if (hgt > maxH){ hgt = maxH; w = maxH * props.width / props.height; }
-          }
-          try {
-            doc.addImage(data, 'JPEG', x, rowTop, w, hgt);
-            drawnH = hgt;
-          } catch(e){
+      for (const g of groups){
+        ensureRoom(9);
+        doc.setFont('helvetica','bold'); doc.setFontSize(8.5); doc.setTextColor(40,40,40);
+        doc.text(String(g.label || ''), margin, ctx.y); ctx.y += 4;
+        doc.setTextColor(20,20,20);
+
+        if (!g.pics.length){
+          doc.setFont('helvetica','italic'); doc.setFontSize(7.5); doc.setTextColor(150,150,150);
+          doc.text('No photo added.', margin, ctx.y); ctx.y += 6;
+          doc.setTextColor(20,20,20);
+          continue;
+        }
+
+        let col = 0, rowTop = ctx.y, rowH = 0;
+        for (const p of g.pics){
+          const data = await picJpegDataUrl_(p);
+          if (col === 0){ ensureRoom(maxH + 6); rowTop = ctx.y; rowH = 0; }
+          const x = margin + col * (colW + 6);
+          let drawnH = 8;
+          if (data){
+            let props = null;
+            try { props = doc.getImageProperties(data); } catch(e){ props = null; }
+            let w = colW, hgt = maxH;
+            if (props && props.width && props.height){
+              hgt = colW * props.height / props.width;
+              if (hgt > maxH){ hgt = maxH; w = maxH * props.width / props.height; }
+            }
+            try {
+              doc.addImage(data, 'JPEG', x, rowTop, w, hgt);
+              drawnH = hgt;
+            } catch(e){
+              doc.setFont('helvetica','italic'); doc.setFontSize(7.5); doc.setTextColor(170,70,70);
+              doc.text('[image could not be embedded]', x, rowTop + 5);
+              doc.setTextColor(20,20,20);
+            }
+          } else {
             doc.setFont('helvetica','italic'); doc.setFontSize(7.5); doc.setTextColor(170,70,70);
-            doc.text('[image could not be embedded]', x, rowTop + 5);
+            doc.text('[photo not retrievable \u2014 open the Drive link]', x, rowTop + 5);
             doc.setTextColor(20,20,20);
           }
-        } else {
-          doc.setFont('helvetica','italic'); doc.setFontSize(7.5); doc.setTextColor(170,70,70);
-          doc.text('[photo not retrievable \u2014 open the Drive link]', x, rowTop + 5);
-          doc.setTextColor(20,20,20);
+          rowH = Math.max(rowH, drawnH);
+          col++;
+          if (col === 2){ col = 0; ctx.y = rowTop + rowH + 4; }
         }
-        rowH = Math.max(rowH, drawnH);
-
-        doc.setFont('helvetica','normal'); doc.setFontSize(7); doc.setTextColor(90,90,90);
-        const cap = doc.splitTextToSize(String(p.label||''), colW).slice(0,2);
-        doc.text(cap, x, rowTop + rowH + 3.2);
-        doc.setTextColor(20,20,20);
-        capH = Math.max(capH, cap.length * 2.9);
-
-        col++;
-        if (col === 2){ col = 0; ctx.y = rowTop + rowH + 3.2 + capH + 4; }
+        if (col === 1) ctx.y = rowTop + rowH + 4;
+        ctx.y += 3;
       }
-      if (col === 1) ctx.y = rowTop + rowH + 3.2 + capH + 4;
       ctx.y += 2;
     }
 
@@ -928,6 +959,16 @@ async function generatePdfReport(srcData){
     ensureRoom(8);
     doc.text('OVERALL RESULT: ' + overall, margin, ctx.y); ctx.y += 8;
     doc.setTextColor(20,20,20);
+
+    // ---------------- Inspection Summary (at-a-glance, front page) -----------
+    heading('Inspection Summary');
+    table({ theme:'grid', head:[['Section','Result']], body:[
+      ['1. Quantity & Packing', packingResult],
+      ['2. Workmanship (AQL)', aql.result||'N/A'],
+      ['3. Checkpoints & Tests', testsResult],
+      ['4. Measurements', measResult||'N/A'],
+      ['Overall Result', overall],
+    ], columnStyles:{1:{fontStyle:'bold'}} });
 
     // ---------------- 00 sampling plan & AQL --------------------------------
     heading('00. Sampling Plan & AQL');
@@ -965,8 +1006,6 @@ async function generatePdfReport(srcData){
         body: S.colorQty.map(c=>[c.color, c.qty, c.readyQty||'-', c.cartonQty||'-',
           c.cartonQty ? Math.round(Math.sqrt(Number(c.cartonQty))) : '-', c.selectedCartonNo||'-']) });
     }
-    await photos('01', 'Photos \u2014 Quantity & Carton Selection');
-
     // ---------------- 02 sample overview -------------------------------------
     heading('02. Sample Selection & AQL Plan');
     table({ theme:'grid', head:[['Style ID','Style Name','Order Qty','Avail. Qty','Cartons Avail.','Cartons Sel.','Sample Insp.','Remarks']],
@@ -981,8 +1020,6 @@ async function generatePdfReport(srcData){
       table({ theme:'grid', head:[['PO Number','Carton No.','Dimensions / Weight','Comments']],
         body: S.cartonDims.map(r=>[r.poNumber,r.cartonNo,r.dims,r.comments]) });
     }
-    await photos('03', 'Photos \u2014 Quantity & Packing Checkpoints');
-
     // ---------------- 04 workmanship ------------------------------------------
     heading('04. Workmanship \u2014 AQL Result: ' + (aql.result||'N/A'));
     const dt = defectTotals(S.defects);
@@ -993,15 +1030,11 @@ async function generatePdfReport(srcData){
       table({ theme:'grid', head:[['#','Group','Category','Description','Area','Severity','Qty']],
         body: S.defects.map((d,i)=>[i+1,d.group,d.category,d.description,d.area,d.severity,d.qty]) });
     }
-    await photos('04', 'Photos \u2014 Defects');
-
     // ---------------- 05 checkpoints & tests -----------------------------------
     heading('05. On-Site Checkpoints & Tests \u2014 Section Result: ' + testsResult);
     table({ theme:'grid', head:[['Group','Checkpoint / Test','Applicable','Result','Comments / Report #']],
       body: S.testCheckpoints.map(c=>[c.group,c.label,c.applicable,c.result||'-', c.isReport?c.testReportNumber:c.comments]),
       columnStyles:{1:{cellWidth:60}} });
-    await photos('05', 'Photos \u2014 Checkpoints & Tests');
-
     // ---------------- 06 measurements -------------------------------------------
     heading('06. Measurements \u2014 Result: ' + (measResult||'N/A'));
     const pieceCols = Array.from({length: meas.pieces}, (_,j)=>'#'+(j+1));
@@ -1021,8 +1054,6 @@ async function generatePdfReport(srcData){
     table({ theme:'grid', head:[['Insp. Level','Code','Sample Size','POM Readings','Readings OOT','Pieces OOT','Max Allowed (Ac)','% OOT','Result']],
       body:[[ meas.level, meas.codeLetter||'-', meas.sampleSize||'-', meas.readings, meas.ootReadings,
               meas.ootPieces, meas.maxAllowed, meas.pctOot!=null?fmt1(meas.pctOot)+'%':'-', measResult||'N/A' ]] });
-    await photos('06', 'Photos \u2014 Measurement Report');
-
     // ---------------- 07 summary & sign-off --------------------------------------
     heading('07. Summary & Sign-Off');
     table({ theme:'grid', head:[['Section','Result']], body:[
@@ -1041,6 +1072,16 @@ async function generatePdfReport(srcData){
       ensureRoom(lines.length*4.5);
       doc.text(lines, margin, ctx.y); ctx.y += lines.length*4.5 + 4;
     }
+
+    // ---------------- Photos & Attachments (all sections, at the end) ----------
+    doc.addPage(); ctx.y = 16;
+    doc.setFont('helvetica','bold'); doc.setFontSize(13); doc.setTextColor(20,20,20);
+    doc.text('Photos & Attachments', margin, ctx.y); ctx.y += 7;
+    await photos('01', 'Photos \u2014 Quantity & Carton Selection');
+    await photos('03', 'Photos \u2014 Quantity & Packing Checkpoints');
+    await photos('04', 'Photos \u2014 Defects');
+    await photos('05', 'Photos \u2014 Checkpoints & Tests');
+    await photos('06', 'Photos \u2014 Measurement Report');
 
     // ---------------- Footer on every page ----------------------------------------
     const total = doc.internal.getNumberOfPages();
