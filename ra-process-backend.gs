@@ -8,28 +8,33 @@
  * Strategic Complex) per process: Fabric, Cutting, Printing,
  * Embroidery, Sewing, Wash, Finishing.
  *
- * SETUP:
- * 1. Create a new Google Sheet, e.g. "JM Fabrics RA Process".
- * 2. Create a tab named exactly: OrderInfo
- *    Import the "Order information.xlsx" file you already have into
- *    this tab AS-IS — keep the original header row exactly:
- *      SBU | Buyer | IR No | Style Name | Style Description | Season |
- *      Item | Product Dept | Color | Embellishment Category | Ship Date | Total
- *    (File > Import > Insert new sheet, or copy/paste the data in.)
- * 3. Create a tab named exactly: RARecords
- *    (auto-created with headers the first time an RA is saved)
- * 4. Create a tab named exactly: RAUsers (optional, only if you want
- *    a separate login for this module — 4 columns: UserID, Password,
- *    Name, Role)
- * 5. Extensions -> Apps Script, paste this file in, Save.
+ * SETUP (Taherconsultingbd Portal — Module 05 folder):
+ * 1. This module's own Google Sheet lives in the "Module 05 - Risk
+ *    Assessment" Drive folder (e.g. "RA_Process_Data").
+ * 2. OrderInfo is NO LONGER a local tab — it lives in the shared
+ *    "Master_Order_Information" Sheet at the Portal's Drive root
+ *    (MASTER_ORDER_SHEET_ID below).
+ * 3. RARecords is ALSO NO LONGER local — this module still OWNS and
+ *    writes it, but it now lives as a tab inside that same shared
+ *    "Master_Order_Information" Sheet, so QA Process's Style Tracking
+ *    panel reads the exact same copy instead of an imported duplicate.
+ * 4. RAUsers login now runs centrally through users-backend.gs (see
+ *    js/module-auth.js, sheetName: "RAUsers") reading from the shared
+ *    "User_Management" Sheet — no separate login tab needed here.
+ * 5. Extensions -> Apps Script, paste this file in, Save. Run any
+ *    function once and accept the Drive permission prompts (this
+ *    module's own Sheet AND the shared Master_Order_Information Sheet).
  * 6. Deploy -> New deployment -> Web app -> Execute as: Me ->
  *    Who has access: Anyone -> Deploy -> authorize -> copy the /exec URL.
  * 7. Paste that URL into ra-process.html wherever RA_API_URL is defined.
  */
 
-const ORDERINFO_SHEET = "OrderInfo";
-const RARECORDS_SHEET = "RARecords";
-const RA_USERS_SHEET = "RAUsers";
+// ---- Centralized cross-module Sheets (Taherconsultingbd Portal / Drive root) ----
+const MASTER_ORDER_SHEET_ID = "1DE8KrlS6LLTDdhKIg4YgM3ZSsdZmxyzAR7BBAZJ5--U"; // Master_Order_Information
+const USER_MANAGEMENT_SHEET_ID = "1s0i82BmF6T5C7_yNf970cK2Gb3qJ3-7tKqAWM-0vzbw"; // User_Management
+const ORDERINFO_SHEET = "OrderInfo";   // tab inside Master_Order_Information
+const RARECORDS_SHEET = "RARecords";   // tab inside Master_Order_Information — this module OWNS/writes it
+const RA_USERS_SHEET = "RAUsers";      // tab inside User_Management (login now handled centrally by users-backend.gs)
 
 const RA_EVENTS = ["Fabric", "Cutting", "Printing", "Embroidery", "Sewing", "Wash", "Finishing"];
 
@@ -61,7 +66,7 @@ function doPost(e) {
 // ---------- OrderInfo lookups ----------
 
 function getOrderInfoRows_() {
-  const sheet = SpreadsheetApp.getActiveSpreadsheet().getSheetByName(ORDERINFO_SHEET);
+  const sheet = getMasterSheet_().getSheetByName(ORDERINFO_SHEET);
   if (!sheet) return [];
   const rows = sheet.getDataRange().getValues();
   return rows.slice(1).filter(r => r[0]); // skip header, skip blank rows
@@ -134,7 +139,7 @@ function getOrderDetail_(sbu, buyer, ir, embCat) {
 const RA_HEADERS = ["SBU","Buyer","IR","StyleName","Item","ProductDept","Season","TotalQty","ComplexityJSON","ReasonsJSON","OverallComplexity","Notes","CreatedAt","EmbellishmentCategory","RaDate"];
 
 function saveRA_(rec) {
-  const sheet = getSheet_(RARECORDS_SHEET, RA_HEADERS);
+  const sheet = getMasterSheetTab_(RARECORDS_SHEET, RA_HEADERS);
   const newRow = [
     rec.sbu || "", rec.buyer || "", rec.ir || "", rec.styleName || "", rec.item || "",
     rec.productDept || "", rec.season || "", rec.totalQty || "",
@@ -164,7 +169,7 @@ function saveRA_(rec) {
 }
 
 function listRA_() {
-  const sheet = getSheet_(RARECORDS_SHEET, RA_HEADERS);
+  const sheet = getMasterSheetTab_(RARECORDS_SHEET, RA_HEADERS);
   const rows = sheet.getDataRange().getValues();
   const out = [];
   for (let i = 1; i < rows.length; i++) {
@@ -286,8 +291,28 @@ function getSheet_(name, headers) {
   return sheet;
 }
 
+// Shared Master_Order_Information Sheet (OrderInfo + RARecords tabs) — same
+// file the QA Process module also reads from.
+function getMasterSheet_() {
+  return SpreadsheetApp.openById(MASTER_ORDER_SHEET_ID);
+}
+
+function getMasterSheetTab_(name, headers) {
+  const ss = getMasterSheet_();
+  let sheet = ss.getSheetByName(name);
+  if (!sheet) {
+    sheet = ss.insertSheet(name);
+    sheet.appendRow(headers);
+  }
+  return sheet;
+}
+
+// Note: login actually runs through the centralized users-backend.gs
+// deployment (see js/module-auth.js, sheetName: "RAUsers"), not this
+// function — kept here, pointed at the shared Sheet, in case this
+// module's own "login" action ever gets called directly.
 function findUser_(sheetName, userId, password) {
-  const sheet = SpreadsheetApp.getActiveSpreadsheet().getSheetByName(sheetName);
+  const sheet = SpreadsheetApp.openById(USER_MANAGEMENT_SHEET_ID).getSheetByName(sheetName);
   if (!sheet) return null;
   const rows = sheet.getDataRange().getValues();
   for (let i = 1; i < rows.length; i++) {

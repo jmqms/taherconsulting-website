@@ -51,9 +51,21 @@
  * simplicity, matching how the other backends in this project work.
  * Keep this Sheet private (do not share it), and treat it the same
  * way you'd treat a password list — because that is what it is.
+ *
+ * ---- Taherconsultingbd Portal update ----
+ * This script now reads from the shared "User_Management" Sheet at the
+ * Portal's Drive root (USER_MANAGEMENT_SHEET_ID below) instead of its own
+ * bound Sheet, so every module's login lives in one place. Every module
+ * on the site already calls THIS SAME deployment with its own tab name
+ * (sheetName: "AuditUsers" | "QCUsers" | "TrainingUsers" | "QAUsers" |
+ * "RAUsers" | "DocUsers" | "QAInspectionUsers") via js/module-auth.js, or
+ * "Users" for the main site login via js/auth.js — so no other file needs
+ * to change, just create those tabs in User_Management and redeploy this
+ * script as a New version (same /exec URL).
  */
 
 const USERS_SHEET_NAME = "Users";
+const USER_MANAGEMENT_SHEET_ID = "1s0i82BmF6T5C7_yNf970cK2Gb3qJ3-7tKqAWM-0vzbw"; // User_Management
 
 function doPost(e) {
   const body = JSON.parse(e.postData.contents);
@@ -71,7 +83,7 @@ function doPost(e) {
 }
 
 function findUser_(sheetName, userId, password) {
-  const sheet = SpreadsheetApp.getActiveSpreadsheet().getSheetByName(sheetName);
+  const sheet = SpreadsheetApp.openById(USER_MANAGEMENT_SHEET_ID).getSheetByName(sheetName);
   if (!sheet) return null;
 
   const rows = sheet.getDataRange().getValues();

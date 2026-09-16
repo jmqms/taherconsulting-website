@@ -8,9 +8,10 @@
  * Wash, Finishing, Packing Accuracy, 1st Bundle, Sewing Inline,
  * Finishing Inline, 1st Carton, Pre-Final Inspection, Final Inspection).
  *
- * SETUP:
- * 1. Create a new Google Sheet, e.g. "JM Fabrics QA Process".
- * 2. Create these tabs (exact names) — each is auto-created with the
+ * SETUP (Taherconsultingbd Portal — Module 04 folder):
+ * 1. This module's own Google Sheet lives in the "Module 04 - QA Process"
+ *    Drive folder (e.g. "QA_Process_Data" / "PreFinal_Final_Inspection_Data").
+ *    Create these tabs in it (exact names) — each is auto-created with the
  *    correct headers the first time data is saved, but you can also
  *    create them empty ahead of time if you prefer:
  *      Orders   — order intake + style complexity requirements
@@ -19,21 +20,31 @@
  *                 Heat Seal, Home Laundry, Print & Embroidery,
  *                 Physical Testing), differentiated by a TestType column
  *      Entries  — generic entries for the remaining process/QA stages
- *      QAUsers  — this module's own login (UserID, Password, Name, Role)
+ *      QualityRA — this module's own Risk Assessment stage form
  *      PreFinalReports / FinalReports — Module 7 Pre-Final and Final
  *                 Inspection reports, one row per report. These two tabs are
  *                 deliberately separate so neither dashboard can pick up the
  *                 other's inspections.
+ * 2. OrderInfo and RARecords are NO LONGER local tabs — they now live in
+ *    the shared "Master_Order_Information" Sheet at the Portal's Drive
+ *    root (see MASTER_ORDER_SHEET_ID below), so every module reads the
+ *    same copy instead of an imported duplicate.
+ * 3. QAUsers is NO LONGER a local tab either — logins now live in the
+ *    shared "User_Management" Sheet at the Portal's Drive root, in a
+ *    "QAUsers" tab (see USER_MANAGEMENT_SHEET_ID below).
  * NOTE: Module 7 also stores inspection photos in a Drive folder called
  *       "JM Fabrics Inspection Photos", created automatically on first
- *       upload. After pasting this file in, run any function once and accept
- *       the Drive permission prompt, then RE-DEPLOY the web app (Deploy ->
+ *       upload. After pasting this file in, run any function once and
+ *       accept the Drive permission prompts (this module's own Sheet AND
+ *       the two shared Sheets), then RE-DEPLOY the web app (Deploy ->
  *       Manage deployments -> edit -> New version) so the new actions go
  *       live at the same /exec URL.
- * 3. Extensions -> Apps Script, paste this file in, Save.
- * 4. Deploy -> New deployment -> Web app -> Execute as: Me ->
+ * 4. Extensions -> Apps Script, paste this file in, Save.
+ * 5. Deploy -> New deployment -> Web app -> Execute as: Me ->
  *    Who has access: Anyone -> Deploy -> authorize -> copy the /exec URL.
- * 5. Paste that URL into qa-process.html wherever QA_API_URL is defined.
+ * 6. Paste that URL into qa-process.html, final-inspection.html, AND
+ *    pre-final-inspection.html wherever QA_API_URL is defined — all three
+ *    files must point at the SAME /exec URL from THIS deployment.
  */
 
 const ORDERS_SHEET = "Orders";
@@ -41,12 +52,15 @@ const SIZESET_SHEET = "SizeSet";
 const TESTING_SHEET = "Testing";
 const ENTRIES_SHEET = "Entries";
 const QA_USERS_SHEET = "QAUsers";
-// Reference-only tabs for Style Tracking — a copy of the same OrderInfo /
-// RARecords data used by the RA Process module, imported straight into
-// THIS spreadsheet so the QA Process module runs fully on its own,
-// with no call out to the RA module's Apps Script deployment.
-const ORDERINFO_SHEET = "OrderInfo";
-const RARECORDS_SHEET = "RARecords";
+
+// ---- Centralized cross-module Sheets (Taherconsultingbd Portal / Drive root) ----
+// OrderInfo, RARecords and every module's login now live OUTSIDE this
+// spreadsheet, in two shared Sheets so every module reads/writes the same
+// copy instead of keeping its own duplicate.
+const MASTER_ORDER_SHEET_ID = "1DE8KrlS6LLTDdhKIg4YgM3ZSsdZmxyzAR7BBAZJ5--U"; // Master_Order_Information
+const USER_MANAGEMENT_SHEET_ID = "1s0i82BmF6T5C7_yNf970cK2Gb3qJ3-7tKqAWM-0vzbw"; // User_Management
+const ORDERINFO_SHEET = "OrderInfo";   // tab inside Master_Order_Information
+const RARECORDS_SHEET = "RARecords";   // tab inside Master_Order_Information
 // This Quality Process module's own Risk Assessment stage form
 // (matches Quality_Process_Data_Entry.xlsx) — separate from the
 // RARECORDS_SHEET reference copy above, and separate from the
@@ -291,7 +305,7 @@ function normValOI_(v) {
 }
 
 function getOrderInfoRows_() {
-  const sheet = SpreadsheetApp.getActiveSpreadsheet().getSheetByName(ORDERINFO_SHEET);
+  const sheet = getMasterSheet_().getSheetByName(ORDERINFO_SHEET);
   if (!sheet) return [];
   const rows = sheet.getDataRange().getValues();
   return rows.slice(1).filter(r => r[0]);
@@ -344,7 +358,7 @@ function getOrderDetail_(sbu, buyer, ir) {
 }
 
 function getRAForIr_(sbu, buyer, ir) {
-  const sheet = SpreadsheetApp.getActiveSpreadsheet().getSheetByName(RARECORDS_SHEET);
+  const sheet = getMasterSheet_().getSheetByName(RARECORDS_SHEET);
   if (!sheet) return null;
   const wantSbu = normValOI_(sbu), wantBuyer = normValOI_(buyer), wantIr = normValOI_(ir);
   const rows = sheet.getDataRange().getValues();
@@ -569,8 +583,20 @@ function getSheet_(name, headers) {
   return sheet;
 }
 
+// Shared Master_Order_Information Sheet (OrderInfo + RARecords tabs) — same
+// file every module (QA Process, RA Process, etc.) reads from.
+function getMasterSheet_() {
+  return SpreadsheetApp.openById(MASTER_ORDER_SHEET_ID);
+}
+
+// Shared User_Management Sheet — one tab per module (QAUsers, RAUsers,
+// AuditUsers, QCUsers, TrainingUsers, DocUsers, QAIUsers).
+function getUserMgmtSheet_() {
+  return SpreadsheetApp.openById(USER_MANAGEMENT_SHEET_ID);
+}
+
 function findUser_(sheetName, userId, password) {
-  const sheet = SpreadsheetApp.getActiveSpreadsheet().getSheetByName(sheetName);
+  const sheet = getUserMgmtSheet_().getSheetByName(sheetName);
   if (!sheet) return null;
   const rows = sheet.getDataRange().getValues();
   for (let i = 1; i < rows.length; i++) {
