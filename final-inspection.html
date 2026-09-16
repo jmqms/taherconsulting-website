@@ -749,9 +749,7 @@ function picsOf_(label, arr){ return (arr||[]).map(p => Object.assign({}, p, { l
 function sectionPics_(S, section){
   S = S || state;
   switch(section){
-    case '01': return picsOf_('All Quantities & Cartons Available', S.allQtyCheck.pictures)
-                 .concat(picsOf_('Style / Assortment Overview', (S.styleOverviewPics && S.styleOverviewPics.pictures) || []))
-                 .concat(picsOf_('Selected Carton', S.cartonSelection.pictures));
+    case '01': return picsOf_('All Ready Carton', S.allQtyCheck.pictures);
     case '02': return picsOf_('Carton / Quantity Selection', (S.cartonQtySelection && S.cartonQtySelection.pictures) || []);
     case '03': return [].concat.apply([], S.packingCheckpoints.map(c => picsOf_(c.label, c.pictures)));
     case '04': return [].concat.apply([], S.defects.map((d,i) => picsOf_('Defect #' + (i+1) + (d.description ? ' \u2014 ' + d.description : ''), d.pictures)));
@@ -769,9 +767,7 @@ function sectionPicGroups_(S, section){
   S = S || state;
   switch(section){
     case '01': return [
-        { label: 'All Quantities & Cartons Available', pics: S.allQtyCheck.pictures || [] },
-        { label: 'Style / Assortment Overview', pics: (S.styleOverviewPics && S.styleOverviewPics.pictures) || [] },
-        { label: 'Selected Carton', pics: S.cartonSelection.pictures || [] }
+        { label: 'All Ready Carton', pics: S.allQtyCheck.pictures || [] }
       ];
     case '02': return [{ label: 'Carton / Quantity Selection', pics: (S.cartonQtySelection && S.cartonQtySelection.pictures) || [] }];
     case '03': return S.packingCheckpoints.map(c => ({ label: c.label, pics: c.pictures || [] }));
@@ -1164,17 +1160,20 @@ async function generatePdfReport(srcData){
     if (S.allQtyCheck.result || S.allQtyCheck.comments){
       table({ theme:'plain', body:[['All Qty/Cartons Available', S.allQtyCheck.result||'-', S.allQtyCheck.comments||'']] });
     }
-    if (S.cartonSelection.totalCarton){
-      table({ theme:'grid', head:[['Total Cartons','Cartons Inspected (sqrt)']],
-        body:[[ S.cartonSelection.totalCarton||'-',
-                S.cartonSelection.totalCarton ? Math.round(Math.sqrt(Number(S.cartonSelection.totalCarton))) : '-' ]] });
-    }
     if (S.colorQty.length){
       table({ theme:'grid', head:[['Color','Actual Order Qty','Order Qty Ready','Color wise Carton Qty','Selected Carton No']],
         body: S.colorQty.map(c=>[c.color, c.qty, c.readyQty||'-', c.cartonQty||'-', c.selectedCartonNo||'-']) });
     }
     // ---------------- 02 sample overview -------------------------------------
     heading('02. Sample Selection & AQL Plan');
+    if (S.cartonQtySelection && S.cartonQtySelection.totalCartonsPackingList){
+      const packTotal_ = Number(S.cartonQtySelection.totalCartonsPackingList) || 0;
+      table({ theme:'grid', head:[['Total Cartons on Packing List','Total Cartons Selected (sqrt)','Random Selection','Selected Carton Numbers']],
+        body:[[ S.cartonQtySelection.totalCartonsPackingList||'-',
+                packTotal_ ? Math.round(Math.sqrt(packTotal_)) : '-',
+                S.cartonQtySelection.randomSelectionPerformed||'-',
+                S.cartonQtySelection.selectedCartonNumbers||'-' ]] });
+    }
     table({ theme:'grid', head:[['Style ID','Style Name','Order Qty','Avail. Qty','Cartons Avail.','Cartons Sel.','Sample Insp.','Remarks']],
       body: S.sampleOverview.map(r=>[r.styleId,r.styleName,r.orderQty,r.availableQty,r.cartonsAvailable,r.cartonsSelected,r.actualSampleInspected,r.remarks]) });
 
@@ -1569,16 +1568,12 @@ function renderSection01(h, aql){
         <select data-aq="result"><option value="">--</option><option ${state.allQtyCheck.result==='Pass'?'selected':''}>Pass</option><option ${state.allQtyCheck.result==='Fail'?'selected':''}>Fail</option><option ${state.allQtyCheck.result==='N/A'?'selected':''}>N/A</option></select>
       </div>
       <div class="f" style="flex:1;min-width:220px;"><span class="field-label">Comments</span><input type="text" data-aq="comments" value="${esc(state.allQtyCheck.comments)}"></div>
-      <div class="f"><span class="field-label">All Ready Carton Picture</span>${pictureWidget('allQty', '0')}</div>
     </div>
 
     ${renderStyleOverviewTable()}
 
-    <h3 class="section-title" style="margin-top:20px;font-size:12.5px;">Carton Selection</h3>
-    <div class="row" style="align-items:flex-end;">
-      <div class="f"><span class="field-label">Total Carton</span><input type="number" data-cs="totalCarton" value="${esc(state.cartonSelection.totalCarton)}"></div>
-      <div class="f"><span class="field-label">Inspected Carton (&radic;Total, auto)</span><input type="text" value="${state.cartonSelection.totalCarton ? Math.round(Math.sqrt(Number(state.cartonSelection.totalCarton))) : ''}" readonly></div>
-      <div class="f"><span class="field-label">Selected Carton Picture</span>${pictureWidget('cartonSelection', '0')}</div>
+    <div class="row" style="align-items:flex-end;margin-top:18px;">
+      <div class="f"><span class="field-label">All Ready Carton Picture</span>${pictureWidget('allQty', '0')}</div>
     </div>
 
     ${renderColourQtyTable()}
@@ -1616,7 +1611,6 @@ function renderStyleOverviewTable(){
     </table>
     <div class="row" style="align-items:flex-end;margin-top:8px;">
       <button type="button" class="btn ghost small row-add-btn" data-action="add-overview-row">+ Add Style Row</button>
-      <div class="f" style="margin-left:auto;"><span class="field-label">Style / Assortment Overview Picture</span>${pictureWidget('styleOverview', '0')}</div>
     </div>`;
 }
 
@@ -1686,15 +1680,15 @@ function renderOrderInfoPanel(){
 
 /* ---- 02. SAMPLE SELECTION & AQL PLAN ---- */
 function renderSection02(){
-  const rows = state.sampleOverview;
-  const totalCartonsSel = rows.reduce((s,r)=>s+(Number(r.cartonsSelected)||0),0);
+  const packListTotal = Number(state.cartonQtySelection.totalCartonsPackingList) || 0;
+  const totalCartonsSel = packListTotal ? Math.round(Math.sqrt(packListTotal)) : '';
   return `
   <div class="panel panel-pad section-block">
     <h2 class="section-title">02. Sample Selection & AQL Plan</h2>
     <h3 class="section-title" style="font-size:12.5px;">Carton / Quantity Selection</h3>
     <div class="header-grid">
       <div class="f"><span class="field-label">Total Cartons on Packing List</span><input type="number" data-cqs="totalCartonsPackingList" value="${esc(state.cartonQtySelection.totalCartonsPackingList)}"></div>
-      <div class="f"><span class="field-label">Total Cartons Selected (auto, from above)</span><input type="text" value="${totalCartonsSel}" readonly></div>
+      <div class="f"><span class="field-label">Total Cartons Selected (&radic;Packing List, auto)</span><input type="text" value="${totalCartonsSel}" readonly></div>
       <div class="f"><span class="field-label">Random Carton Selection Performed?</span>
         <select data-cqs="randomSelectionPerformed"><option ${state.cartonQtySelection.randomSelectionPerformed==='Yes'?'selected':''}>Yes</option><option ${state.cartonQtySelection.randomSelectionPerformed==='No'?'selected':''}>No</option></select>
       </div>
