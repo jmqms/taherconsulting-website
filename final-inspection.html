@@ -322,15 +322,16 @@ function emptyReportState(){
   return {
     header: emptyHeader(),
     allQtyCheck: { comments:'', result:'', pictures:[] },
-    cartonSelection: { totalCarton:'', selectedCartonNo:'', pictures:[] },
+    cartonSelection: { totalCarton:'', pictures:[] },
     colorQty: [],
     sampleOverview: [ { styleId:'', styleName:'', orderQty:'', availableQty:'', cartonsAvailable:'', cartonsSelected:'', actualSampleInspected:'', remarks:'' } ],
-    cartonQtySelection: { totalCartonsPackingList:'', randomSelectionPerformed:'Yes', selectedCartonNumbers:'' },
+    styleOverviewPics: { pictures:[] },
+    cartonQtySelection: { totalCartonsPackingList:'', randomSelectionPerformed:'Yes', selectedCartonNumbers:'', pictures:[] },
     packingCheckpoints: QUANTITY_PACKING_CHECKPOINTS.map(label => ({ label, result:'', comments:'', pictures:[] })),
     cartonDims: [ { poNumber:'', cartonNo:'', dims:'', comments:'' } ],
     defects: [],
     testCheckpoints: flatTestCheckpoints().map(c => ({ group:c.group, label:c.label, isReport:c.isReport, applicable:'Yes', result:'', comments:'', testReportNumber:'', pictures:[] })),
-    measurements: { poms: [ { description:'', size:'', tolMinus:'', tolPlus:'', spec:'', m:[] } ], pictures:[], pieceCount:0 },
+    measurements: { poms: [ { description:'', size:'', tolMinus:'', tolPlus:'', spec:'', m:[] } ], pictures:[], pieceCount:0, readingsManual:'', ootReadingsManual:'' },
     signOff: SIGNOFF_ROLES.map(role => ({ role, name:'', signature:'' })),
     remarks:'',
   };
@@ -608,16 +609,10 @@ function computeMeasurement(S){
   }
   const oot = pieceOot.filter(Boolean).length;
 
-  let readings = 0, ootReadings = 0;
-  (m.poms||[]).forEach(p => p.m.slice(0, pieces).forEach((v,j) => {
-    if (v === '' || v === undefined || v === null) return;
-    readings++;
-    if (p.spec === '' || p.spec === undefined) return;
-    const val = Number(v), spec = Number(p.spec);
-    const lo = p.tolMinus !== '' && p.tolMinus !== undefined ? spec + Number(p.tolMinus) : null;
-    const hi = p.tolPlus  !== '' && p.tolPlus  !== undefined ? spec + Number(p.tolPlus)  : null;
-    if ((lo !== null && val < lo) || (hi !== null && val > hi)) ootReadings++;
-  }));
+  // Total POM Readings Taken / POM Readings Out of Tolerance are entered
+  // manually by the inspector rather than auto-counted from the table.
+  const readings = (m.readingsManual === '' || m.readingsManual == null) ? 0 : (Number(m.readingsManual) || 0);
+  const ootReadings = (m.ootReadingsManual === '' || m.ootReadingsManual == null) ? 0 : (Number(m.ootReadingsManual) || 0);
 
   const maxAllowed = plan.ac;
   const result = readings ? (oot <= maxAllowed ? 'PASS' : 'FAIL') : '';
@@ -666,6 +661,8 @@ function resolvePictureTarget(section, idx){
   switch(section){
     case 'allQty': return state.allQtyCheck;
     case 'cartonSelection': return state.cartonSelection;
+    case 'styleOverview': return state.styleOverviewPics;
+    case 'cartonQtySelection': return state.cartonQtySelection;
     case 'measurements': return state.measurements;
     case 'packing': return state.packingCheckpoints[Number(idx)];
     case 'defect': return state.defects[Number(idx)];
@@ -753,7 +750,9 @@ function sectionPics_(S, section){
   S = S || state;
   switch(section){
     case '01': return picsOf_('All Quantities & Cartons Available', S.allQtyCheck.pictures)
+                 .concat(picsOf_('Style / Assortment Overview', (S.styleOverviewPics && S.styleOverviewPics.pictures) || []))
                  .concat(picsOf_('Selected Carton', S.cartonSelection.pictures));
+    case '02': return picsOf_('Carton / Quantity Selection', (S.cartonQtySelection && S.cartonQtySelection.pictures) || []);
     case '03': return [].concat.apply([], S.packingCheckpoints.map(c => picsOf_(c.label, c.pictures)));
     case '04': return [].concat.apply([], S.defects.map((d,i) => picsOf_('Defect #' + (i+1) + (d.description ? ' \u2014 ' + d.description : ''), d.pictures)));
     case '05': return [].concat.apply([], S.testCheckpoints.map(c => picsOf_(c.label, c.pictures)));
@@ -771,8 +770,10 @@ function sectionPicGroups_(S, section){
   switch(section){
     case '01': return [
         { label: 'All Quantities & Cartons Available', pics: S.allQtyCheck.pictures || [] },
+        { label: 'Style / Assortment Overview', pics: (S.styleOverviewPics && S.styleOverviewPics.pictures) || [] },
         { label: 'Selected Carton', pics: S.cartonSelection.pictures || [] }
       ];
+    case '02': return [{ label: 'Carton / Quantity Selection', pics: (S.cartonQtySelection && S.cartonQtySelection.pictures) || [] }];
     case '03': return S.packingCheckpoints.map(c => ({ label: c.label, pics: c.pictures || [] }));
     case '04': return S.defects.map((d,i) => ({ label: 'Defect #' + (i+1) + (d.description ? ' \u2014 ' + d.description : ''), pics: d.pictures || [] }));
     case '05': return S.testCheckpoints.map(c => ({ label: c.label, pics: c.pictures || [] }));
@@ -783,7 +784,7 @@ function sectionPicGroups_(S, section){
 
 function collectAllPicturesFrom_(S){
   S = S || state;
-  return ['01','03','04','05','06'].reduce((out, sec) => out.concat(sectionPics_(S, sec)), []);
+  return ['01','02','03','04','05','06'].reduce((out, sec) => out.concat(sectionPics_(S, sec)), []);
 }
 function collectAllPictures(){ return collectAllPicturesFrom_(state); }
 
@@ -1163,16 +1164,14 @@ async function generatePdfReport(srcData){
     if (S.allQtyCheck.result || S.allQtyCheck.comments){
       table({ theme:'plain', body:[['All Qty/Cartons Available', S.allQtyCheck.result||'-', S.allQtyCheck.comments||'']] });
     }
-    if (S.cartonSelection.totalCarton || S.cartonSelection.selectedCartonNo){
-      table({ theme:'grid', head:[['Total Cartons','Cartons Inspected (sqrt)','Selected Carton No.']],
+    if (S.cartonSelection.totalCarton){
+      table({ theme:'grid', head:[['Total Cartons','Cartons Inspected (sqrt)']],
         body:[[ S.cartonSelection.totalCarton||'-',
-                S.cartonSelection.totalCarton ? Math.round(Math.sqrt(Number(S.cartonSelection.totalCarton))) : '-',
-                S.cartonSelection.selectedCartonNo||'-' ]] });
+                S.cartonSelection.totalCarton ? Math.round(Math.sqrt(Number(S.cartonSelection.totalCarton))) : '-' ]] });
     }
     if (S.colorQty.length){
-      table({ theme:'grid', head:[['Color','Actual Order Qty','Order Qty Ready','Color wise Carton Qty','Sample Carton','Selected Carton No']],
-        body: S.colorQty.map(c=>[c.color, c.qty, c.readyQty||'-', c.cartonQty||'-',
-          c.cartonQty ? Math.round(Math.sqrt(Number(c.cartonQty))) : '-', c.selectedCartonNo||'-']) });
+      table({ theme:'grid', head:[['Color','Actual Order Qty','Order Qty Ready','Color wise Carton Qty','Selected Carton No']],
+        body: S.colorQty.map(c=>[c.color, c.qty, c.readyQty||'-', c.cartonQty||'-', c.selectedCartonNo||'-']) });
     }
     // ---------------- 02 sample overview -------------------------------------
     heading('02. Sample Selection & AQL Plan');
@@ -1188,8 +1187,13 @@ async function generatePdfReport(srcData){
       table({ theme:'grid', head:[['PO Number','Carton No.','Dimensions / Weight','Comments']],
         body: S.cartonDims.map(r=>[r.poNumber,r.cartonNo,r.dims,r.comments]) });
     }
-    // ---------------- 04 workmanship ------------------------------------------
-    heading('04. Workmanship \u2014 AQL Result: ' + (aql.result||'N/A'));
+    // ---------------- 04 on-site checkpoints & tests ----------------------------
+    heading('04. On-Site Checkpoints & Tests \u2014 Section Result: ' + testsResult);
+    table({ theme:'grid', head:[['Group','Checkpoint / Test','Applicable','Result','Comments / Report #']],
+      body: S.testCheckpoints.map(c=>[c.group,c.label,c.applicable,c.result||'-', c.isReport?c.testReportNumber:c.comments]),
+      columnStyles:{1:{cellWidth:60}} });
+    // ---------------- 05 workmanship ------------------------------------------
+    heading('05. Workmanship \u2014 AQL Result: ' + (aql.result||'N/A'));
     table({ theme:'grid', head:[['','Critical','Major','Minor']],
       body:[['Found', dt.Critical, dt.Major, dt.Minor],
             ['Allowed (Ac)', aql.criticalAllowed, aql.majorAllowed, aql.minorAllowed]] });
@@ -1197,11 +1201,6 @@ async function generatePdfReport(srcData){
       table({ theme:'grid', head:[['#','Group','Category','Description','Area','Severity','Qty']],
         body: S.defects.map((d,i)=>[i+1,d.group,d.category,d.description,d.area,d.severity,d.qty]) });
     }
-    // ---------------- 05 checkpoints & tests -----------------------------------
-    heading('05. On-Site Checkpoints & Tests \u2014 Section Result: ' + testsResult);
-    table({ theme:'grid', head:[['Group','Checkpoint / Test','Applicable','Result','Comments / Report #']],
-      body: S.testCheckpoints.map(c=>[c.group,c.label,c.applicable,c.result||'-', c.isReport?c.testReportNumber:c.comments]),
-      columnStyles:{1:{cellWidth:60}} });
     // ---------------- 06 measurements -------------------------------------------
     heading('06. Measurements \u2014 Result: ' + (measResult||'N/A'));
     const pieceCols = Array.from({length: meas.pieces}, (_,j)=>'#'+(j+1));
@@ -1225,8 +1224,8 @@ async function generatePdfReport(srcData){
     heading('07. Summary & Sign-Off');
     table({ theme:'grid', head:[['Section','Result']], body:[
       ['1. Quantity & Packing', packingResult],
-      ['2. Workmanship (AQL)', aql.result||'N/A'],
-      ['3. Checkpoints & Tests', testsResult],
+      ['2. Checkpoints & Tests', testsResult],
+      ['3. Workmanship (AQL)', aql.result||'N/A'],
       ['4. Measurements', measResult||'N/A'],
       ['Overall', overall],
     ]});
@@ -1245,9 +1244,10 @@ async function generatePdfReport(srcData){
     doc.setFont('helvetica','bold'); doc.setFontSize(13); doc.setTextColor(20,20,20);
     doc.text('Photos & Attachments', margin, ctx.y); ctx.y += 7;
     await photos('01', 'Photos \u2014 Quantity & Carton Selection');
+    await photos('02', 'Photos \u2014 Carton & Quantity Selection');
     await photos('03', 'Photos \u2014 Quantity & Packing Checkpoints');
-    await photos('04', 'Photos \u2014 Defects');
     await photos('05', 'Photos \u2014 Checkpoints & Tests');
+    await photos('04', 'Photos \u2014 Defects');
     await photos('06', 'Photos \u2014 Measurement Report');
 
     // ---------------- Footer on every page ----------------------------------------
@@ -1438,8 +1438,8 @@ function renderEntry(){
   ${renderSection01(h, aql)}
   ${renderSection02()}
   ${renderSection03()}
-  ${renderSection04(t, aql)}
   ${renderSection05()}
+  ${renderSection04(t, aql)}
   ${renderSection06()}
   ${renderSection07()}
   ${renderSection08(aql)}
@@ -1572,16 +1572,52 @@ function renderSection01(h, aql){
       <div class="f"><span class="field-label">All Ready Carton Picture</span>${pictureWidget('allQty', '0')}</div>
     </div>
 
+    ${renderStyleOverviewTable()}
+
     <h3 class="section-title" style="margin-top:20px;font-size:12.5px;">Carton Selection</h3>
     <div class="row" style="align-items:flex-end;">
       <div class="f"><span class="field-label">Total Carton</span><input type="number" data-cs="totalCarton" value="${esc(state.cartonSelection.totalCarton)}"></div>
       <div class="f"><span class="field-label">Inspected Carton (&radic;Total, auto)</span><input type="text" value="${state.cartonSelection.totalCarton ? Math.round(Math.sqrt(Number(state.cartonSelection.totalCarton))) : ''}" readonly></div>
-      <div class="f" style="flex:1;min-width:200px;"><span class="field-label">Selected Carton No.</span><input type="text" data-cs="selectedCartonNo" value="${esc(state.cartonSelection.selectedCartonNo)}"></div>
       <div class="f"><span class="field-label">Selected Carton Picture</span>${pictureWidget('cartonSelection', '0')}</div>
     </div>
 
     ${renderColourQtyTable()}
   </div>`;
+}
+
+/* ---- Style / Assortment Overview (lives inside 01, right after All Quantities & Cartons Available) ---- */
+function renderStyleOverviewTable(){
+  const rows = state.sampleOverview;
+  const totalOrder = rows.reduce((s,r)=>s+(Number(r.orderQty)||0),0);
+  const totalAvail = rows.reduce((s,r)=>s+(Number(r.availableQty)||0),0);
+  const totalCartonsAvail = rows.reduce((s,r)=>s+(Number(r.cartonsAvailable)||0),0);
+  const totalCartonsSel = rows.reduce((s,r)=>s+(Number(r.cartonsSelected)||0),0);
+  const totalActualSample = rows.reduce((s,r)=>s+(Number(r.actualSampleInspected)||0),0);
+  return `
+    <h3 class="section-title" style="margin-top:20px;font-size:12.5px;">Style / Assortment Overview</h3>
+    <table class="rep-table">
+      <thead><tr><th>Style ID</th><th>Style Name / Description</th><th>Order Qty</th><th>Available Qty</th><th>Available %</th><th>Cartons Available</th><th>Cartons Selected</th><th>Actual Sample Inspected</th><th>Remarks</th><th></th></tr></thead>
+      <tbody>
+        ${rows.map((r,i)=>`
+          <tr>
+            <td><input type="text" data-so="${i}:styleId" value="${esc(r.styleId)}"></td>
+            <td><input type="text" data-so="${i}:styleName" value="${esc(r.styleName)}"></td>
+            <td><input type="number" data-so="${i}:orderQty" value="${esc(r.orderQty)}"></td>
+            <td><input type="number" data-so="${i}:availableQty" value="${esc(r.availableQty)}"></td>
+            <td>${r.orderQty ? fmt1((Number(r.availableQty)||0)/Number(r.orderQty)*100)+'%' : ''}</td>
+            <td><input type="number" data-so="${i}:cartonsAvailable" value="${esc(r.cartonsAvailable)}"></td>
+            <td><input type="number" data-so="${i}:cartonsSelected" value="${esc(r.cartonsSelected)}"></td>
+            <td><input type="number" data-so="${i}:actualSampleInspected" value="${esc(r.actualSampleInspected)}"></td>
+            <td><input type="text" data-so="${i}:remarks" value="${esc(r.remarks)}"></td>
+            <td>${rows.length>1?`<button type="button" class="btn danger small" data-so-remove="${i}">&#10005;</button>`:''}</td>
+          </tr>`).join('')}
+        <tr class="rep-group-hd"><td colspan="2">TOTAL</td><td>${totalOrder}</td><td>${totalAvail}</td><td></td><td>${totalCartonsAvail}</td><td>${totalCartonsSel}</td><td>${totalActualSample}</td><td colspan="2"></td></tr>
+      </tbody>
+    </table>
+    <div class="row" style="align-items:flex-end;margin-top:8px;">
+      <button type="button" class="btn ghost small row-add-btn" data-action="add-overview-row">+ Add Style Row</button>
+      <div class="f" style="margin-left:auto;"><span class="field-label">Style / Assortment Overview Picture</span>${pictureWidget('styleOverview', '0')}</div>
+    </div>`;
 }
 
 /* ---- Quantity: colour-wise status (colours come from Order Information) ---- */
@@ -1590,12 +1626,11 @@ function renderColourQtyTable(){
   const tOrder = rows.reduce((s,c)=>s+(Number(c.qty)||0),0);
   const tReady = rows.reduce((s,c)=>s+(Number(c.readyQty)||0),0);
   const tCarton = rows.reduce((s,c)=>s+(Number(c.cartonQty)||0),0);
-  const tSample = rows.reduce((s,c)=>s+(c.cartonQty?Math.round(Math.sqrt(Number(c.cartonQty))):0),0);
   return `
     <h3 class="section-title" style="margin-top:22px;font-size:12.5px;">Quantity <span class="tag">colour-wise status</span></h3>
     <table class="rep-table">
       <thead>
-        <tr><th>Color</th><th>Actual Order Qty</th><th>Order Qty Ready</th><th>Color wise Carton Qty</th><th>Sample Carton (&radic;Qty, auto)</th><th>Selected Carton No</th></tr>
+        <tr><th>Color</th><th>Actual Order Qty</th><th>Order Qty Ready</th><th>Color wise Carton Qty</th><th>Selected Carton No</th></tr>
       </thead>
       <tbody>
         ${rows.length ? rows.map((c,i)=>`
@@ -1604,11 +1639,10 @@ function renderColourQtyTable(){
             <td>${(Number(c.qty)||0).toLocaleString()}</td>
             <td><input type="number" data-cq="${i}:readyQty" value="${esc(c.readyQty)}"></td>
             <td><input type="number" data-cq="${i}:cartonQty" value="${esc(c.cartonQty)}"></td>
-            <td>${c.cartonQty ? Math.round(Math.sqrt(Number(c.cartonQty))) : ''}</td>
             <td><input type="text" data-cq="${i}:selectedCartonNo" value="${esc(c.selectedCartonNo)}"></td>
           </tr>`).join('')
-        : `<tr><td colspan="6" style="color:var(--muted)">Select SBU &rarr; Buyer &rarr; IR above &mdash; the colours and their Actual Order Qty load straight from Order Information.</td></tr>`}
-        ${rows.length ? `<tr class="rep-group-hd"><td>TOTAL</td><td>${tOrder.toLocaleString()}</td><td>${tReady.toLocaleString()}</td><td>${tCarton.toLocaleString()}</td><td>${tSample}</td><td></td></tr>` : ''}
+        : `<tr><td colspan="5" style="color:var(--muted)">Select SBU &rarr; Buyer &rarr; IR above &mdash; the colours and their Actual Order Qty load straight from Order Information.</td></tr>`}
+        ${rows.length ? `<tr class="rep-group-hd"><td>TOTAL</td><td>${tOrder.toLocaleString()}</td><td>${tReady.toLocaleString()}</td><td>${tCarton.toLocaleString()}</td><td></td></tr>` : ''}
       </tbody>
     </table>
     <div class="subtle-note">Colour and Actual Order Qty are read-only &mdash; they mirror Order Information so the two can never drift apart. Enter what is actually ready per colour in <b>Order Qty Ready</b>.</div>`;
@@ -1653,37 +1687,11 @@ function renderOrderInfoPanel(){
 /* ---- 02. SAMPLE SELECTION & AQL PLAN ---- */
 function renderSection02(){
   const rows = state.sampleOverview;
-  const totalOrder = rows.reduce((s,r)=>s+(Number(r.orderQty)||0),0);
-  const totalAvail = rows.reduce((s,r)=>s+(Number(r.availableQty)||0),0);
-  const totalCartonsAvail = rows.reduce((s,r)=>s+(Number(r.cartonsAvailable)||0),0);
   const totalCartonsSel = rows.reduce((s,r)=>s+(Number(r.cartonsSelected)||0),0);
-  const totalActualSample = rows.reduce((s,r)=>s+(Number(r.actualSampleInspected)||0),0);
   return `
   <div class="panel panel-pad section-block">
     <h2 class="section-title">02. Sample Selection & AQL Plan</h2>
-    <h3 class="section-title" style="font-size:12.5px;">Style / Assortment Overview</h3>
-    <table class="rep-table">
-      <thead><tr><th>Style ID</th><th>Style Name / Description</th><th>Order Qty</th><th>Available Qty</th><th>Available %</th><th>Cartons Available</th><th>Cartons Selected</th><th>Actual Sample Inspected</th><th>Remarks</th><th></th></tr></thead>
-      <tbody>
-        ${rows.map((r,i)=>`
-          <tr>
-            <td><input type="text" data-so="${i}:styleId" value="${esc(r.styleId)}"></td>
-            <td><input type="text" data-so="${i}:styleName" value="${esc(r.styleName)}"></td>
-            <td><input type="number" data-so="${i}:orderQty" value="${esc(r.orderQty)}"></td>
-            <td><input type="number" data-so="${i}:availableQty" value="${esc(r.availableQty)}"></td>
-            <td>${r.orderQty ? fmt1((Number(r.availableQty)||0)/Number(r.orderQty)*100)+'%' : ''}</td>
-            <td><input type="number" data-so="${i}:cartonsAvailable" value="${esc(r.cartonsAvailable)}"></td>
-            <td><input type="number" data-so="${i}:cartonsSelected" value="${esc(r.cartonsSelected)}"></td>
-            <td><input type="number" data-so="${i}:actualSampleInspected" value="${esc(r.actualSampleInspected)}"></td>
-            <td><input type="text" data-so="${i}:remarks" value="${esc(r.remarks)}"></td>
-            <td>${rows.length>1?`<button type="button" class="btn danger small" data-so-remove="${i}">✕</button>`:''}</td>
-          </tr>`).join('')}
-        <tr class="rep-group-hd"><td colspan="2">TOTAL</td><td>${totalOrder}</td><td>${totalAvail}</td><td></td><td>${totalCartonsAvail}</td><td>${totalCartonsSel}</td><td>${totalActualSample}</td><td colspan="2"></td></tr>
-      </tbody>
-    </table>
-    <button type="button" class="btn ghost small row-add-btn" data-action="add-overview-row">+ Add Style Row</button>
-
-    <h3 class="section-title" style="margin-top:20px;font-size:12.5px;">Carton / Quantity Selection</h3>
+    <h3 class="section-title" style="font-size:12.5px;">Carton / Quantity Selection</h3>
     <div class="header-grid">
       <div class="f"><span class="field-label">Total Cartons on Packing List</span><input type="number" data-cqs="totalCartonsPackingList" value="${esc(state.cartonQtySelection.totalCartonsPackingList)}"></div>
       <div class="f"><span class="field-label">Total Cartons Selected (auto, from above)</span><input type="text" value="${totalCartonsSel}" readonly></div>
@@ -1691,6 +1699,9 @@ function renderSection02(){
         <select data-cqs="randomSelectionPerformed"><option ${state.cartonQtySelection.randomSelectionPerformed==='Yes'?'selected':''}>Yes</option><option ${state.cartonQtySelection.randomSelectionPerformed==='No'?'selected':''}>No</option></select>
       </div>
       <div class="f"><span class="field-label">Selected Carton Numbers</span><input type="text" data-cqs="selectedCartonNumbers" value="${esc(state.cartonQtySelection.selectedCartonNumbers)}"></div>
+    </div>
+    <div class="row" style="align-items:flex-end;margin-top:10px;">
+      <div class="f"><span class="field-label">Carton & Quantity Selection Picture</span>${pictureWidget('cartonQtySelection', '0')}</div>
     </div>
   </div>`;
 }
@@ -1744,7 +1755,7 @@ function renderSection04(t, aql){
   });
   return `
   <div class="panel panel-pad section-block">
-    <h2 class="section-title">04. Workmanship — AQL Result</h2>
+    <h2 class="section-title">05. Workmanship — AQL Result</h2>
     <div class="aql-preview">
       <div class="aql-cell"><div class="al">Critical Found / Allowed</div><div class="av">${t.Critical} / ${aql.criticalAllowed}</div></div>
       <div class="aql-cell"><div class="al">Major Found / Allowed</div><div class="av">${t.Major} / ${aql.majorAllowed}</div></div>
@@ -1788,7 +1799,7 @@ function renderSection05(){
   const sectionResult = results.includes('Fail') ? 'FAIL' : (results.length ? 'PASS' : 'N/A');
   return `
   <div class="panel panel-pad section-block">
-    <h2 class="section-title">05. On-Site Checkpoints & Tests</h2>
+    <h2 class="section-title">04. On-Site Checkpoints & Tests</h2>
     <table class="rep-table">
       <thead><tr><th style="width:34%">Checkpoint / Test</th><th>Applicable</th><th>Result</th><th>Comments / Report #</th><th>Picture</th></tr></thead>
       <tbody>${rowsHtml}</tbody>
@@ -1848,11 +1859,11 @@ function renderSection06(){
       <div class="f"><span class="field-label">Or Measurement Report Pictures</span>${pictureWidget('measurements', '0')}</div>
     </div>
 
-    <h3 class="section-title" style="margin-top:20px;font-size:12.5px;">Measurement Summary <span class="tag">all auto</span></h3>
+    <h3 class="section-title" style="margin-top:20px;font-size:12.5px;">Measurement Summary <span class="tag">manual entry</span></h3>
     <div class="header-grid">
       <div class="f"><span class="field-label">Total Sample Size (Pcs)</span><input type="text" value="${meas.pieces}" readonly></div>
-      <div class="f"><span class="field-label">Total POM Readings Taken</span><input type="text" value="${meas.readings}" readonly></div>
-      <div class="f"><span class="field-label">POM Readings Out of Tolerance</span><input type="text" value="${meas.ootReadings}" readonly></div>
+      <div class="f"><span class="field-label">Total POM Readings Taken</span><input type="number" data-mm="readingsManual" value="${esc(m.readingsManual)}"></div>
+      <div class="f"><span class="field-label">POM Reading Out of Tolerance (Defective)</span><input type="number" data-mm="ootReadingsManual" value="${esc(m.ootReadingsManual)}"></div>
       <div class="f"><span class="field-label">Pieces Out of Tolerance (defective)</span><input type="text" value="${meas.ootPieces}" readonly></div>
       <div class="f"><span class="field-label">Max Allowed (per AQL)</span><input type="text" value="${meas.maxAllowed}" readonly></div>
       <div class="f"><span class="field-label">% POM Out of Tolerance</span><input type="text" value="${meas.pctOot!=null?fmt1(meas.pctOot)+'%':''}" readonly></div>
@@ -1979,7 +1990,9 @@ function renderReportModal(){
   (r.testCheckpoints||[]).forEach(cp => (cp.pictures||[]).forEach(p=>pics.push(p)));
   (r.defects||[]).forEach(d => (d.pictures||[]).forEach(p=>pics.push(p)));
   (r.allQtyCheck && r.allQtyCheck.pictures || []).forEach(p=>pics.push(p));
+  (r.styleOverviewPics && r.styleOverviewPics.pictures || []).forEach(p=>pics.push(p));
   (r.cartonSelection && r.cartonSelection.pictures || []).forEach(p=>pics.push(p));
+  (r.cartonQtySelection && r.cartonQtySelection.pictures || []).forEach(p=>pics.push(p));
   (r.measurements && r.measurements.pictures || []).forEach(p=>pics.push(p));
   return `
   <div class="modal-bg" data-close-modal="1">
@@ -2250,7 +2263,7 @@ async function saveCurrentReport_(isFinal){
 
   const record = Object.assign({}, JSON.parse(JSON.stringify(emptyReportState())), JSON.parse(JSON.stringify({
     header: state.header, allQtyCheck: state.allQtyCheck, cartonSelection: state.cartonSelection, colorQty: state.colorQty,
-    sampleOverview: state.sampleOverview, cartonQtySelection: state.cartonQtySelection, packingCheckpoints: state.packingCheckpoints,
+    sampleOverview: state.sampleOverview, styleOverviewPics: state.styleOverviewPics, cartonQtySelection: state.cartonQtySelection, packingCheckpoints: state.packingCheckpoints,
     cartonDims: state.cartonDims, defects: state.defects, testCheckpoints: state.testCheckpoints, measurements: state.measurements,
     signOff: state.signOff, remarks: state.remarks,
   })));
