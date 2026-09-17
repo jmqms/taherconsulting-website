@@ -316,7 +316,7 @@ function emptyHeader(){
     inspectionType:'Pre-Final Inspection', samplingPlan:'Single', inspectionLevel:'General II',
     poNo:'', poQty:'', actualOrderQty:'', orderQty:'', offerQty:'',
     aqlCritical:0, aqlMajor:2.5, aqlMinor:4.0, inspectionLevelMeasurements:'S-2',
-    sampleSizeOverride:'',
+    sampleSizeOverride:'', defectChecklistName:'',
   };
 }
 function emptyReportState(){
@@ -952,6 +952,32 @@ async function generatePdfReport(srcData){
       ctx.y += 2;
     }
 
+    // ---------------- Document control box (top-right, page 1 only) --------
+    // Kept compact and high in the top margin so it never reaches down into the
+    // address line (which runs the full width of the page): the letterhead's
+    // company-name line is centered and narrow enough to stay clear of it
+    // horizontally, and the address line below starts safely under the box.
+    {
+      const dcRows = [
+        ['JMF QA-Dept.', '10'],
+        ['Version No', '006'],
+        ['Effective Date', '1-11-17'],
+        ['Revision Date', '19.09.2026'],
+      ];
+      const dcW = 44, dcRowH = 2.9, dcH = dcRowH*dcRows.length + 2.2, dcX = pageW - margin - dcW, dcY = 4;
+      doc.setDrawColor(190); doc.setLineWidth(0.25);
+      doc.rect(dcX, dcY, dcW, dcH);
+      let dcy = dcY + 3;
+      dcRows.forEach(r=>{
+        doc.setFont('helvetica','bold'); doc.setFontSize(5.8); doc.setTextColor(70,70,70);
+        doc.text(r[0], dcX+2, dcy);
+        doc.setFont('helvetica','normal'); doc.setTextColor(30,30,30);
+        doc.text(': ' + r[1], dcX+2+20, dcy);
+        dcy += dcRowH;
+      });
+      doc.setDrawColor(150); doc.setTextColor(20,20,20);
+    }
+
     // ---------------- Letterhead -------------------------------------------
     doc.setFont('helvetica','bold'); doc.setFontSize(16); doc.setTextColor(20,20,20);
     doc.text('J.M. FABRICS LTD.', pageW/2, ctx.y, { align:'center' }); ctx.y += 5.5;
@@ -1125,15 +1151,137 @@ async function generatePdfReport(srcData){
       const colA = margin+4, colB = margin+4+ (pageW-margin*2)/2;
       poRows.forEach(r=>{
         doc.setFont('helvetica','bold'); doc.setFontSize(7.3); doc.setTextColor(50,80,110);
+        // Measure the label widths while the bold font is still active — measuring
+        // after switching to normal under-measures bold glyphs and makes the value
+        // text overlap the tail of the label (the "squished together" look in the PDF).
+        const labelAw = doc.getTextWidth(r[0] + ':  ');
+        const labelBw = doc.getTextWidth(r[2] + ':  ');
         doc.text(r[0]+':', colA, py);
         doc.text(r[2]+':', colB, py);
         doc.setFont('helvetica','normal'); doc.setTextColor(40,40,40);
-        doc.text(String(r[1]), colA + doc.getTextWidth(r[0]+': ') , py);
-        doc.text(String(r[3]), colB + doc.getTextWidth(r[2]+': ') , py);
+        doc.text(String(r[1]), colA + labelAw, py);
+        doc.text(String(r[3]), colB + labelBw, py);
         py += 6;
       });
       ctx.y += pdH + 6;
       doc.setTextColor(20,20,20);
+    }
+
+    // ---------------- Workmanship details card (page 1, before 00.) ---------
+    {
+      const cardX = margin, cardW = pageW - margin*2;
+      const totalDef = dt.Critical + dt.Major + dt.Minor;
+      const sampleSizeN = aql.sampleSize || 0;
+      const defRate = sampleSizeN ? fmt1(totalDef/sampleSizeN*100) : '0.0';
+      const totalAllowed = aql.criticalAllowed + aql.majorAllowed + aql.minorAllowed;
+
+      // Rough total height so the whole card ensures room / page-breaks as one block.
+      ensureRoom(85);
+      let cy = ctx.y;
+
+      // -- Header bar --
+      fitRoundedRect(cardX, cy, cardW, 9, [24,110,68]);
+      doc.setFont('helvetica','bold'); doc.setFontSize(11); doc.setTextColor(255,255,255);
+      doc.text('Workmanship', cardX+4, cy+6.3);
+      pillRight(aql.result||'N/A', cardX+cardW-4, cy+6.3, aql.result);
+      doc.setTextColor(20,20,20);
+      cy += 9 + 5;
+
+      // -- Inspection standards: method/level (left) + Critical/Major/Minor boxes (right) --
+      doc.setFont('helvetica','bold'); doc.setFontSize(7); doc.setTextColor(110,110,110);
+      doc.text('INSPECTION STANDARDS', cardX+1, cy);
+      cy += 5;
+
+      const leftW2 = cardW * 0.34;
+      const boxesX = cardX + leftW2 + 4;
+      const boxesW = cardW - leftW2 - 4;
+      const boxGap = 3, boxW = (boxesW - boxGap*2) / 3;
+      const standardsTop = cy;
+
+      doc.setFont('helvetica','normal'); doc.setFontSize(6.6); doc.setTextColor(130,130,130);
+      doc.text('Workmanship sampling method', cardX+1, cy+3.2);
+      doc.setFont('helvetica','bold'); doc.setFontSize(8.3); doc.setTextColor(30,30,30);
+      doc.text((h.samplingPlan||'Single') + ' level & AQL (ISO 2859-1)', cardX+1, cy+7.6);
+      doc.setFont('helvetica','normal'); doc.setFontSize(6.6); doc.setTextColor(130,130,130);
+      doc.text('Workmanship sampling level & AQL', cardX+1, cy+14.4);
+      doc.setFont('helvetica','bold'); doc.setFontSize(8.3); doc.setTextColor(30,30,30);
+      doc.text(h.inspectionLevel || '-', cardX+1, cy+18.8);
+
+      // -- one severity box: colored label pill + AQL / Sample size / Acceptance point --
+      function severityBox(x, y, w, label, color, aqlv, sample, ac){
+        doc.setFont('helvetica','bold'); doc.setFontSize(6.1);
+        const tw = Math.min(w, doc.getTextWidth(label) + 5);
+        doc.setFillColor(color[0],color[1],color[2]);
+        doc.roundedRect(x, y, tw, 4.4, 1, 1, 'F');
+        doc.setTextColor(255,255,255);
+        doc.text(label, x+2.2, y+3.1);
+        doc.setTextColor(20,20,20);
+        const rowLabel = (lbl, val, ly) => {
+          doc.setFont('helvetica','normal'); doc.setFontSize(6.3); doc.setTextColor(130,130,130);
+          doc.text(lbl, x, ly);
+          doc.setFont('helvetica','bold'); doc.setFontSize(8.6); doc.setTextColor(30,30,30);
+          doc.text(String(val), x, ly+3.7);
+        };
+        rowLabel('AQL', aqlv, y+9.4);
+        rowLabel('Sample size', sample, y+16.8);
+        rowLabel('Acceptance point', ac, y+24.2);
+      }
+      severityBox(boxesX, standardsTop, boxW, 'CRITICAL DEFECTS', [211,47,47], h.aqlCritical===0?'0':(h.aqlCritical||'-'), sampleSizeN||'-', aql.criticalAllowed);
+      severityBox(boxesX+boxW+boxGap, standardsTop, boxW, 'MAJOR DEFECTS', [227,140,20], h.aqlMajor||'-', sampleSizeN||'-', aql.majorAllowed);
+      severityBox(boxesX+ (boxW+boxGap)*2, standardsTop, boxW, 'MINOR DEFECTS', [216,180,20], h.aqlMinor||'-', sampleSizeN||'-', aql.minorAllowed);
+
+      // Severity boxes' last line (Acceptance point value) sits at standardsTop+24.2+3.7 —
+      // clear that before starting the next bar, plus a small visual gap.
+      cy += 32;
+
+      // -- Sample size / Defective pieces / Total defects found vs allowed bar --
+      const barH = 15;
+      fitRoundedRect(cardX, cy, cardW, barH, [246,245,240]);
+      doc.setFont('helvetica','normal'); doc.setFontSize(6.8); doc.setTextColor(130,130,130);
+      doc.text('Sample size', cardX+4, cy+5.2);
+      doc.setFont('helvetica','bold'); doc.setFontSize(10.5); doc.setTextColor(30,30,30);
+      doc.text(String(sampleSizeN||0), cardX+4, cy+11.5);
+
+      doc.setFont('helvetica','normal'); doc.setFontSize(6.8); doc.setTextColor(130,130,130);
+      doc.text('Defective pieces', cardX+38, cy+5.2);
+      doc.setFont('helvetica','bold'); doc.setFontSize(10.5); doc.setTextColor(30,30,30);
+      doc.text(totalDef + ' (' + defRate + '%)', cardX+38, cy+11.5);
+
+      const rightBlockX = cardX + cardW - 78;
+      doc.setFont('helvetica','normal'); doc.setFontSize(6.8); doc.setTextColor(130,130,130);
+      doc.text('Total defects found', rightBlockX, cy+5.2);
+      let fbx = rightBlockX;
+      fbx += countBadge('CRITICAL', dt.Critical, fbx, cy+10.5, [211,47,47]) + 3;
+      fbx += countBadge('MAJOR', dt.Major, fbx, cy+10.5, [227,140,20]) + 3;
+      countBadge('MINOR', dt.Minor, fbx, cy+10.5, [216,180,20]);
+
+      doc.setFont('helvetica','normal'); doc.setFontSize(6.8); doc.setTextColor(130,130,130);
+      doc.text('Total defects allowed: ' + totalAllowed + ' (C:' + aql.criticalAllowed + ' M:' + aql.majorAllowed + ' m:' + aql.minorAllowed + ')', rightBlockX, cy+14.3);
+      doc.setTextColor(20,20,20);
+
+      ctx.y = cy + barH + 5;
+
+      // -- Defects checklist name + per-category breakdown --
+      ensureRoom(14);
+      doc.setFont('helvetica','bold'); doc.setFontSize(9.5); doc.setTextColor(20,20,20);
+      doc.text('Defects checklist', margin, ctx.y); ctx.y += 5;
+      doc.setFont('helvetica','normal'); doc.setFontSize(8); doc.setTextColor(70,70,70);
+      doc.text(h.defectChecklistName || 'Standard Defect Classification (AQL 2.5)', margin, ctx.y); ctx.y += 5;
+
+      const catTotals = {};
+      DEFECT_CATEGORIES.forEach(cat => { catTotals[cat] = { Critical:0, Major:0, Minor:0 }; });
+      S.defects.forEach(d => { if (catTotals[d.category] && catTotals[d.category][d.severity]!==undefined) catTotals[d.category][d.severity] += Number(d.qty)||1; });
+      const usedCats = DEFECT_CATEGORIES.filter(cat => catTotals[cat].Critical + catTotals[cat].Major + catTotals[cat].Minor > 0);
+      if (usedCats.length){
+        table({ theme:'grid', head:[['Total defects found','Critical','Major','Minor']],
+          body: usedCats.map(cat => [cat, catTotals[cat].Critical||'-', catTotals[cat].Major||'-', catTotals[cat].Minor||'-']),
+          columnStyles:{0:{cellWidth:100}} });
+      } else {
+        doc.setFont('helvetica','italic'); doc.setFontSize(8); doc.setTextColor(150,150,150);
+        doc.text('No defects logged yet.', margin, ctx.y); ctx.y += 6;
+        doc.setTextColor(20,20,20);
+      }
+      ctx.y += 2;
     }
 
     // ---------------- 00 sampling plan & AQL --------------------------------
@@ -1504,6 +1652,7 @@ function renderSection00(h, aql){
       <div class="f"><span class="field-label">AQL &mdash; Critical</span><select data-h="aqlCritical">${AQL_OPTIONS.map(o=>`<option value="${o}" ${Number(h.aqlCritical)===o?'selected':''}>${o}</option>`).join('')}</select></div>
       <div class="f"><span class="field-label">AQL &mdash; Major</span><select data-h="aqlMajor">${AQL_OPTIONS.map(o=>`<option value="${o}" ${Number(h.aqlMajor)===o?'selected':''}>${o}</option>`).join('')}</select></div>
       <div class="f"><span class="field-label">AQL &mdash; Minor</span><select data-h="aqlMinor">${AQL_OPTIONS.map(o=>`<option value="${o}" ${Number(h.aqlMinor)===o?'selected':''}>${o}</option>`).join('')}</select></div>
+      <div class="f"><span class="field-label">Defects Checklist / Standard</span><input type="text" data-h="defectChecklistName" value="${esc(h.defectChecklistName)}" placeholder="e.g. Gymshark - SL - Defect List [2025]"></div>
     </div>
 
     <h3 class="section-title" style="margin-top:20px;font-size:12.5px;">Lot Size for Sampling</h3>
