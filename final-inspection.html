@@ -310,6 +310,7 @@ function flatTestCheckpoints(){
 
 function emptyHeader(){
   return {
+    dataMode:'auto',
     sbu:'', buyer:'', ir:'', styleId:'', styleName:'', styleDescription:'', item:'', productDept:'', season:'',
     date:new Date().toISOString().slice(0,10), startTime:'', inspectorName:'', factoryName:'J.M. Fabrics Ltd.',
     inspectionType:'Final Inspection', samplingPlan:'Single', inspectionLevel:'General II',
@@ -1408,6 +1409,8 @@ function renderEntry(){
   return `
   <div id="printableReport">
 
+  ${renderOrderSourceModeToggle(h)}
+  ${h.dataMode === 'manual' ? renderManualOrderInfoPanel(h) : `
   <div class="panel panel-pad section-block">
     <h2 class="section-title">Select Style <span class="tag">SBU &rarr; Buyer &rarr; IR</span></h2>
     <div class="header-grid">
@@ -1432,7 +1435,7 @@ function renderEntry(){
     </div>
   </div>
 
-  ${renderOrderInfoPanel()}
+  ${renderOrderInfoPanel()}`}
   ${renderSection00(h, aql)}
   ${renderSection01(h, aql)}
   ${renderSection02()}
@@ -1640,6 +1643,64 @@ function renderColourQtyTable(){
       </tbody>
     </table>
     <div class="subtle-note">Colour and Actual Order Qty are read-only &mdash; they mirror Order Information so the two can never drift apart. Enter what is actually ready per colour in <b>Order Qty Ready</b>.</div>`;
+}
+
+/* ---- Auto / Manual toggle for Order/Style Information ---- */
+function renderOrderSourceModeToggle(h){
+  return `
+  <div class="panel panel-pad section-block">
+    <h2 class="section-title">Order/Style Information <span class="tag">Auto or Manual</span></h2>
+    <div class="tabs" style="display:inline-flex;">
+      <button type="button" class="tab-btn ${h.dataMode!=='manual'?'active':''}" data-mode="auto">Auto &mdash; from Master Order Information Sheet</button>
+      <button type="button" class="tab-btn ${h.dataMode==='manual'?'active':''}" data-mode="manual">Manual Entry</button>
+    </div>
+    <div class="subtle-note" style="margin-top:8px;">
+      ${h.dataMode==='manual'
+        ? 'Manual mode &mdash; type in the Order/Style Information and Colour-wise Order Qty yourself below; nothing is pulled from the master sheet.'
+        : 'Auto mode &mdash; select SBU &rarr; Buyer &rarr; IR below and the Order/Style Information and Colour-wise Order Qty load straight from the Master Order Information sheet.'}
+    </div>
+  </div>`;
+}
+
+/* ---- Manual entry version of Order/Style Information (no master-sheet lookup) ---- */
+function renderManualOrderInfoPanel(h){
+  const rows = state.colorQty || [];
+  const total = Number(h.orderQty) || rows.reduce((s,c)=>s+(Number(c.qty)||0),0);
+  const tQty = rows.reduce((s,c)=>s+(Number(c.qty)||0),0);
+  const tReady = rows.reduce((s,c)=>s+(Number(c.readyQty)||0),0);
+  return `
+  <div class="panel panel-pad section-block">
+    <h2 class="section-title">Order/Style Information <span class="tag">Manual Entry</span></h2>
+    <div class="header-grid">
+      <div class="f"><span class="field-label">SBU</span><input type="text" data-hm="sbu" value="${esc(h.sbu)}"></div>
+      <div class="f"><span class="field-label">Buyer</span><input type="text" data-hm="buyer" value="${esc(h.buyer)}"></div>
+      <div class="f"><span class="field-label">IR</span><input type="text" data-hm="ir" value="${esc(h.ir)}"></div>
+      <div class="f"><span class="field-label">Style</span><input type="text" data-hm="styleName" value="${esc(h.styleName)}"></div>
+      <div class="f"><span class="field-label">Item/Product Dept</span><input type="text" data-hm="item" value="${esc(h.item)}"></div>
+      <div class="f"><span class="field-label">Season</span><input type="text" data-hm="season" value="${esc(h.season)}"></div>
+      <div class="f"><span class="field-label">Order Qty</span><input type="number" data-hm="orderQty" value="${esc(h.orderQty)}"></div>
+    </div>
+
+    <h3 class="section-title" style="margin-top:18px;font-size:12.5px;">Colour-wise Order Qty</h3>
+    <table class="rep-table">
+      <thead><tr><th>Colour</th><th>Order Qty</th><th>Ready Qty</th><th>% of Order</th><th></th></tr></thead>
+      <tbody>
+        ${rows.length ? rows.map((c,i)=>`
+          <tr>
+            <td><input type="text" data-mc="${i}:color" value="${esc(c.color)}"></td>
+            <td><input type="number" data-mc="${i}:qty" value="${esc(c.qty)}"></td>
+            <td><input type="number" data-mc="${i}:readyQty" value="${esc(c.readyQty)}"></td>
+            <td>${total ? fmt1((Number(c.qty)||0)/total*100)+'%' : ''}</td>
+            <td>${rows.length>1?`<button type="button" class="btn danger small" data-mc-remove="${i}">&#10005;</button>`:''}</td>
+          </tr>`).join('')
+        : `<tr><td colspan="5" style="color:var(--muted)">No colours added yet &mdash; use "+ Add Colour" below.</td></tr>`}
+        ${rows.length ? `<tr class="rep-group-hd"><td>TOTAL</td><td>${tQty.toLocaleString()}</td><td>${tReady.toLocaleString()}</td><td>${total?'100%':''}</td><td></td></tr>` : ''}
+      </tbody>
+    </table>
+    <div class="row" style="align-items:flex-end;margin-top:8px;">
+      <button type="button" class="btn ghost small row-add-btn" data-action="add-manual-color">+ Add Colour</button>
+    </div>
+  </div>`;
 }
 
 /* ---- Order Information (mirrors the QA Process / Risk Assessment modules) ---- */
@@ -2032,6 +2093,34 @@ function bindEvents(){
   document.querySelectorAll('[data-dashtype]').forEach(el => el.onclick = () => { state.dashType = el.dataset.dashtype; render(); });
   const rangeSel = document.querySelector('[data-dashrange]');
   if (rangeSel) rangeSel.onchange = (e) => { state.dashRange = e.target.value; render(); };
+
+  // ---- Auto / Manual mode toggle for Order/Style Information ----
+  document.querySelectorAll('[data-mode]').forEach(el => el.onclick = () => {
+    state.header.dataMode = el.dataset.mode;
+    render();
+  });
+
+  // ---- Manual Order/Style Information fields (no master-sheet lookup) ----
+  document.querySelectorAll('[data-hm]').forEach(el => el.onchange = (e) => {
+    state.header[el.dataset.hm] = e.target.value;
+    render();
+  });
+
+  // ---- Manual Colour-wise Order Qty rows ----
+  document.querySelectorAll('[data-mc]').forEach(el => el.onchange = (e) => {
+    const [i, field] = el.dataset.mc.split(':');
+    state.colorQty[Number(i)][field] = e.target.value;
+    render();
+  });
+  document.querySelectorAll('[data-mc-remove]').forEach(el => el.onclick = () => {
+    state.colorQty.splice(Number(el.dataset.mcRemove), 1);
+    render();
+  });
+  const addManualColor = document.querySelector('[data-action="add-manual-color"]');
+  if (addManualColor) addManualColor.onclick = () => {
+    state.colorQty.push({ color:'', qty:'', readyQty:'', cartonQty:'', selectedCartonNo:'' });
+    render();
+  };
 
   // ---- 01/general header ----
   document.querySelectorAll('[data-h]').forEach(el => el.onchange = (e) => {
