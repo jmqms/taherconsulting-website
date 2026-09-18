@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-<title>Pre-Final Inspection — Taher Consulting</title>
+<title>Pre-Final Inspection — J.M. Fabrics Limited</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@500;600;700&family=Inter:wght@400;500;600;700&family=IBM+Plex+Mono:wght@400;500;600&display=swap" rel="stylesheet">
 <script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.4/chart.umd.min.js"></script>
@@ -151,7 +151,7 @@ input[readonly]{background:var(--panel-2);color:var(--muted);}
 
 <div id="tc-guard-bar" style="background:#1B211D;color:#F1F0EA;font-family:'IBM Plex Mono',monospace;font-size:12.5px;letter-spacing:.04em;padding:10px 20px;display:flex;justify-content:space-between;align-items:center;position:sticky;top:0;z-index:9999">
   <a href="dashboard.html" style="color:#F1F0EA;text-decoration:none">&larr; Back to Dashboard</a>
-  <span>TAHER CONSULTING &middot; Module 7 &middot; Pre-Final Inspection</span>
+  <span>J.M. FABRICS LIMITED &middot; Module 7 &middot; Pre-Final Inspection</span>
   <span>
     <span id="tc-guard-user" style="color:#A9832F"></span>
     <span id="tc-guest-badge" style="display:none;background:#B84226;color:#F1F0EA;padding:3px 9px;border-radius:2px;margin-left:10px;font-size:10.5px;letter-spacing:.06em">VIEW ONLY &middot; GUEST</span>
@@ -267,37 +267,123 @@ const DEFECT_GROUPS = ['Critical Red Flag','Group-A','Group-B','Group-C','Group-
 const DEFECT_CATEGORIES = ['Assembling / Sewing','Finishing','Stitch & Seam','Fabric / Material','Embellishment / Print / Trims','Measurement-related','Packing-related','Other'];
 const SIGNOFF_ROLES = ['Inspector','Factory QA / Representative','Quality Manager (JMF)','Buyer / Client Representative'];
 
-const QUANTITY_PACKING_CHECKPOINTS = [
-  'Available Quantity Check (vs. Packing List / Order)','Shipment Quantity Tolerance (Short / Over shipment)',
-  'Random Carton Selection','Carton Assortment, Dimensions & Weight','Outer Packaging Conformity (carton seal / tape)',
-  'Shipping Front Marks','Shipping Side Marks','Carton Markings / Barcode Check','Retail Carton Sticker (if applicable)',
-  'Unit Packing (polybag, folding, hangtag placement)','Inner Packing (if applicable)','PPS / Black Seal Availability',
-  'PPS Approval Comment Availability','SHS / Gold Seal Availability (hard line only)','SHS Approval Comment Availability',
-  'Sealed Good Cartons (after inspection)','Carton Drop Test','Country of Origin / Compliance Labelling'
+const QUANTITY_PACKING_GROUPS = [
+  { group: 'Quantity Verification', items: [
+    'Available Quantity Check (vs. Packing List / Order)', 'Shipment Quantity Tolerance (Short / Over Shipment)',
+    'Carton Quantity Accuracy Check', 'Total Packed Quantity Verification',
+    'Size-wise Quantity Verification', 'Color-wise Quantity Verification',
+    'Assortment Ratio Verification', 'Carton Count vs. Purchase Order',
+    'Factory Packing List Verification', 'PO Number Verification',
+    'Style Number Verification', 'SKU Verification',
+    'Destination Verification',
+  ]},
+  { group: 'Carton Inspection', items: [
+    'Carton Assortment Verification', 'Carton Dimensions Check',
+    'Carton Weight Check', 'Carton Strength Verification',
+    'Outer Carton Condition Check', 'Carton Cleanliness Check',
+    'Carton Damage Check', 'Mixed SKU Prevention Check',
+    'Carton Sequence Number Verification',
+  ]},
+  { group: 'Packaging Verification', items: [
+    'Outer Packaging Conformity (Carton Seal / Tape)', 'Shipping Front Marks',
+    'Shipping Side Marks', 'Carton Markings / Barcode Check',
+    'Retail Carton Sticker Verification', 'Unit Packing Verification',
+    'Inner Packing Verification', 'Polybag Quality Check',
+    'Polybag Suffocation Warning Check', 'Polybag Air Hole Verification',
+    'Polybag Thickness Verification', 'Folding Method Verification',
+    'Hanger Position & Direction Check', 'Set Packing Verification',
+    'Spare Button Availability', 'Polybag Sticker Information Check',
+    'Packing Method Compliance',
+  ]},
+  { group: 'Approval & Shipment Readiness', items: [
+    'PP Sample / Black Seal Availability', 'PP Sample Approval Comment Availability',
+    'SHS / Gold Seal Availability', 'SHS Approval Comment Availability',
+    'TOP Sample Availability', 'Golden Sample Availability',
+    'Approved Trim Card Availability', 'Approved Shade Band Availability',
+    'Sealed Good Cartons Verification', 'Carton Drop Test',
+    'Inspector Seal Application', 'Shipment Release Recommendation',
+    'Country of Origin Label Verification', 'Compliance Label Verification',
+    'Customer Special Requirement/Country wise routine Verification',
+  ]},
 ];
+function flatPackingCheckpoints(){
+  const out = [];
+  QUANTITY_PACKING_GROUPS.forEach(g => g.items.forEach(label => out.push({ group: g.group, label })));
+  return out;
+}
 
 const TEST_CHECKPOINT_GROUPS = [
   { group: 'Style / Construction / Colour', items: [
-    'Product Style / Construction (vs. PP sample)','Product Colours (vs. approved shade band)','Colour Shading Check',
-    'Handfeel Check (vs. approved standard)','Wash / Dry Process Check (if applicable)','GSM Check'
+    'Product Style / Construction (vs. PP Sample)', 'Product Colours (vs. Approved Shade Band)',
+    'Colour Shading Check', 'Handfeel Check (vs. Approved Standard)',
+    'Wash / Dry Process Check', 'Fabrics GSM Check',
+    'Fabric Construction Verification', 'Fabric Surface Evaluation',
+    'Fabric Grain Check', 'Bowing & Skewing Check',
+    'Stripe Matching Check', 'Plaid / Check Matching',
+    'Shade Variation Within Garment', 'Shade Variation Between Garments',
   ]},
-  { group: 'Artwork & Labels', items: [
-    'Logo General Quality & Design','Logo Dimensions (Width & Height)','Logo Check / Elongation & Stretch Test','Care Label',
-    'Size Label / Size on Label Check','Barcode Label / Barcode Scanning Test','Information on Label & Polybag Sticker',
-    'Information on Carton Label & PO','Information on Product, Carton Sticker & Polybag'
+  { group: 'Branding & Artwork', items: [
+    'Logo General Quality & Design', 'Logo Position Check',
+    'Logo Dimensions (Width & Height)', 'Logo Stretch / Elongation Test',
+    'Logo Appearance After Stretch', 'Embroidery Quality Check',
+    'Printing Quality Check', 'Artwork Placement Check',
   ]},
-  { group: 'Functional & Safety Tests', items: [
-    'Metal / Needle Detection Check (with small parts)','Needle Damage Check','Stitch Density Check','Seam Strength Test',
-    'Symmetry Check','Odor Check','Moisture / Aqua Boy Check','Button Check','Pull Test (button/snap/hook/bar/handle/eyelet)',
-    'Zipper Test','Pocket Check','Seam Pockets Check (leggings)','Elastic & Seams Resistance at Waistband','Elastic Recovery Check',
-    'Rubbing (Colour Fastness) Test - Dry & Wet','Dye Line Check (seamless product)','Lamination / Bonding Check','Binding Check',
-    'Shedding Test (fleece fabric)','Bra Cup Check (sport bra only)','Hygiene Sticker Check (underwear only)',
-    'Pattern / Stripe / Grid Check','Model / Dummy Fitting Check','Ironing, Washing & Treatment Check','Carton Drop Test'
+  { group: 'Main Labels & Care Labels', items: [
+    'Main Label Verification', 'Care Label Verification',
+    'Size Label Verification', 'Label Position Verification',
+    'Fiber Content Verification', 'Country of Origin Verification',
+    'Warning Label Verification', 'Compliance Label Verification',
+    'CPSIA / Tracking Label Check', 'Brand Label Attachment Quality',
   ]},
-  { group: 'Test Reports', isReport: true, items: [
-    'Fabric Test Report (In-House)','Fabric Test Report (3rd Party)','Garment Test Report (In-House)','Garment Test Report (3rd Party)',
-    'Cross-Staining Test','Printing Durability Test','Embroidery Durability Test','Heat-Seal Durability Test','AOP Durability Test',
-    'RM Test Report (In-House & 3rd Party)'
+  { group: 'Barcode & Information Verification', items: [
+    'Barcode Label Verification', 'Barcode Scanning Test',
+    'RFID Verification (if applicable)', 'Information on Product Verification',
+    'Information on Carton Verification', 'Information on Polybag Verification',
+    'Information on Hangtag Verification', 'PO Number Verification',
+    'SKU Verification', 'Price Ticket Verification',
+  ]},
+  { group: 'Hangtags', items: [
+    'Hangtag Design Verification', 'Hangtag Position Verification',
+    'Hangtag Attachment Security', 'Hangtag Information Verification',
+    'Promotional Tag Verification (If Applicable)',
+  ]},
+  { group: 'Safety Compliance', items: [
+    'Metal / Needle Detection Check', 'Needle Damage Check',
+    'Sharp Point Check', 'Sharp Edge Check',
+    'Small Parts Security Check', 'Choking Hazard Check (If Applicable-Applicable for Kidswear)',
+    'Child Safety Compliance Check (If Applicable-Applicable for Kidswear)', 'Drawcord Safety Check (If Applicable-Applicable for Kidswear)',
+    'Drawstring Length Check (If Applicable-Applicable for Kidswear)',
+  ]},
+  { group: 'Seam & Construction Performance', items: [
+    'Stitch Density Check', 'Seam Strength Test',
+    'Crotch Seam Strength', 'Strap Strength Test',
+    'Pull Test (Button/Snap/Hook/Eyelet)', 'Symmetry Check',
+  ]},
+  { group: 'Trims & Accessories', items: [
+    'Button Check', 'Button Security Test',
+    'Snap Function Test', 'Hook & Eye Function Test',
+    'Rivet Security Test', 'Eyelet Security Test',
+    'Zipper Test', 'Zipper Lock Function Test',
+    'Velcro Function Test', 'Toggle Function Test',
+  ]},
+  { group: 'Fabric & Performance Tests', items: [
+    'Odor Check', 'Moisture / Aqua Boy Check',
+    'Rubbing (Colour Fastness) Test - Dry', 'Rubbing (Colour Fastness) Test - Wet',
+    'Elastic Recovery Check', 'Elastic Resistance at Waistband',
+    'Stretch & Recovery Test', 'Pilling Check',
+    'Shedding Test', 'Lamination / Bonding Check',
+    'Binding Check', 'Twisting Check',
+  ]},
+  { group: 'Product-Specific Tests', items: [
+    'Bra Cup Check (If Applicable-Applicable for Bra)', 'Hygiene Sticker Check (If Applicable-Applicable for Underwear)',
+    'Seam Pocket Check (If Applicable-Applicable for Leggings)',
+  ]},
+  { group: 'Test Report Verification', isReport: true, items: [
+    'Fabric Test Report (In-House)', 'Fabric Test Report (3rd Party)',
+    'Garment Test Report (In-House)', 'Garment Test Report (3rd Party)',
+    'Cross-Staining Test', 'Printing Durability Test',
+    'Embroidery Durability Test', 'Heat-Seal Durability Test',
+    'AOP Durability Test', 'RM Test Report (In-House & 3rd Party)',
   ]},
 ];
 function flatTestCheckpoints(){
@@ -328,7 +414,7 @@ function emptyReportState(){
     sampleOverview: [ { styleId:'', styleName:'', orderQty:'', availableQty:'', cartonsAvailable:'', cartonsSelected:'', actualSampleInspected:'', remarks:'' } ],
     styleOverviewPics: { pictures:[] },
     cartonQtySelection: { totalCartonsPackingList:'', randomSelectionPerformed:'Yes', selectedCartonNumbers:'', pictures:[] },
-    packingCheckpoints: QUANTITY_PACKING_CHECKPOINTS.map(label => ({ label, result:'', comments:'', pictures:[] })),
+    packingCheckpoints: flatPackingCheckpoints().map(c => ({ group:c.group, label:c.label, result:'', comments:'', pictures:[] })),
     cartonDims: [ { poNumber:'', cartonNo:'', dims:'', comments:'' } ],
     defects: [],
     testCheckpoints: flatTestCheckpoints().map(c => ({ group:c.group, label:c.label, isReport:c.isReport, applicable:'Yes', result:'', comments:'', testReportNumber:'', pictures:[] })),
@@ -350,6 +436,9 @@ let state = Object.assign({
   sbuOptions: [],
   buyerOptions: [],
   irOptions: [],
+  sbuStatus: 'loading',
+  buyerStatus: 'idle',
+  irStatus: 'idle',
   styleDetail: null,
 }, emptyReportState());
 
@@ -429,30 +518,55 @@ async function persistReports(){
 /* ============================= STYLE LOOKUP (SBU → Buyer → IR) ============================= */
 
 async function loadSbuOptions(){
+  state.sbuStatus = 'loading';
+  render();
   try{
     const res = await qaApi({ action: "listSbus" });
-    state.sbuOptions = res.ok ? res.sbus : [];
-  }catch(e){ state.sbuOptions = []; }
+    if (!res.ok) throw new Error(res.error || 'listSbus failed');
+    state.sbuOptions = Array.isArray(res.sbus) ? res.sbus : [];
+    state.sbuStatus = 'ready';
+  }catch(e){
+    console.error('[loadSbuOptions]', e);
+    state.sbuOptions = [];
+    state.sbuStatus = 'error';
+    showToast('Could not load SBU list from the Master Order Information sheet — tap Retry, or switch to Manual Entry.');
+  }
   render();
 }
 
 async function loadBuyerOptions(sbu){
   state.buyerOptions = []; state.irOptions = []; state.styleDetail = null;
+  state.buyerStatus = 'loading'; state.irStatus = 'idle';
   render();
   try{
     const res = await qaApi({ action: "listBuyers", sbu: sbu });
-    state.buyerOptions = res.ok ? res.buyers : [];
-  }catch(e){ state.buyerOptions = []; }
+    if (!res.ok) throw new Error(res.error || 'listBuyers failed');
+    state.buyerOptions = Array.isArray(res.buyers) ? res.buyers : [];
+    state.buyerStatus = 'ready';
+  }catch(e){
+    console.error('[loadBuyerOptions]', e);
+    state.buyerOptions = [];
+    state.buyerStatus = 'error';
+    showToast('Could not load Buyers for this SBU — tap Retry, or switch to Manual Entry.');
+  }
   render();
 }
 
 async function loadIrOptions(sbu, buyer){
   state.irOptions = []; state.styleDetail = null;
+  state.irStatus = 'loading';
   render();
   try{
     const res = await qaApi({ action: "listIrs", sbu: sbu, buyer: buyer });
-    state.irOptions = res.ok ? res.irs : [];
-  }catch(e){ state.irOptions = []; }
+    if (!res.ok) throw new Error(res.error || 'listIrs failed');
+    state.irOptions = Array.isArray(res.irs) ? res.irs : [];
+    state.irStatus = 'ready';
+  }catch(e){
+    console.error('[loadIrOptions]', e);
+    state.irOptions = [];
+    state.irStatus = 'error';
+    showToast('Could not load IR numbers for this Buyer — tap Retry, or switch to Manual Entry.');
+  }
   render();
 }
 
@@ -480,6 +594,28 @@ async function loadStyleDetail(sbu, buyer, ir){
     }];
   }
   render();
+}
+
+function sbuPlaceholder_(){
+  if (state.sbuStatus === 'error') return 'Could not load — tap Retry';
+  if (state.sbuStatus === 'loading') return 'Loading…';
+  return state.sbuOptions.length ? 'Select SBU…' : 'No SBUs found in Master Order Information sheet';
+}
+function buyerPlaceholder_(h){
+  if (!h.sbu) return 'Select SBU first';
+  if (state.buyerStatus === 'error') return 'Could not load — tap Retry';
+  if (state.buyerStatus === 'loading') return 'Loading…';
+  return state.buyerOptions.length ? 'Select Buyer…' : 'No Buyers found for this SBU';
+}
+function irPlaceholder_(h){
+  if (!h.buyer) return 'Select Buyer first';
+  if (state.irStatus === 'error') return 'Could not load — tap Retry';
+  if (state.irStatus === 'loading') return 'Loading…';
+  return state.irOptions.length ? 'Select IR…' : 'No IR numbers found for this Buyer';
+}
+function sbuStatusBanner_(){
+  if (state.sbuStatus !== 'error') return '';
+  return `<div class="subtle-note" style="color:var(--crit);margin-bottom:10px;">Could not reach the Master Order Information sheet, so SBU / Buyer / IR could not load. Tap Retry above, or switch to <b>Manual Entry</b> to type in the Order/Style Information yourself.</div>`;
 }
 
 /* ============================= AQL LOGIC ============================= */
@@ -1328,9 +1464,9 @@ async function generatePdfReport(srcData){
 
     // ---------------- 03 packing checkpoints ---------------------------------
     heading('03. Quantity & Packing Checkpoints \u2014 Section Result: ' + packingResult);
-    table({ theme:'grid', head:[['Checkpoint','Result','Comments']],
-      body: S.packingCheckpoints.map(c=>[c.label,c.result||'-',c.comments||'']),
-      columnStyles:{0:{cellWidth:80}} });
+    table({ theme:'grid', head:[['Group','Checkpoint','Result','Comments']],
+      body: S.packingCheckpoints.map(c=>[c.group||'-',c.label,c.result||'-',c.comments||'']),
+      columnStyles:{1:{cellWidth:70}} });
     if (S.cartonDims.some(r=>r.poNumber||r.cartonNo||r.dims)){
       table({ theme:'grid', head:[['PO Number','Carton No.','Dimensions / Weight','Comments']],
         body: S.cartonDims.map(r=>[r.poNumber,r.cartonNo,r.dims,r.comments]) });
@@ -1561,24 +1697,28 @@ function renderEntry(){
   ${h.dataMode === 'manual' ? renderManualOrderInfoPanel(h) : `
   <div class="panel panel-pad section-block">
     <h2 class="section-title">Select Style <span class="tag">SBU &rarr; Buyer &rarr; IR</span></h2>
+    ${sbuStatusBanner_()}
     <div class="header-grid">
       <div class="f"><span class="field-label">SBU</span>
         <select data-h="sbu">
-          <option value="">${state.sbuOptions.length ? 'Select SBU…' : 'Loading…'}</option>
+          <option value="">${sbuPlaceholder_()}</option>
           ${state.sbuOptions.map(s => `<option value="${esc(s)}" ${h.sbu===s?'selected':''}>${esc(s)}</option>`).join('')}
         </select>
+        ${state.sbuStatus==='error' ? `<button type="button" class="btn ghost small" style="margin-top:6px;" data-action="retry-sbu">&#8635; Retry</button>` : ''}
       </div>
       <div class="f"><span class="field-label">Buyer</span>
         <select data-h="buyer" ${!h.sbu ? 'disabled' : ''}>
-          <option value="">${!h.sbu ? 'Select SBU first' : (state.buyerOptions.length ? 'Select Buyer…' : 'Loading…')}</option>
+          <option value="">${buyerPlaceholder_(h)}</option>
           ${state.buyerOptions.map(b => `<option value="${esc(b)}" ${h.buyer===b?'selected':''}>${esc(b)}</option>`).join('')}
         </select>
+        ${state.buyerStatus==='error' ? `<button type="button" class="btn ghost small" style="margin-top:6px;" data-action="retry-buyer">&#8635; Retry</button>` : ''}
       </div>
       <div class="f"><span class="field-label">IR No</span>
         <select data-h="ir" ${!h.buyer ? 'disabled' : ''}>
-          <option value="">${!h.buyer ? 'Select Buyer first' : (state.irOptions.length ? 'Select IR…' : 'Loading…')}</option>
+          <option value="">${irPlaceholder_(h)}</option>
           ${state.irOptions.map(i => `<option value="${esc(i)}" ${h.ir===i?'selected':''}>${esc(i)}</option>`).join('')}
         </select>
+        ${state.irStatus==='error' ? `<button type="button" class="btn ghost small" style="margin-top:6px;" data-action="retry-ir">&#8635; Retry</button>` : ''}
       </div>
     </div>
   </div>
@@ -1914,20 +2054,24 @@ function renderSection02(){
 function renderSection03(){
   const results = state.packingCheckpoints.map(c=>c.result).filter(Boolean);
   const sectionResult = results.includes('Fail') ? 'FAIL' : (results.length ? 'PASS' : 'N/A');
+  let lastPkGroup = null;
+  const pkRowsHtml = state.packingCheckpoints.map((c,i) => {
+    const groupHd = c.group !== lastPkGroup ? `<tr class="rep-group-hd"><td colspan="4">${esc(c.group)}</td></tr>` : '';
+    lastPkGroup = c.group;
+    return groupHd + `
+      <tr>
+        <td>${esc(c.label)}</td>
+        <td><select class="result-select ${c.result==='Pass'?'PASS':c.result==='Fail'?'FAIL':''}" data-pk="${i}:result"><option value="">--</option><option ${c.result==='Pass'?'selected':''}>Pass</option><option ${c.result==='Fail'?'selected':''}>Fail</option><option ${c.result==='N/A'?'selected':''}>N/A</option></select></td>
+        <td><input type="text" data-pk="${i}:comments" value="${esc(c.comments)}"></td>
+        <td>${pictureWidget('packing', i)}</td>
+      </tr>`;
+  }).join('');
   return `
   <div class="panel panel-pad section-block">
     <h2 class="section-title">03. Quantity & Packing Checkpoints</h2>
     <table class="rep-table">
       <thead><tr><th style="width:34%">Checkpoint</th><th>Result</th><th>Comments</th><th>Pictures</th></tr></thead>
-      <tbody>
-        ${state.packingCheckpoints.map((c,i)=>`
-          <tr>
-            <td>${esc(c.label)}</td>
-            <td><select class="result-select ${c.result==='Pass'?'PASS':c.result==='Fail'?'FAIL':''}" data-pk="${i}:result"><option value="">--</option><option ${c.result==='Pass'?'selected':''}>Pass</option><option ${c.result==='Fail'?'selected':''}>Fail</option><option ${c.result==='N/A'?'selected':''}>N/A</option></select></td>
-            <td><input type="text" data-pk="${i}:comments" value="${esc(c.comments)}"></td>
-            <td>${pictureWidget('packing', i)}</td>
-          </tr>`).join('')}
-      </tbody>
+      <tbody>${pkRowsHtml}</tbody>
     </table>
 
     <h3 class="section-title" style="margin-top:20px;font-size:12.5px;">Carton Assortment, Dimensions & Weight</h3>
@@ -2270,6 +2414,14 @@ function bindEvents(){
     state.colorQty.push({ color:'', qty:'', readyQty:'', cartonQty:'', selectedCartonNo:'' });
     render();
   };
+
+  // ---- Style lookup retry buttons ----
+  const retrySbuBtn = document.querySelector('[data-action="retry-sbu"]');
+  if (retrySbuBtn) retrySbuBtn.onclick = () => loadSbuOptions();
+  const retryBuyerBtn = document.querySelector('[data-action="retry-buyer"]');
+  if (retryBuyerBtn) retryBuyerBtn.onclick = () => loadBuyerOptions(state.header.sbu);
+  const retryIrBtn = document.querySelector('[data-action="retry-ir"]');
+  if (retryIrBtn) retryIrBtn.onclick = () => loadIrOptions(state.header.sbu, state.header.buyer);
 
   // ---- 01/general header ----
   document.querySelectorAll('[data-h]').forEach(el => el.onchange = (e) => {
