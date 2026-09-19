@@ -345,6 +345,7 @@ function emptyReportState(){
     packingCheckpoints: flatPackingCheckpoints().map(c => ({ group:c.group, label:c.label, result:'', comments:'', pictures:[] })),
     cartonDims: [ { poNumber:'', cartonNo:'', dims:'', comments:'' } ],
     defects: [],
+    noDefectsFound: false,
     testCheckpoints: flatTestCheckpoints().map(c => ({ group:c.group, subgroup:c.subgroup, label:c.label, isReport:c.isReport, applicable:'Yes', result:'', comments:'', testReportNumber:'', pictures:[] })),
     measurements: { poms: [ { description:'', size:'', tolMinus:'', tolPlus:'', spec:'', m:[] } ], pictures:[], pieceCount:0, readingsManual:'', ootReadingsManual:'' },
     signOff: SIGNOFF_ROLES.map(role => ({ role, name:'', signature:'' })),
@@ -1323,8 +1324,8 @@ async function generatePdfReport(srcData){
           body: usedCats.map(cat => [cat, catTotals[cat].Critical||'-', catTotals[cat].Major||'-', catTotals[cat].Minor||'-']),
           columnStyles:{0:{cellWidth:100}} });
       } else {
-        doc.setFont('helvetica','italic'); doc.setFontSize(8); doc.setTextColor(150,150,150);
-        doc.text('No defects logged yet.', margin, ctx.y); ctx.y += 6;
+        doc.setFont('helvetica', S.noDefectsFound ? 'bold' : 'italic'); doc.setFontSize(8); doc.setTextColor(S.noDefectsFound ? 46 : 150, S.noDefectsFound ? 110 : 150, S.noDefectsFound ? 70 : 150);
+        doc.text(S.noDefectsFound ? 'No workmanship defects found during this inspection.' : 'No defects logged yet.', margin, ctx.y); ctx.y += 6;
         doc.setTextColor(20,20,20);
       }
       ctx.y += 2;
@@ -2037,7 +2038,14 @@ function renderSection04(t, aql){
 
     <h3 class="section-title" style="font-size:12.5px;">Defect Log</h3>
     <div id="defectList"></div>
-    <button type="button" class="btn ghost small row-add-btn" data-action="add-defect">+ Add Defect</button>
+    <div class="row" style="align-items:center;gap:16px;margin-top:8px;flex-wrap:wrap;">
+      <button type="button" class="btn ghost small row-add-btn" data-action="add-defect" ${state.noDefectsFound ? 'disabled' : ''}>+ Add Defect</button>
+      <label style="display:flex;align-items:center;gap:6px;font-size:12px;color:var(--muted);cursor:pointer;">
+        <input type="checkbox" data-action="toggle-no-defects" ${state.noDefectsFound ? 'checked' : ''} ${state.defects.length ? 'disabled' : ''}>
+        No workmanship defects found during this inspection
+      </label>
+      ${state.defects.length ? `<span class="subtle-note">Remove all logged defects above to enable this.</span>` : ''}
+    </div>
 
     <h3 class="section-title" style="margin-top:20px;font-size:12.5px;">Defect Summary by Category</h3>
     <table class="rep-table">
@@ -2224,7 +2232,7 @@ function redrawDefects_(){
             <td><input type="number" data-def="${i}:qty" value="${d.qty||1}" style="width:55px"></td>
             <td>${pictureWidget('defect', i)}</td>
             <td><button type="button" class="btn danger small" data-remove-defect="${i}">✕</button></td>
-          </tr>`).join('') || `<tr><td colspan="9" style="color:var(--muted)">No defects logged yet.</td></tr>`}
+          </tr>`).join('') || `<tr><td colspan="9" style="color:${state.noDefectsFound ? 'var(--brand)' : 'var(--muted)'}">${state.noDefectsFound ? '✓ No workmanship defects found during this inspection.' : 'No defects logged yet.'}</td></tr>`}
       </tbody>
     </table>`;
 }
@@ -2430,6 +2438,13 @@ function bindEvents(){
   if (addBtn) addBtn.onclick = () => {
     if (tcBlockIfGuest('Adding a defect')) return;
     state.defects.push({group:'Group-B',category:'Assembling / Sewing',description:'',area:'',severity:'Major',qty:1,pictures:[]});
+    state.noDefectsFound = false;
+    render();
+  };
+  const noDefectsCb = document.querySelector('[data-action="toggle-no-defects"]');
+  if (noDefectsCb) noDefectsCb.onchange = (e) => {
+    if (tcBlockIfGuest('Marking no defects found')) { render(); return; }
+    state.noDefectsFound = e.target.checked;
     render();
   };
   document.querySelectorAll('[data-defect-pick]').forEach(el => el.onchange = (e) => {
@@ -2581,7 +2596,7 @@ async function saveCurrentReport_(isFinal){
   const record = Object.assign({}, JSON.parse(JSON.stringify(emptyReportState())), JSON.parse(JSON.stringify({
     header: state.header, allQtyCheck: state.allQtyCheck, cartonSelection: state.cartonSelection, colorQty: state.colorQty,
     sampleOverview: state.sampleOverview, styleOverviewPics: state.styleOverviewPics, cartonQtySelection: state.cartonQtySelection, packingCheckpoints: state.packingCheckpoints,
-    cartonDims: state.cartonDims, defects: state.defects, testCheckpoints: state.testCheckpoints, measurements: state.measurements,
+    cartonDims: state.cartonDims, defects: state.defects, noDefectsFound: state.noDefectsFound, testCheckpoints: state.testCheckpoints, measurements: state.measurements,
     signOff: state.signOff, remarks: state.remarks,
   })));
   stripPictureData_(record);
