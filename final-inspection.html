@@ -599,7 +599,7 @@ function lotBasisQty(S){
   return Number(h.orderQty) || 0;
 }
 
-function computeAQL(lotQty, critical, major, minor, aqlCritical, aqlMajor, aqlMinor, level, plan){
+function computeAQL(lotQty, critical, major, minor, aqlCritical, aqlMajor, aqlMinor, level, plan, noDefectsConfirmed){
   level = level || 'General II';
   plan  = plan  || 'Single';
   const lot  = Number(lotQty) || 0;
@@ -619,7 +619,10 @@ function computeAQL(lotQty, critical, major, minor, aqlCritical, aqlMajor, aqlMi
     sampleSize: sampleSize, codeLetter: code, lotQty: lot, level: level, plan: plan,
     criticalAllowed: criticalAllowed, majorAllowed: majorAllowed, minorAllowed: minorAllowed,
     singlePlans: { critical:pC, major:pM, minor:pN }, doublePlans: dbl,
-    result: (critical||major||minor) ? (fail ? 'FAIL' : 'PASS') : ''
+    // Zero defects normally means "not inspected yet" (result left blank, not
+    // PASS) since an empty defect log is ambiguous — the "No workmanship
+    // defects found" checkbox is what turns that ambiguity into a real PASS.
+    result: (critical||major||minor) ? (fail ? 'FAIL' : 'PASS') : (noDefectsConfirmed ? 'PASS' : '')
   };
 }
 
@@ -627,7 +630,7 @@ function aqlFor(S){
   S = S || state;
   const h = S.header, t = defectTotals(S.defects);
   return computeAQL(lotBasisQty(S), t.Critical, t.Major, t.Minor,
-                    h.aqlCritical, h.aqlMajor, h.aqlMinor, h.inspectionLevel, h.samplingPlan);
+                    h.aqlCritical, h.aqlMajor, h.aqlMinor, h.inspectionLevel, h.samplingPlan, S.noDefectsFound);
 }
 
 /* ---- Measurement AQL (own inspection level, own sample size, auto Ac/Re) ---- */
