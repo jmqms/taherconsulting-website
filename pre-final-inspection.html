@@ -440,8 +440,13 @@ async function loadReports(){
     showToast(QA_API_URL.indexOf("PASTE_YOUR")===0 ? 'Backend not connected yet — saving to this browser only' : 'Could not reach server — showing this browser\'s last saved copy');
   }
   state.storageReady = true;
-  render();
+  // loadSbuOptions() must run unconditionally, before render() — a rendering
+  // bug (e.g. a CDN script failing to load) must never be able to block the
+  // Master Order Information lookup again, which is exactly what happened
+  // before this fix: render() used to run first and throw, so the line
+  // after it (starting this lookup) never executed.
   loadSbuOptions();
+  try{ render(); }catch(renderErr){ console.error('[loadReports] render() threw:', renderErr); }
 }
 
 async function persistReports(){
@@ -1545,6 +1550,21 @@ function renderDashboard(){
 }
 
 function drawDashboardCharts(){
+  // Chart.js loads from a CDN (cdnjs.cloudflare.com). If that request is ever
+  // blocked or slow (network hiccup, corporate firewall, ad-blocker), `Chart`
+  // is undefined here — and since this used to be called from inside
+  // loadReports() with nothing after it, that ONE failure used to crash the
+  // whole boot sequence and silently stop the SBU/Buyer/IR lookup from ever
+  // running. Bail out gracefully instead: the rest of the app (including the
+  // Master Order Information lookup) must never depend on the charts working.
+  if (typeof Chart === 'undefined'){
+    console.error('[drawDashboardCharts] Chart.js did not load (CDN blocked or slow) — skipping charts.');
+    ['trendChart','sevDonut','paretoChart'].forEach(id=>{
+      const el = document.getElementById(id);
+      if (el && el.parentElement) el.parentElement.insertAdjacentHTML('beforeend', '<div class="subtle-note" style="padding:8px;">Charts could not load (network/CDN issue) — the rest of the app is unaffected.</div>');
+    });
+    return;
+  }
   const reports = filteredReports();
   if (reports.length===0) return;
   Chart.defaults.color = '#5E665F';
