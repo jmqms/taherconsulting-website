@@ -9,7 +9,7 @@
    See users-backend.gs for the one-time setup instructions.
    =========================================================== */
 
-const USERS_API_URL = "https://script.google.com/macros/s/AKfycbwUHhuey3xss614nJPgXQwl449URBPX-SRgldd28JWLFrFSkRcJreYqDDK_hbIpr3Qi/exec";
+const USERS_API_URL = "https://script.google.com/macros/s/AKfycbx7Cwnp8hoKuxcQ57TlllwBaA7zr9S2bcFVi9-mzyyY8RhRL3YiUpbJMFohLmQZkf1a/exec";
 
 async function handleLogin(event) {
   event.preventDefault();

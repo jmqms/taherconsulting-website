@@ -28,7 +28,7 @@
    control is added into the existing #tc-guard-bar if present.
    =========================================================== */
 
-const MODULE_AUTH_API_URL = "https://script.google.com/macros/s/AKfycbwUHhuey3xss614nJPgXQwl449URBPX-SRgldd28JWLFrFSkRcJreYqDDK_hbIpr3Qi/exec";
+const MODULE_AUTH_API_URL = "https://script.google.com/macros/s/AKfycbx7Cwnp8hoKuxcQ57TlllwBaA7zr9S2bcFVi9-mzyyY8RhRL3YiUpbJMFohLmQZkf1a/exec";
 
 function tcInitModuleAuth(opts) {
   const sessionKey = "tc_module_" + opts.moduleKey;
