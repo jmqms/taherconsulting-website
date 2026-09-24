@@ -26,7 +26,7 @@
   .qa-head .eyebrow{margin-bottom:8px;}
   .qa-head h1{font-size:26px;}
 
-  .stat-grid{display:grid;grid-template-columns:repeat(5,1fr);gap:16px;margin-bottom:28px;}
+  .stat-grid{display:grid;grid-template-columns:repeat(4,1fr);gap:16px;margin-bottom:28px;}
   .stat-card{background:var(--card);border:1.5px solid var(--ink);border-radius:5px;padding:18px 16px;}
   .stat-card span{font-family:var(--mono);font-size:10px;text-transform:uppercase;color:var(--ink-soft);letter-spacing:.05em;}
   .stat-card b{display:block;font-family:var(--display);font-size:28px;margin-top:6px;}
@@ -59,6 +59,12 @@
   .status-pill.In-Progress{background:#F4EBD2;color:var(--gold);}
   .status-pill.Done{background:var(--pass-dim);color:var(--pass);}
 
+  .color-row{display:grid;gap:12px;align-items:end;margin-bottom:12px;}
+  .color-row.ss{grid-template-columns:1fr auto;max-width:520px;}
+  .color-row.pp{grid-template-columns:1fr 1fr 1fr auto;}
+  .color-row .field{margin:0;}
+  .color-row:first-child .cr-remove{visibility:hidden;}
+
   .insight-item{display:flex;gap:10px;font-size:13px;color:var(--ink-soft);margin-bottom:12px;}
   .insight-item b{color:var(--ink);}
 
@@ -70,6 +76,7 @@
     .qa-side button.active{border-left:none;border-bottom-color:var(--pass);}
     .stat-grid{grid-template-columns:1fr 1fr;}
     .panel-grid,.form-grid{grid-template-columns:1fr;}
+    .color-row.pp{grid-template-columns:1fr;}
   }
 </style>
 </head>
@@ -117,7 +124,6 @@ function tcBlockIfGuest(actionLabel) {
     <div id="qaSideSticky" style="position:sticky;top:0;background:var(--ink);z-index:5;padding-bottom:6px;border-bottom:1px solid rgba(255,255,255,.12);margin-bottom:6px">
       <h6 style="padding-top:0">Dashboard</h6>
       <button data-tab="overview" class="active"><span class="dot"></span>Overview</button>
-      <button data-tab="orderentry"><span class="dot"></span>Order Entry</button>
       <button data-tab="styletracking"><span class="dot"></span>Style Tracking</button>
     </div>
     <h6>Quality Process</h6>
@@ -347,9 +353,9 @@ function wireStyleSelector(prefix, onChange) {
 // ---------------------------------------------------------------
 function loadTab(id) {
   if (id === "overview") return renderOverview();
-  if (id === "orderentry") return renderOrderEntry();
   if (id === "styletracking") return renderStyleTracking();
   if (id === "sizeset") return renderSizeSet();
+  if (id === "ppmeeting") return renderPPMeeting();
   if (id === "testing") return renderTesting();
   if (id === "ra") return renderRiskAssessment();
   const stage = ALL_STAGES.find(s => s.id === id);
@@ -375,16 +381,12 @@ async function renderOverview() {
       <button class="btn btn-ghost" onclick="document.getElementById('ovStart').value='';document.getElementById('ovEnd').value='';renderOverview();">Clear</button>
     </div>
     <div class="stat-grid" id="qaStatGrid">
-      <div class="stat-card"><span>Total Orders</span><b>—</b></div>
-      <div class="stat-card"><span>Basic Complexity</span><b>—</b></div>
-      <div class="stat-card"><span>Complex</span><b>—</b></div>
-      <div class="stat-card"><span>Strategic Complex</span><b>—</b></div>
       <div class="stat-card"><span>Total QA Entries</span><b>—</b></div>
+      <div class="stat-card"><span>Open</span><b>—</b></div>
+      <div class="stat-card"><span>In Progress</span><b>—</b></div>
+      <div class="stat-card"><span>Done</span><b>—</b></div>
     </div>
-    <div class="panel-grid">
-      <div class="panel"><h3>Entries by Stage</h3><canvas id="stageChart" height="220"></canvas></div>
-      <div class="panel"><h3>Complexity Distribution</h3><canvas id="complexityChart" height="220"></canvas></div>
-    </div>
+    <div class="panel" style="margin-bottom:28px"><h3>Entries by Stage</h3><canvas id="stageChart"></canvas></div>
     <div class="panel-grid" style="grid-template-columns:1.4fr 1fr">
       <div class="panel">
         <h3>Stage-wise Status Summary</h3>
@@ -405,13 +407,18 @@ async function renderOverview() {
     if (!res.ok) throw new Error(res.error || "Failed to load overview");
     const s = res.summary;
 
+    let openN = 0, progN = 0, doneN = 0;
+    Object.keys(s.byStage || {}).forEach(k => {
+      const d = s.byStage[k];
+      openN += d.open || 0; progN += d.inProgress || 0; doneN += d.done || 0;
+    });
+
     const grid = document.getElementById("qaStatGrid");
     grid.innerHTML = `
-      <div class="stat-card"><span>Total Orders</span><b>${s.totalOrders}</b></div>
-      <div class="stat-card"><span>Basic Complexity</span><b>${s.basic}</b></div>
-      <div class="stat-card"><span>Complex</span><b>${s.complex}</b></div>
-      <div class="stat-card"><span>Strategic Complex</span><b>${s.strategic}</b></div>
       <div class="stat-card"><span>Total QA Entries</span><b>${s.totalEntries}</b></div>
+      <div class="stat-card"><span>Open</span><b>${openN}</b></div>
+      <div class="stat-card"><span>In Progress</span><b>${progN}</b></div>
+      <div class="stat-card"><span>Done</span><b>${doneN}</b></div>
     `;
 
     const stageLabels = ALL_STAGES.map(x => x.label);
@@ -419,16 +426,7 @@ async function renderOverview() {
     new Chart(document.getElementById("stageChart"), {
       type: "bar",
       data: { labels: stageLabels, datasets: [{ label: "Entries", data: stageCounts, backgroundColor: "#2F6E52" }] },
-      options: { plugins: { legend: { display: false } }, scales: { x: { ticks: { font: { size: 9 } } } } }
-    });
-
-    new Chart(document.getElementById("complexityChart"), {
-      type: "doughnut",
-      data: {
-        labels: ["Basic", "Complex", "Strategic Complex"],
-        datasets: [{ data: [s.basic, s.complex, s.strategic], backgroundColor: ["#2F6E52", "#A9832F", "#B84226"] }]
-      },
-      options: { plugins: { legend: { position: "bottom" } } }
+      options: { aspectRatio: 3, plugins: { legend: { display: false } }, scales: { x: { ticks: { font: { size: 9 } } } } }
     });
 
     const tbody = document.querySelector("#stageTable tbody");
@@ -439,153 +437,12 @@ async function renderOverview() {
 
     const busiest = ALL_STAGES.map(x => ({ label: x.label, total: (s.byStage[x.id] || {}).total || 0 })).sort((a, b) => b.total - a.total)[0];
     document.getElementById("qaInsights").innerHTML = `
-      <div class="insight-item">📋 <span><b>${s.totalOrders}</b> orders currently tracked, with <b>${s.totalEntries}</b> total QA entries logged across all stages.</span></div>
+      <div class="insight-item">📋 <span><b>${s.totalEntries}</b> QA entries logged across all stages.</span></div>
       <div class="insight-item">🎯 <span>Most active stage: <b>${busiest ? esc(busiest.label) : "—"}</b> (${busiest ? busiest.total : 0} entries).</span></div>
-      <div class="insight-item">⚠️ <span><b>${s.strategic}</b> style/event combinations are flagged Strategic Complex — prioritize these for review.</span></div>
+      <div class="insight-item">⏳ <span><b>${openN + progN}</b> entries are still Open or In Progress — follow these up first.</span></div>
     `;
   } catch (err) {
     document.getElementById("qaStatGrid").innerHTML = `<div class="stat-card" style="grid-column:1/-1"><span style="color:var(--reject)">${esc(err.message)}</span></div>`;
-  }
-}
-
-// ---------------------------------------------------------------
-// Order Entry tab
-// ---------------------------------------------------------------
-const CORE_EVENTS = ["Cutting", "Print", "Embroidery", "Sewing", "Wash", "Finishing"];
-const ORDER_TYPE_FIELDS = ["Print", "Embroidery", "Wash"];
-
-function renderOrderEntry() {
-  const el = document.getElementById("tabContent");
-  el.innerHTML = `
-    <div class="qa-head">
-      <div class="eyebrow">Order Intake</div>
-      <h1>Order Entry &amp; Style Complexity</h1>
-    </div>
-    <div class="panel" style="margin-bottom:24px">
-      <h3>Order Information</h3>
-      <div class="form-grid">
-        <div class="field"><label>SBU</label>
-          <select id="ordSbu"><option>SBU-01</option><option>SBU-02</option><option>SBU-03</option><option>SBU-04</option><option>SBU-05</option></select>
-        </div>
-        <div class="field"><label>Buyer</label>
-          <select id="ordBuyer"><option>GS</option><option>AEO</option><option>AERIE</option><option>AEOW</option><option>Adanola</option><option>Women's Best</option><option>Next</option><option>Zalando</option><option>Lounge</option><option>Tchibo</option><option>Myprotein</option><option>IHL</option><option>Oner Active</option></select>
-        </div>
-        <div class="field"><label>Style</label><input id="ordStyle"></div>
-        <div class="field"><label>Season</label><input id="ordSeason" placeholder="e.g. SS27"></div>
-        <div class="field"><label>IR No</label><input id="ordIr" placeholder="e.g. 508/3032"></div>
-        <div class="field"><label>Item</label><input id="ordItem"></div>
-        <div class="field"><label>PO</label><input id="ordPo"></div>
-        <div class="field"><label>Color</label><input id="ordColor"></div>
-        <div class="field"><label>Order Qty</label><input id="ordQty" type="number"></div>
-        <div class="field"><label>Inspection Date</label><input id="ordDate" type="date"></div>
-      </div>
-
-      <h3 style="margin-top:6px">Type of Order</h3>
-      <div class="form-grid" id="orderTypeRows"></div>
-
-      <div class="field" style="max-width:280px">
-        <label>Overall Style Complexity</label>
-        <select id="ordOverallComplexity">
-          <option value="Basic">Basic</option>
-          <option value="Complex">Complex</option>
-          <option value="Strategic Complex">Strategic Complex</option>
-        </select>
-      </div>
-
-      <h3 style="margin-top:6px">Style Complexity Requirements</h3>
-      <div id="complexityRows"></div>
-      <button class="btn btn-primary" style="margin-top:16px" onclick="saveOrder()">Save Order →</button>
-      <div id="orderMsg" class="form-msg"></div>
-    </div>
-    <div class="panel">
-      <h3>Recent Orders</h3>
-      <table class="qa-table" id="ordersTable">
-        <thead><tr><th>SBU</th><th>Buyer</th><th>Style</th><th>Season</th><th>IR No</th><th>Qty</th><th>Overall</th></tr></thead>
-        <tbody><tr><td colspan="7" style="text-align:center;color:var(--ink-soft)">Loading…</td></tr></tbody>
-      </table>
-    </div>
-  `;
-
-  document.getElementById("orderTypeRows").innerHTML = ORDER_TYPE_FIELDS.map(f => `
-    <div class="field"><label>${f}</label>
-      <select id="ot_${f}"><option>Yes</option><option>No</option><option>N/A</option></select>
-    </div>
-  `).join("");
-
-  const rowsEl = document.getElementById("complexityRows");
-  rowsEl.innerHTML = CORE_EVENTS.map(ev => `
-    <div class="complexity-row">
-      <div><label>${ev}</label>
-        <select id="cx_${ev}">
-          <option value="Basic">Basic</option>
-          <option value="Complex">Complex</option>
-          <option value="Strategic Complex">Strategic Complex</option>
-        </select>
-      </div>
-      <div><label>Reason (if Complex/Strategic)</label><input id="rs_${ev}" placeholder="e.g. multi-panel embroidery, delicate fabric"></div>
-    </div>
-  `).join("");
-
-  loadOrders();
-}
-
-async function saveOrder() {
-  if (typeof tcBlockIfGuest === 'function' && tcBlockIfGuest('Saving an order')) return;
-  const msg = document.getElementById("orderMsg");
-  const complexity = {};
-  CORE_EVENTS.forEach(ev => { complexity[ev] = document.getElementById("cx_" + ev).value; });
-  const complexityReasons = {};
-  CORE_EVENTS.forEach(ev => { complexityReasons[ev] = document.getElementById("rs_" + ev).value; });
-  const orderType = {};
-  ORDER_TYPE_FIELDS.forEach(f => { orderType[f] = document.getElementById("ot_" + f).value; });
-
-  const order = {
-    sbu: document.getElementById("ordSbu").value,
-    buyer: document.getElementById("ordBuyer").value,
-    styleNo: document.getElementById("ordStyle").value,
-    season: document.getElementById("ordSeason").value,
-    irNo: document.getElementById("ordIr").value,
-    item: document.getElementById("ordItem").value,
-    po: document.getElementById("ordPo").value,
-    color: document.getElementById("ordColor").value,
-    orderQty: document.getElementById("ordQty").value,
-    deliveryDate: document.getElementById("ordDate").value,
-    orderType: orderType,
-    overallComplexity: document.getElementById("ordOverallComplexity").value,
-    complexity: complexity,
-    complexityReasons: complexityReasons,
-  };
-  if (!order.styleNo) {
-    msg.textContent = "Style is required.";
-    msg.className = "form-msg err show";
-    return;
-  }
-  try {
-    const res = await qaApi({ action: "saveOrder", order: order });
-    if (!res.ok) throw new Error(res.error || "Save failed");
-    msg.textContent = "Order saved.";
-    msg.className = "form-msg ok show";
-    loadOrders();
-  } catch (err) {
-    msg.textContent = err.message;
-    msg.className = "form-msg err show";
-  }
-}
-
-async function loadOrders() {
-  const tbody = document.querySelector("#ordersTable tbody");
-  try {
-    const res = await qaApi({ action: "listOrders" });
-    if (!res.ok) throw new Error(res.error || "Failed to load");
-    if (!res.orders.length) {
-      tbody.innerHTML = `<tr><td colspan="7" style="text-align:center;color:var(--ink-soft)">No orders yet.</td></tr>`;
-      return;
-    }
-    tbody.innerHTML = res.orders.slice().reverse().map(o => `
-      <tr><td>${esc(o.sbu)}</td><td>${esc(o.buyer)}</td><td>${esc(o.styleNo)}</td><td>${esc(o.season)}</td><td>${esc(o.irNo)}</td><td>${esc(o.orderQty)}</td><td>${esc(o.overallComplexity)}</td></tr>
-    `).join("");
-  } catch (err) {
-    tbody.innerHTML = `<tr><td colspan="6" style="text-align:center;color:var(--reject)">${esc(err.message)}</td></tr>`;
   }
 }
 
@@ -700,7 +557,9 @@ function goToStageForTracking(stageId) {
   document.querySelectorAll(".qa-side button").forEach(b => b.classList.remove("active"));
   const detail = document.querySelector(`.qa-side button[data-tab="${stageId}"]`);
   if (detail) detail.classList.add("active");
-  renderStage(stage, { sbu: stSelected.sbu, buyer: stSelected.buyer, ir: stSelected.ir });
+  const presel = { sbu: stSelected.sbu, buyer: stSelected.buyer, ir: stSelected.ir };
+  if (stageId === "ppmeeting") { renderPPMeeting(); ppSelCtrl.setSel(presel); return; }
+  renderStage(stage, presel);
 }
 
 // ---------------------------------------------------------------
@@ -832,83 +691,148 @@ async function loadQualityRAEntries() {
 }
 
 // ---------------------------------------------------------------
-// Shared stage-form template (used by the remaining 19 process/QA stages)
+// Shared color-row helpers — Size-Set and PP Meeting both pick colors
+// from the selected IR's Master Order Information (detail.colors) and
+// let the user add more rows when a style has 2+ colors.
+//   kind "ss" → color only
+//   kind "pp" → color + fiber composition + fabric type
 // ---------------------------------------------------------------
+let colorDetail = { ss: null, pp: null };
+
+function colorOptionsHTML(detail, selected) {
+  const names = ((detail && detail.colors) || []).map(c => c.color).filter(Boolean);
+  const head = names.length ? "Select color…" : "Select IR first";
+  return `<option value="">${head}</option>` + names.map(n =>
+    `<option value="${esc(n)}"${n === selected ? " selected" : ""}>${esc(n)}</option>`
+  ).join("");
+}
+
+function addColorRow(kind) {
+  const box = document.getElementById(kind + "ColorRows");
+  if (!box) return;
+  const row = document.createElement("div");
+  row.className = "color-row " + kind;
+  row.innerHTML = `
+    <div class="field"><label>${kind === "pp" ? "Color Name" : "Color"}</label>
+      <select class="cr-color">${colorOptionsHTML(colorDetail[kind], "")}</select>
+    </div>
+    ${kind === "pp" ? `
+    <div class="field"><label>Fiber Composition</label><input class="cr-fiber" placeholder="e.g. 92% Cotton 8% Elastane"></div>
+    <div class="field"><label>Fabric Type</label><input class="cr-fabric" placeholder="e.g. Single Jersey"></div>` : ""}
+    <button type="button" class="btn btn-ghost cr-remove" title="Remove this color" onclick="removeColorRow(this)">✕</button>
+  `;
+  box.appendChild(row);
+}
+
+function removeColorRow(btn) {
+  const row = btn.closest(".color-row");
+  if (row) row.remove();
+}
+
+// Called whenever the SBU → Buyer → IR selection changes.
+function refreshColorOptions(kind, detail) {
+  colorDetail[kind] = detail || null;
+  document.querySelectorAll(`#${kind}ColorRows .cr-color`).forEach(sel => {
+    sel.innerHTML = colorOptionsHTML(colorDetail[kind], sel.value);
+  });
+}
+
+function getColorRows(kind) {
+  return Array.from(document.querySelectorAll(`#${kind}ColorRows .color-row`)).map(r => ({
+    color: r.querySelector(".cr-color").value,
+    fiber: r.querySelector(".cr-fiber") ? r.querySelector(".cr-fiber").value.trim() : "",
+    fabric: r.querySelector(".cr-fabric") ? r.querySelector(".cr-fabric").value.trim() : "",
+  }));
+}
+
 // ---------------------------------------------------------------
-// Size-Set tab (custom form, matches Data_Entry_Sheet.xlsx)
+// Size-Set tab (matches For_PP_Meeting_and_Size-Set.xlsx → "Size-Set")
+// Order Information comes from Master Order Information (same
+// SBU → Buyer → IR selector + Style Details used on every stage).
 // ---------------------------------------------------------------
+let ssSelCtrl = null;
+
 function renderSizeSet() {
+  colorDetail.ss = null;
   const el = document.getElementById("tabContent");
   el.innerHTML = `
     <div class="qa-head">
       <div class="eyebrow">Quality Process</div>
       <h1>Size-Set</h1>
     </div>
+    ${styleSelectorHTML("ss")}
     <div class="panel" style="margin-bottom:24px">
-      <h3>New Size-Set Entry</h3>
+      <h3>Size-Set Information</h3>
       <div class="form-grid">
         <div class="field"><label>Size Set Date</label><input id="ssDate" type="date"></div>
-        <div class="field"><label>SBU</label>
-          <select id="ssSbu"><option>SBU-01</option><option>SBU-02</option><option>SBU-03</option><option>SBU-04</option><option>SBU-05</option></select>
+        <div class="field"><label>Size Set by</label><input id="ssBy"></div>
+        <div class="field"><label>Order Type</label>
+          <select id="ssOrderType"><option>New</option><option>Repeat</option><option>Special</option></select>
         </div>
-        <div class="field"><label>Buyer</label>
-          <select id="ssBuyer"><option>GS</option><option>AEO</option><option>AERIE</option><option>AEOW</option><option>Adanola</option><option>Women's Best</option><option>Next</option><option>Zalando</option><option>Lounge</option><option>Tchibo</option><option>Myprotein</option><option>IHL</option><option>Oner Active</option></select>
-        </div>
-        </div>
-        <div class="field"><label>Style No.</label><input id="ssStyle"></div>
-        <div class="field"><label>IR</label><input id="ssIr"></div>
-        <div class="field"><label>Season</label><input id="ssSeason"></div>
-        <div class="field"><label>Item</label><input id="ssItem"></div>
-        <div class="field"><label>Embellishment Type</label><input id="ssEmb" placeholder="e.g. Print"></div>
         <div class="field"><label>Product Type</label>
           <select id="ssProductType"><option>Wash</option><option>Non-Wash</option></select>
         </div>
-        <div class="field"><label>Order Type</label>
-          <select id="ssOrderType"><option>Repeat</option><option>New</option></select>
-        </div>
-        <div class="field"><label>No. of Color</label><input id="ssColorCount" placeholder="e.g. 1COLOR"></div>
-        <div class="field"><label>Planned Qty.</label><input id="ssPlannedQty" type="number"></div>
-        <div class="field"><label>Size-Set/Pattern Verify Status</label>
-          <select id="ssStatus"><option>Pattern Verify</option><option>Size-Set OK</option><option>Rejected</option><option>Pending</option></select>
-        </div>
-        <div class="field"><label>Correction Type</label><input id="ssCorrection"></div>
+        <div class="field"><label>Planned Qty</label><input id="ssPlannedQty" type="number" min="0"></div>
       </div>
-      <div class="field"><label>Remarks</label><textarea id="ssRemarks" rows="3"></textarea></div>
+
+      <h3 style="margin-top:6px">Size-Set Color</h3>
+      <div id="ssColorRows"></div>
+      <button type="button" class="btn btn-ghost" style="margin-bottom:20px" onclick="addColorRow('ss')">+ Add Color</button>
+
+      <div class="form-grid">
+        <div class="field"><label>Size-Set / Pattern Verify Status</label>
+          <select id="ssStatus"><option>Size-Set &amp; Pattern Verify</option><option>Pattern Verify</option></select>
+        </div>
+      </div>
+      <div class="field"><label>Comments</label><textarea id="ssComments" rows="3"></textarea></div>
       <button class="btn btn-primary" onclick="saveSizeSet()">Save Entry →</button>
       <div id="ssMsg" class="form-msg"></div>
     </div>
     <div class="panel">
       <h3>Recent Size-Set Entries</h3>
       <table class="qa-table" id="ssTable">
-        <thead><tr><th>Date</th><th>SBU</th><th>Buyer</th><th>Style</th><th>Item</th><th>Qty</th><th>Status</th></tr></thead>
-        <tbody><tr><td colspan="7" style="text-align:center;color:var(--ink-soft)">Loading…</td></tr></tbody>
+        <thead><tr><th>Date</th><th>SBU</th><th>Buyer</th><th>IR</th><th>Style</th><th>Color</th><th>Qty</th><th>Status</th></tr></thead>
+        <tbody><tr><td colspan="8" style="text-align:center;color:var(--ink-soft)">Loading…</td></tr></tbody>
       </table>
     </div>
   `;
+  addColorRow("ss");
+  ssSelCtrl = wireStyleSelector("ss", (sel) => refreshColorOptions("ss", sel.detail));
   loadSizeSetEntries();
 }
 
 async function saveSizeSet() {
   if (typeof tcBlockIfGuest === 'function' && tcBlockIfGuest('Saving a Size-Set entry')) return;
   const msg = document.getElementById("ssMsg");
+  const sel = ssSelCtrl ? ssSelCtrl.getSel() : { ir: "", detail: null };
+  if (!sel.ir) {
+    msg.textContent = "Select SBU, Buyer, and IR first.";
+    msg.className = "form-msg err show";
+    return;
+  }
+  const d = sel.detail || {};
+  const colors = getColorRows("ss").map(r => r.color).filter(Boolean);
+  const comments = document.getElementById("ssComments").value;
   const entry = {
     date: document.getElementById("ssDate").value,
-    sbu: document.getElementById("ssSbu").value,
-    buyer: document.getElementById("ssBuyer").value,
-    styleNo: document.getElementById("ssStyle").value,
-    ir: document.getElementById("ssIr").value,
-    season: document.getElementById("ssSeason").value,
-    item: document.getElementById("ssItem").value,
-    embellishmentType: document.getElementById("ssEmb").value,
-    productType: document.getElementById("ssProductType").value,
+    sizeSetBy: document.getElementById("ssBy").value,
+    sbu: sel.sbu,
+    buyer: sel.buyer,
+    ir: sel.ir,
+    styleNo: d.styleName || "",
+    season: d.season || "",
+    item: d.item || "",
+    embellishmentType: d.embellishmentCategory || "",
     orderType: document.getElementById("ssOrderType").value,
-    colorCount: document.getElementById("ssColorCount").value,
+    productType: document.getElementById("ssProductType").value,
     plannedQty: document.getElementById("ssPlannedQty").value,
+    colors: colors,
+    color: colors.join(", "),
+    colorCount: colors.length ? colors.length + "COLOR" : "",
     status: document.getElementById("ssStatus").value,
-    correctionType: document.getElementById("ssCorrection").value,
-    remarks: document.getElementById("ssRemarks").value,
+    comments: comments,
+    remarks: comments,
   };
-  if (!entry.styleNo) { msg.textContent = "Style No. is required."; msg.className = "form-msg err show"; return; }
   try {
     const res = await qaApi({ action: "saveSizeSet", entry: entry });
     if (!res.ok) throw new Error(res.error || "Save failed");
@@ -923,12 +847,139 @@ async function saveSizeSet() {
 
 async function loadSizeSetEntries() {
   const tbody = document.querySelector("#ssTable tbody");
+  if (!tbody) return;
   try {
     const res = await qaApi({ action: "listSizeSet" });
     if (!res.ok) throw new Error(res.error || "Failed to load");
+    if (!res.entries.length) { tbody.innerHTML = `<tr><td colspan="8" style="text-align:center;color:var(--ink-soft)">No entries yet.</td></tr>`; return; }
+    tbody.innerHTML = res.entries.slice().reverse().map(e => {
+      const colorTxt = e.color || (Array.isArray(e.colors) ? e.colors.join(", ") : "");
+      return `<tr><td>${esc(e.date)}</td><td>${esc(e.sbu)}</td><td>${esc(e.buyer)}</td><td>${esc(e.ir)}</td><td>${esc(e.styleNo)}</td><td>${esc(colorTxt || "—")}</td><td>${esc(e.plannedQty)}</td><td>${esc(e.status)}</td></tr>`;
+    }).join("");
+  } catch (err) {
+    tbody.innerHTML = `<tr><td colspan="8" style="text-align:center;color:var(--reject)">${esc(err.message)}</td></tr>`;
+  }
+}
+
+// ---------------------------------------------------------------
+// PP Meeting tab (matches For_PP_Meeting_and_Size-Set.xlsx → "PP Meeting")
+// Same SBU → Buyer → IR selector as RA; Embellishment Type auto-fills
+// from Order Information; colors come from the IR's color list.
+// ---------------------------------------------------------------
+const PP_COMMENT_FIELDS = ["General Comments", "Cutting", "Embellishment", "Sewing", "Measurements", "Testing", "Wash", "Finishing", "Packing", "Carton"];
+let ppSelCtrl = null;
+
+function renderPPMeeting() {
+  colorDetail.pp = null;
+  const el = document.getElementById("tabContent");
+  el.innerHTML = `
+    <div class="qa-head">
+      <div class="eyebrow">Quality Process</div>
+      <h1>PP Meeting</h1>
+    </div>
+    ${styleSelectorHTML("pp")}
+    <div class="panel" style="margin-bottom:24px">
+      <h3>PP Meeting Information</h3>
+      <div class="form-grid">
+        <div class="field"><label>PP Meeting Date</label><input id="ppDate" type="date"></div>
+        <div class="field"><label>PP Meeting by</label><input id="ppBy"></div>
+        <div class="field"><label>Order Type</label>
+          <select id="ppOrderType"><option>New</option><option>Repeat</option><option>Special</option></select>
+        </div>
+        <div class="field"><label>Embellishment Type</label><input id="ppEmb" readonly placeholder="Auto-fills from Order Information"></div>
+        <div class="field"><label>Product Type</label>
+          <select id="ppProductType"><option>Wash</option><option>Non-Wash</option></select>
+        </div>
+        <div class="field"><label>Planned Qty</label><input id="ppPlannedQty" type="number" min="0"></div>
+      </div>
+    </div>
+    <div class="panel" style="margin-bottom:24px">
+      <h3>Color, Fiber Composition &amp; Fabric Type</h3>
+      <div id="ppColorRows"></div>
+      <button type="button" class="btn btn-ghost" onclick="addColorRow('pp')">+ Add Color</button>
+    </div>
+    <div class="panel" style="margin-bottom:24px">
+      <h3>Requirements &amp; Comments</h3>
+      <div class="form-grid">
+        <div class="field"><label>All Requirements and Parameter review</label>
+          <select id="ppReview"><option>Yes</option><option>No</option><option>N/A</option></select>
+        </div>
+      </div>
+      <h3 style="margin-top:6px">PP Meeting Comments</h3>
+      <div class="form-grid">
+        ${PP_COMMENT_FIELDS.map((f, i) => `
+          <div class="field"${i === 0 ? ' style="grid-column:1/-1"' : ""}><label>${esc(f)}</label><textarea id="ppc_${i}" rows="2"></textarea></div>
+        `).join("")}
+      </div>
+      <button class="btn btn-primary" onclick="savePPMeeting()">Save Entry →</button>
+      <div id="ppMsg" class="form-msg"></div>
+    </div>
+    <div class="panel">
+      <h3>Recent PP Meeting Entries</h3>
+      <table class="qa-table" id="ppTable">
+        <thead><tr><th>Date</th><th>SBU</th><th>Buyer</th><th>IR</th><th>Style</th><th>PP by</th><th>Requirements Review</th></tr></thead>
+        <tbody><tr><td colspan="7" style="text-align:center;color:var(--ink-soft)">Loading…</td></tr></tbody>
+      </table>
+    </div>
+  `;
+  addColorRow("pp");
+  ppSelCtrl = wireStyleSelector("pp", (sel) => {
+    refreshColorOptions("pp", sel.detail);
+    document.getElementById("ppEmb").value = (sel.detail && sel.detail.embellishmentCategory) || "";
+  });
+  loadPPMeetingEntries();
+}
+
+async function savePPMeeting() {
+  if (typeof tcBlockIfGuest === 'function' && tcBlockIfGuest('Saving a PP Meeting entry')) return;
+  const msg = document.getElementById("ppMsg");
+  const sel = ppSelCtrl ? ppSelCtrl.getSel() : { ir: "", detail: null };
+  if (!sel.ir) {
+    msg.textContent = "Select SBU, Buyer, and IR first.";
+    msg.className = "form-msg err show";
+    return;
+  }
+  const d = sel.detail || {};
+  const comments = {};
+  PP_COMMENT_FIELDS.forEach((f, i) => { comments[f] = document.getElementById("ppc_" + i).value; });
+  const entry = {
+    date: document.getElementById("ppDate").value,
+    ppBy: document.getElementById("ppBy").value,
+    sbu: sel.sbu,
+    buyer: sel.buyer,
+    ir: sel.ir,
+    styleNo: d.styleName || "",
+    season: d.season || "",
+    item: d.item || "",
+    orderType: document.getElementById("ppOrderType").value,
+    embellishmentType: document.getElementById("ppEmb").value,
+    productType: document.getElementById("ppProductType").value,
+    plannedQty: document.getElementById("ppPlannedQty").value,
+    colors: getColorRows("pp").filter(r => r.color || r.fiber || r.fabric),
+    requirementsReview: document.getElementById("ppReview").value,
+    comments: comments,
+  };
+  try {
+    const res = await qaApi({ action: "savePPMeeting", entry: entry });
+    if (!res.ok) throw new Error(res.error || "Save failed");
+    msg.textContent = "PP Meeting entry saved.";
+    msg.className = "form-msg ok show";
+    loadPPMeetingEntries();
+  } catch (err) {
+    msg.textContent = err.message;
+    msg.className = "form-msg err show";
+  }
+}
+
+async function loadPPMeetingEntries() {
+  const tbody = document.querySelector("#ppTable tbody");
+  if (!tbody) return;
+  try {
+    const res = await qaApi({ action: "listPPMeeting" });
+    if (!res.ok) throw new Error(res.error || "Failed to load");
     if (!res.entries.length) { tbody.innerHTML = `<tr><td colspan="7" style="text-align:center;color:var(--ink-soft)">No entries yet.</td></tr>`; return; }
     tbody.innerHTML = res.entries.slice().reverse().map(e => `
-      <tr><td>${esc(e.date)}</td><td>${esc(e.sbu)}</td><td>${esc(e.buyer)}</td><td>${esc(e.styleNo)}</td><td>${esc(e.item)}</td><td>${esc(e.plannedQty)}</td><td>${esc(e.status)}</td></tr>
+      <tr><td>${esc(e.date)}</td><td>${esc(e.sbu)}</td><td>${esc(e.buyer)}</td><td>${esc(e.ir)}</td><td>${esc(e.styleNo)}</td><td>${esc(e.ppBy)}</td><td>${esc(e.requirementsReview)}</td></tr>
     `).join("");
   } catch (err) {
     tbody.innerHTML = `<tr><td colspan="7" style="text-align:center;color:var(--reject)">${esc(err.message)}</td></tr>`;
@@ -973,7 +1024,6 @@ function renderTestingSubtabForm() {
         </div>
         <div class="field"><label>Buyer</label>
         <select id="tsBuyer"><option>GS</option><option>AEO</option><option>AERIE</option><option>AEOW</option><option>Adanola</option><option>Women's Best</option><option>Next</option><option>Zalando</option><option>Lounge</option><option>Tchibo</option><option>Myprotein</option><option>IHL</option><option>Oner Active</option></select>
-        </div>
         </div>
         <div class="field"><label>Style</label><input id="tsStyle"></div>
         <div class="field"><label>IR</label><input id="tsIr"></div>
@@ -1055,6 +1105,9 @@ async function loadTestingEntries() {
   }
 }
 
+// ---------------------------------------------------------------
+// Shared stage-form template (used by the remaining process/QA stages)
+// ---------------------------------------------------------------
 let stageSelCtrl = null;
 
 function renderStage(stage, prefill) {
