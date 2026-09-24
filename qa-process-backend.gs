@@ -25,13 +25,18 @@
  *                 Inspection reports, one row per report. These two tabs are
  *                 deliberately separate so neither dashboard can pick up the
  *                 other's inspections.
- * 2. OrderInfo and RARecords are NO LONGER local tabs — they now live in
- *    the shared "Master_Order_Information" Sheet at the Portal's Drive
- *    root (see MASTER_ORDER_SHEET_ID below), so every module reads the
+ * 2. OrderInfo is NO LONGER a local tab — it now lives in the shared
+ *    "Master_Order_Information" Sheet at the Portal's Drive root
+ *    (see MASTER_ORDER_SHEET_ID below), so every module reads the
  *    same copy instead of an imported duplicate.
  * 3. QAUsers is NO LONGER a local tab either — logins now live in the
  *    shared "User_Management" Sheet at the Portal's Drive root, in a
  *    "QAUsers" tab (see USER_MANAGEMENT_SHEET_ID below).
+ * NOTE: Module 04 (QA Process) and Module 05 (Risk Assessment) are fully
+ *       independent modules — this script has no reference to Module 05's
+ *       Sheet or its RARecords at all. This module's OWN Risk Assessment
+ *       stage (the "QualityRA" tab, part of Style Tracking) is a separate,
+ *       unrelated form.
  * NOTE: Module 7 also stores inspection photos in a Drive folder called
  *       "JM Fabrics Inspection Photos", created automatically on first
  *       upload. After pasting this file in, run any function once and
@@ -49,22 +54,22 @@
 
 const ORDERS_SHEET = "Orders";
 const SIZESET_SHEET = "SizeSet";
+const PPMEETING_SHEET = "PPMeeting";
+const PPMEETING_HEADERS = ["Date","SBU","Buyer","IR","StyleNo","Season","Item","PPby","OrderType","EmbellishmentType","ProductType","PlannedQty","ColorsJSON","RequirementsReview","CommentsJSON","CreatedAt"];
 const TESTING_SHEET = "Testing";
 const ENTRIES_SHEET = "Entries";
 const QA_USERS_SHEET = "QAUsers";
 
 // ---- Centralized cross-module Sheets (Taherconsultingbd Portal / Drive root) ----
-// OrderInfo, RARecords and every module's login now live OUTSIDE this
-// spreadsheet, in two shared Sheets so every module reads/writes the same
-// copy instead of keeping its own duplicate.
+// OrderInfo and every module's login now live OUTSIDE this spreadsheet, in
+// two shared Sheets so every module reads the same copy instead of keeping
+// its own duplicate. (RARecords stays fully inside Module 05 — no link here.)
 const MASTER_ORDER_SHEET_ID = "1DE8KrlS6LLTDdhKIg4YgM3ZSsdZmxyzAR7BBAZJ5--U"; // Master_Order_Information
 const USER_MANAGEMENT_SHEET_ID = "1s0i82BmF6T5C7_yNf970cK2Gb3qJ3-7tKqAWM-0vzbw"; // User_Management
 const ORDERINFO_SHEET = "OrderInfo";   // tab inside Master_Order_Information
-const RARECORDS_SHEET = "RARecords";   // tab inside Master_Order_Information
 // This Quality Process module's own Risk Assessment stage form
-// (matches Quality_Process_Data_Entry.xlsx) — separate from the
-// RARECORDS_SHEET reference copy above, and separate from the
-// standalone RA Process module.
+// (matches Quality_Process_Data_Entry.xlsx) — fully separate from, and
+// with no code link to, the standalone Module 05 RA Process module.
 const QARA_SHEET = "QualityRA";
 const QARA_HEADERS = ["Timestamp","SBU","Buyer","IR","StyleNo","RADate","RAby","OrderType","ChangesJSON","RiskDecision","ActionComments"];
 const QARA_CHANGE_ROWS = ["Fabric","Pattern (Measurements)","Construction","Print","Embroidery","Wash","Additional Changes (If Any)"];
@@ -102,6 +107,9 @@ function doPost(e) {
   if (action === "saveSizeSet") return saveSizeSet_(body.entry);
   if (action === "listSizeSet") return jsonResponse_({ ok: true, entries: listSizeSet_() });
 
+  if (action === "savePPMeeting") return savePPMeeting_(body.entry);
+  if (action === "listPPMeeting") return jsonResponse_({ ok: true, entries: listPPMeeting_() });
+
   if (action === "saveTesting") return saveTesting_(body.entry);
   if (action === "listTesting") return jsonResponse_({ ok: true, entries: listTesting_(body.testType) });
 
@@ -116,7 +124,6 @@ function doPost(e) {
   if (action === "listBuyers") return jsonResponse_({ ok: true, buyers: listDistinctFiltered_(1, { 0: body.sbu }) });
   if (action === "listIrs") return jsonResponse_({ ok: true, irs: listDistinctFiltered_(2, { 0: body.sbu, 1: body.buyer }) });
   if (action === "getOrderDetail") return jsonResponse_({ ok: true, detail: getOrderDetail_(body.sbu, body.buyer, body.ir) });
-  if (action === "getRA") return jsonResponse_({ ok: true, record: getRAForIr_(body.sbu, body.buyer, body.ir) });
 
   // ---- Module 7: Pre-Final / Final Inspection ----
   if (action === "listPreFinal") return jsonResponse_({ ok: true, reports: listInspectionReports_(PREFINAL_SHEET) });
@@ -195,6 +202,55 @@ function listSizeSet_() {
       date: r[0], sbu: r[1], buyer: r[2], styleNo: r[3], ir: r[4], season: r[5], item: r[6],
       embellishmentType: r[7], productType: r[8], orderType: r[9], colorCount: r[10],
       plannedQty: r[11], status: r[12], correctionType: r[13], remarks: r[14], createdAt: r[15]
+    });
+  }
+  return out;
+}
+
+// ---------- PP Meeting ----------
+
+function savePPMeeting_(entry) {
+  entry = entry || {};
+  const sheet = getSheet_(PPMEETING_SHEET, PPMEETING_HEADERS);
+  sheet.appendRow([
+    entry.date || "", entry.sbu || "", entry.buyer || "", entry.ir || "", entry.styleNo || "",
+    entry.season || "", entry.item || "", entry.ppBy || "", entry.orderType || "",
+    entry.embellishmentType || "", entry.productType || "", entry.plannedQty || "",
+    JSON.stringify(entry.colors || []), entry.requirementsReview || "",
+    JSON.stringify(entry.comments || {}), new Date()
+  ]);
+
+  // Mirror a summary row into Entries so Style Tracking's per-stage
+  // rollup (buildStyleStatus_) sees this PP Meeting submission too.
+  const statusMap = { "Yes": "Done", "No": "Open", "N/A": "In Progress" };
+  saveEntry_({
+    stage: "ppmeeting",
+    orderNo: "",
+    styleNo: entry.styleNo || "",
+    irNo: entry.ir || "",
+    inspector: entry.ppBy || "",
+    status: statusMap[entry.requirementsReview] || "Open",
+    score: "",
+    notes: "PP Meeting — " + (entry.orderType || "")
+  });
+
+  return jsonResponse_({ ok: true });
+}
+
+function listPPMeeting_() {
+  const sheet = getSheet_(PPMEETING_SHEET, PPMEETING_HEADERS);
+  const rows = sheet.getDataRange().getValues();
+  const out = [];
+  for (let i = 1; i < rows.length; i++) {
+    const r = rows[i];
+    if (!r[4]) continue; // StyleNo required
+    let colors = [], comments = {};
+    try { colors = JSON.parse(r[12] || "[]"); } catch (e) {}
+    try { comments = JSON.parse(r[14] || "{}"); } catch (e) {}
+    out.push({
+      date: r[0], sbu: r[1], buyer: r[2], ir: r[3], styleNo: r[4], season: r[5], item: r[6],
+      ppBy: r[7], orderType: r[8], embellishmentType: r[9], productType: r[10], plannedQty: r[11],
+      colors: colors, requirementsReview: r[13], comments: comments, createdAt: r[15]
     });
   }
   return out;
@@ -355,23 +411,6 @@ function getOrderDetail_(sbu, buyer, ir) {
     colors: Object.keys(colorMap).map(c => ({ color: c, qty: colorMap[c] })),
     totalQty: total, lineCount: rows.length
   };
-}
-
-function getRAForIr_(sbu, buyer, ir) {
-  const sheet = getMasterSheet_().getSheetByName(RARECORDS_SHEET);
-  if (!sheet) return null;
-  const wantSbu = normValOI_(sbu), wantBuyer = normValOI_(buyer), wantIr = normValOI_(ir);
-  const rows = sheet.getDataRange().getValues();
-  for (let i = rows.length - 1; i >= 1; i--) {
-    const r = rows[i];
-    if (normValOI_(r[0]) === wantSbu && normValOI_(r[1]) === wantBuyer && normValOI_(r[2]) === wantIr) {
-      let complexity = {}, reasons = {};
-      try { complexity = JSON.parse(r[8] || "{}"); } catch (e) {}
-      try { reasons = JSON.parse(r[9] || "{}"); } catch (e) {}
-      return { sbu: r[0], buyer: r[1], ir: r[2], styleName: r[3], overallComplexity: r[10], complexity: complexity, reasons: reasons };
-    }
-  }
-  return null;
 }
 
 // ---------- Quality Process's own Risk Assessment (RA) stage ----------
@@ -583,8 +622,7 @@ function getSheet_(name, headers) {
   return sheet;
 }
 
-// Shared Master_Order_Information Sheet (OrderInfo + RARecords tabs) — same
-// file every module (QA Process, RA Process, etc.) reads from.
+// Shared Master_Order_Information Sheet (OrderInfo tab).
 function getMasterSheet_() {
   return SpreadsheetApp.openById(MASTER_ORDER_SHEET_ID);
 }
