@@ -606,7 +606,7 @@ async function loadStyleTrackingResults() {
       <div class="panel">
         <h3>Stage-by-Stage Progress</h3>
         <table class="qa-table">
-          <thead><tr><th>Stage</th><th>Status</th><th>Entries</th><th>Last Update</th><th></th></tr></thead>
+          <thead><tr><th>Stage</th><th>Status</th><th>Entries</th><th>Last Update</th><th>Details</th><th></th></tr></thead>
           <tbody>
             ${ALL_STAGES.map(s => {
               const rows = byStage[s.id] || [];
@@ -620,7 +620,15 @@ async function loadStyleTrackingResults() {
                   <td><span class="status-pill ${esc(pillClass)}">${esc(label)}</span></td>
                   <td>${rows.length}</td>
                   <td>${esc(String(last))}</td>
+                  <td>${rows.length
+                    ? `<button class="btn btn-ghost" style="padding:4px 10px;font-size:11.5px" id="detailsBtn-${s.id}" onclick="toggleStageDetailRow('${s.id}')">👁 See Details</button>`
+                    : `<span style="color:var(--ink-soft)">—</span>`}</td>
                   <td><button class="btn btn-ghost" style="padding:4px 10px;font-size:11.5px" onclick="goToStageForTracking('${s.id}')">+ Add Entry</button></td>
+                </tr>
+                <tr id="detailsRow-${s.id}" style="display:none">
+                  <td colspan="6" style="background:var(--paper);padding:14px 12px">
+                    ${renderStageDetailRows(rows)}
+                  </td>
                 </tr>
               `;
             }).join("")}
@@ -631,6 +639,53 @@ async function loadStyleTrackingResults() {
   } catch (err) {
     el.innerHTML = `<div class="panel" style="color:var(--reject)">${esc(err.message)}</div>`;
   }
+}
+
+// Expand/collapse the process-entry details for one stage, inline
+// below its row in the Stage-by-Stage Progress table.
+function toggleStageDetailRow(stageId) {
+  const row = document.getElementById(`detailsRow-${stageId}`);
+  const btn = document.getElementById(`detailsBtn-${stageId}`);
+  if (!row) return;
+  const showing = row.style.display !== "none";
+  row.style.display = showing ? "none" : "table-row";
+  if (btn) btn.textContent = showing ? "👁 See Details" : "▲ Hide Details";
+}
+
+// Renders each stage's process entries (already fetched via
+// styleStatus, filtered to the selected SBU/Buyer/IR) as a small
+// table. Field set adapts to whatever the entry actually carries,
+// since different stages (AQL process, RA, Testing, etc.) log
+// different columns.
+function renderStageDetailRows(rows) {
+  if (!rows || !rows.length) {
+    return `<div style="color:var(--ink-soft);font-size:13px">No process entries yet.</div>`;
+  }
+  const preferredCols = ["timestamp", "date", "mode", "inspector", "inspectedBy", "line",
+    "styleNo", "size", "color", "status", "result", "score", "notes", "comments"];
+  const colLabels = {
+    timestamp: "Date", date: "Date", mode: "Mode", inspector: "Inspector", inspectedBy: "Inspected By",
+    line: "Line", styleNo: "Style", size: "Size", color: "Color", status: "Status", result: "Result",
+    score: "Score", notes: "Notes", comments: "Comments",
+  };
+  const presentCols = preferredCols.filter(k => rows.some(r => r[k] !== undefined && r[k] !== "" && r[k] !== null));
+  const cols = presentCols.length ? presentCols : Object.keys(rows[0]).filter(k => typeof rows[0][k] !== "object");
+  return `
+    <table class="qa-table" style="font-size:12.5px">
+      <thead><tr>${cols.map(c => `<th>${esc(colLabels[c] || c)}</th>`).join("")}</tr></thead>
+      <tbody>
+        ${rows.map(r => `
+          <tr>${cols.map(c => {
+            const v = r[c];
+            if (c === "status" || c === "result") {
+              return `<td><span class="status-pill ${esc(String(v||"Open").replace(" ","-"))}">${esc(String(v||""))}</span></td>`;
+            }
+            return `<td>${esc(v !== undefined && v !== null ? String(v) : "")}</td>`;
+          }).join("")}</tr>
+        `).join("")}
+      </tbody>
+    </table>
+  `;
 }
 
 function goToStageForTracking(stageId) {
@@ -1296,6 +1351,53 @@ function toggleAqlMode() {
   document.getElementById("aqlCheckContextField").style.display = isRmg ? "" : "none";
   document.getElementById("aqlSamplingField").style.display = isRmg ? "" : "none";
   document.getElementById("aqlSampleSizeField").style.display = isRmg ? "" : "none";
+  updateAqlSampling();
+}
+
+// ---------------------------------------------------------------
+// Auto Sampling Calculation — ANSI/ASQ Z1.4 (ISO 2859-1), General
+// Inspection Level II, Single Sampling Plan, Normal Inspection.
+// AQL 1.5 for Major/Minor (fixed above), AQL 0 / zero-tolerance for
+// Critical. Sample Size + Defect Allowed (Ac) auto-fill from Lot Qty,
+// same behaviour as the Pre-Final / Final Inspection AQL calculator.
+// ---------------------------------------------------------------
+const AQL_SAMPLING_TABLE = [
+  { max: 8,       sample: 2,    ac: 0 },
+  { max: 15,      sample: 3,    ac: 0 },
+  { max: 25,      sample: 5,    ac: 0 },
+  { max: 50,      sample: 8,    ac: 0 },
+  { max: 90,      sample: 13,   ac: 1 },
+  { max: 150,     sample: 20,   ac: 1 },
+  { max: 280,     sample: 32,   ac: 2 },
+  { max: 500,     sample: 50,   ac: 3 },
+  { max: 1200,    sample: 80,   ac: 5 },
+  { max: 3200,    sample: 125,  ac: 7 },
+  { max: 10000,   sample: 200,  ac: 10 },
+  { max: 35000,   sample: 315,  ac: 14 },
+  { max: 150000,  sample: 500,  ac: 21 },
+  { max: 500000,  sample: 800,  ac: 21 },
+  { max: Infinity,sample: 1250, ac: 21 },
+];
+
+function calcAqlSampling(lotQty) {
+  const qty = Number(lotQty) || 0;
+  if (qty <= 0) return null;
+  const row = AQL_SAMPLING_TABLE.find(r => qty <= r.max) || AQL_SAMPLING_TABLE[AQL_SAMPLING_TABLE.length - 1];
+  return { sampleSize: row.sample, allowedCritical: 0, allowedMajor: row.ac, allowedMinor: row.ac };
+}
+
+function updateAqlSampling() {
+  const lotInput = document.getElementById("aqlLotQty");
+  const sizeInput = document.getElementById("aqlSampleSize");
+  const cInput = document.getElementById("aqlAllowedCritical");
+  const mInput = document.getElementById("aqlAllowedMajor");
+  const nInput = document.getElementById("aqlAllowedMinor");
+  if (!lotInput || !sizeInput) return;
+  const r = calcAqlSampling(lotInput.value);
+  sizeInput.value = r ? r.sampleSize : "";
+  cInput.value = r ? r.allowedCritical : "";
+  mInput.value = r ? r.allowedMajor : "";
+  nInput.value = r ? r.allowedMinor : "";
 }
 
 function toggleAqlNoDefect() {
@@ -1410,15 +1512,18 @@ function renderAqlProcessStage(stageId, label) {
     </div>
 
     <div class="panel" style="margin-bottom:24px">
-      <h3>Lot / Defect Summary</h3>
+      <h3 style="display:flex;align-items:center;justify-content:space-between">
+        <span>Lot / Defect Summary</span>
+        <span style="font-weight:400;font-size:11.5px;color:var(--ink-soft)">Sample Size &amp; Defect Allowed auto-calculate from Lot Qty (ANSI/ASQ Z1.4, Level II, Normal)</span>
+      </h3>
       <div class="form-grid">
-        <div class="field"><label>Lot Qty</label><input id="aqlLotQty" type="number" min="0"></div>
-        <div class="field" id="aqlSampleSizeField"><label>Sample Size</label><input id="aqlSampleSize" type="number" min="0"></div>
+        <div class="field"><label>Lot Qty</label><input id="aqlLotQty" type="number" min="0" oninput="updateAqlSampling()"></div>
+        <div class="field" id="aqlSampleSizeField"><label>Sample Size (auto)</label><input id="aqlSampleSize" type="number" min="0" readonly></div>
       </div>
       <div class="form-grid" style="grid-template-columns:1fr 1fr 1fr">
-        <div class="field"><label>Defect Allowed — Critical</label><input id="aqlAllowedCritical" type="number" min="0"></div>
-        <div class="field"><label>Defect Allowed — Major</label><input id="aqlAllowedMajor" type="number" min="0"></div>
-        <div class="field"><label>Defect Allowed — Minor</label><input id="aqlAllowedMinor" type="number" min="0"></div>
+        <div class="field"><label>Defect Allowed — Critical (auto)</label><input id="aqlAllowedCritical" type="number" min="0" readonly></div>
+        <div class="field"><label>Defect Allowed — Major (auto)</label><input id="aqlAllowedMajor" type="number" min="0" readonly></div>
+        <div class="field"><label>Defect Allowed — Minor (auto)</label><input id="aqlAllowedMinor" type="number" min="0" readonly></div>
       </div>
       <div class="form-grid" style="grid-template-columns:1fr 1fr 1fr">
         <div class="field"><label>Found Defect — Critical</label><input id="aqlFoundCritical" type="number" min="0"></div>
@@ -1467,6 +1572,7 @@ function renderAqlProcessStage(stageId, label) {
     document.getElementById("aqlColorCustom").style.display = document.getElementById("aqlColor").value === "__custom__" ? "" : "none";
   });
   addAqlFindingRow();
+  updateAqlSampling();
   loadAqlProcessEntries();
 }
 
