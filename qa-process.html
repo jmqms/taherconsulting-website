@@ -154,6 +154,7 @@ const PROCESS_STAGES = [
   { id: "embroidery", label: "Embroidery" },
   { id: "sewing", label: "Sewing" },
   { id: "wash", label: "Wash" },
+  { id: "heatseal", label: "Heat-Seal" },
   { id: "physicalfunctional", label: "Physical/Functional Test" },
   { id: "testing", label: "Testing" },
   { id: "finishing", label: "Finishing" },
@@ -434,6 +435,10 @@ function loadTab(id) {
   if (id === "ppmeeting") return renderPPMeeting();
   if (id === "physicalfunctional") return renderPhysicalFunctional();
   if (id === "testing") return renderTesting();
+  if (id === "print" || id === "embroidery" || id === "wash" || id === "heatseal") {
+    const st = ALL_STAGES.find(s => s.id === id);
+    return renderAqlProcessStage(id, st.label);
+  }
   if (id === "ra") return renderRiskAssessment();
   const stage = ALL_STAGES.find(s => s.id === id);
   if (stage) return renderStage(stage);
@@ -774,7 +779,7 @@ async function loadQualityRAEntries() {
 //   kind "ss" → color only
 //   kind "pp" → color + fiber composition + fabric type
 // ---------------------------------------------------------------
-let colorDetail = { ss: null, pp: null, pf: null };
+let colorDetail = { ss: null, pp: null, pf: null, aql: null };
 
 function colorOptionsHTML(detail, selected) {
   const names = ((detail && detail.colors) || []).map(c => c.color).filter(Boolean);
@@ -1269,6 +1274,273 @@ async function loadPhysicalFunctionalEntries() {
     ).join("");
   } catch (err) {
     tbody.innerHTML = `<tr><td colspan="9" style="text-align:center;color:var(--reject)">${esc(err.message)}</td></tr>`;
+  }
+}
+
+// ---------------------------------------------------------------
+// Printing / Embroidery / Wash / Heat-Seal — shared AQL process form
+// (matches Printing__Embroidery__Wash__Heat-Seal.xlsx). One shared
+// function renders all four stages (only one tab is on screen at a
+// time, so fixed "aql" element IDs are safe). RMG = sampling-based
+// spot check (needs 1st Bundle / Inline Check context + Sampling
+// Plan/Sample Size); FPU = Main Process 100% Check (same form, minus
+// the sampling-specific fields).
+// ---------------------------------------------------------------
+let aqlSelCtrl = null;
+let currentAqlStage = null;
+
+const AQL_CHECKPOINTS = ["Approval", "Shading", "Measurements", "Grading", "Test Report", "Hand feel", "Placement", "Design", "SPI", "Tension", "Process Parameter", "Calibration"];
+
+function toggleAqlMode() {
+  const isRmg = document.querySelector('input[name="aqlMode"]:checked').value === "RMG";
+  document.getElementById("aqlCheckContextField").style.display = isRmg ? "" : "none";
+  document.getElementById("aqlSamplingField").style.display = isRmg ? "" : "none";
+  document.getElementById("aqlSampleSizeField").style.display = isRmg ? "" : "none";
+}
+
+function toggleAqlNoDefect() {
+  const checked = document.getElementById("aqlNoDefect").checked;
+  document.getElementById("aqlFindingsBox").style.display = checked ? "none" : "";
+}
+
+function addAqlFindingRow() {
+  const box = document.getElementById("aqlFindingsRows");
+  if (!box) return;
+  const row = document.createElement("div");
+  row.className = "form-grid aql-finding-row";
+  row.style.gridTemplateColumns = "2fr 1fr 1fr auto";
+  row.innerHTML = `
+    <div class="field"><label>Defect Name</label><input class="af-name"></div>
+    <div class="field"><label>Defect Type</label><select class="af-type"><option>Critical</option><option>Major</option><option>Minor</option></select></div>
+    <div class="field"><label>Qty</label><input class="af-qty" type="number" min="0"></div>
+    <button type="button" class="btn btn-ghost" style="align-self:end" onclick="this.closest('.aql-finding-row').remove()">✕</button>
+  `;
+  box.appendChild(row);
+}
+
+function getAqlFindingRows() {
+  return Array.from(document.querySelectorAll("#aqlFindingsRows .aql-finding-row")).map(r => ({
+    name: r.querySelector(".af-name").value.trim(),
+    type: r.querySelector(".af-type").value,
+    qty: Number(r.querySelector(".af-qty").value || 0)
+  })).filter(f => f.name || f.qty);
+}
+
+function refreshAqlColor(detail) {
+  colorDetail.aql = detail || null;
+  const sel = document.getElementById("aqlColor");
+  const custom = document.getElementById("aqlColorCustom");
+  if (!sel) return;
+  const wasCustom = sel.value === "__custom__";
+  sel.innerHTML = colorOptionsHTML(colorDetail.aql, sel.value);
+  if (custom) custom.style.display = wasCustom ? "" : "none";
+}
+
+function renderAqlProcessStage(stageId, label) {
+  currentAqlStage = stageId;
+  colorDetail.aql = null;
+  const el = document.getElementById("tabContent");
+  el.innerHTML = `
+    <div class="qa-head">
+      <div class="eyebrow">Quality Process</div>
+      <h1>${esc(label)}</h1>
+    </div>
+    ${styleSelectorHTML("aql")}
+
+    <div class="panel" style="margin-bottom:24px">
+      <h3>Inspection Type</h3>
+      <div class="form-grid">
+        <div class="field">
+          <label>Select</label>
+          <div style="display:flex;gap:16px;padding-top:8px">
+            <label style="display:flex;align-items:center;gap:6px;font-weight:400"><input type="radio" name="aqlMode" value="RMG" checked style="width:auto" onchange="toggleAqlMode()"> RMG</label>
+            <label style="display:flex;align-items:center;gap:6px;font-weight:400"><input type="radio" name="aqlMode" value="FPU" style="width:auto" onchange="toggleAqlMode()"> FPU (Main Process 100% Check)</label>
+          </div>
+        </div>
+        <div class="field" id="aqlCheckContextField">
+          <label>Check Context</label>
+          <select id="aqlCheckContext"><option>1st Bundle</option><option>Inline Check</option></select>
+        </div>
+      </div>
+    </div>
+
+    <div class="panel" style="margin-bottom:24px">
+      <h3>Inspection Information</h3>
+      <div class="form-grid">
+        <div class="field"><label>Inspection Date</label><input id="aqlDate" type="date"></div>
+        <div class="field"><label>Inspected by</label><input id="aqlInspectedBy"></div>
+        <div class="field"><label>Inspection Process</label><input id="aqlProcess" value="${esc(label)}" readonly></div>
+        <div class="field"><label>Line</label><input id="aqlLine"></div>
+        <div class="field"><label>Buyer</label><input id="aqlBuyer" readonly></div>
+        <div class="field"><label>Style</label><input id="aqlStyle" readonly></div>
+        <div class="field"><label>Size</label><input id="aqlSize"></div>
+        <div class="field"><label>Color</label>
+          <select id="aqlColor">${colorOptionsHTML(null, "")}</select>
+          <input id="aqlColorCustom" placeholder="Type color name" style="display:none;margin-top:6px">
+        </div>
+        <div class="field"><label>Compare With</label><input id="aqlCompareWith" placeholder="e.g. Approved swatch / photo"></div>
+      </div>
+    </div>
+
+    <div class="panel" style="margin-bottom:24px">
+      <h3>Check Points</h3>
+      <table class="qa-table">
+        <thead><tr><th>Check Point</th><th>Yes/No/NA</th><th>Result</th><th>Comments</th></tr></thead>
+        <tbody>
+          ${AQL_CHECKPOINTS.map((cp, i) => `
+            <tr>
+              <td>${esc(cp)}</td>
+              <td><select id="aqlCp${i}Yn"><option value="">—</option><option>Yes</option><option>No</option><option>N/A</option></select></td>
+              <td><select id="aqlCp${i}Result"><option value="">—</option><option>Pass</option><option>Fail</option><option>N/A</option></select></td>
+              <td><input id="aqlCp${i}Comments"></td>
+            </tr>
+          `).join("")}
+        </tbody>
+      </table>
+    </div>
+
+    <div class="panel" style="margin-bottom:24px" id="aqlSamplingField">
+      <h3>Sampling Plan &amp; AQL</h3>
+      <div class="form-grid">
+        <div class="field"><label>Sampling Plan</label><input value="Single Sampling Plan for Normal Inspection" readonly></div>
+        <div class="field"><label>AQL — Critical</label><input value="0" readonly></div>
+        <div class="field"><label>AQL — Major</label><input value="1.5" readonly></div>
+        <div class="field"><label>AQL — Minor</label><input value="1.5" readonly></div>
+      </div>
+    </div>
+
+    <div class="panel" style="margin-bottom:24px">
+      <h3>Lot / Defect Summary</h3>
+      <div class="form-grid">
+        <div class="field"><label>Lot Qty</label><input id="aqlLotQty" type="number" min="0"></div>
+        <div class="field" id="aqlSampleSizeField"><label>Sample Size</label><input id="aqlSampleSize" type="number" min="0"></div>
+      </div>
+      <div class="form-grid" style="grid-template-columns:1fr 1fr 1fr">
+        <div class="field"><label>Defect Allowed — Critical</label><input id="aqlAllowedCritical" type="number" min="0"></div>
+        <div class="field"><label>Defect Allowed — Major</label><input id="aqlAllowedMajor" type="number" min="0"></div>
+        <div class="field"><label>Defect Allowed — Minor</label><input id="aqlAllowedMinor" type="number" min="0"></div>
+      </div>
+      <div class="form-grid" style="grid-template-columns:1fr 1fr 1fr">
+        <div class="field"><label>Found Defect — Critical</label><input id="aqlFoundCritical" type="number" min="0"></div>
+        <div class="field"><label>Found Defect — Major</label><input id="aqlFoundMajor" type="number" min="0"></div>
+        <div class="field"><label>Found Defect — Minor</label><input id="aqlFoundMinor" type="number" min="0"></div>
+      </div>
+    </div>
+
+    <div class="panel" style="margin-bottom:24px">
+      <h3 style="display:flex;align-items:center;justify-content:space-between">
+        <span>Findings</span>
+        <label style="font-weight:400;font-size:12px;display:flex;align-items:center;gap:6px;cursor:pointer">
+          <input type="checkbox" id="aqlNoDefect" style="width:auto" onchange="toggleAqlNoDefect()"> No Defect Found
+        </label>
+      </h3>
+      <div id="aqlFindingsBox">
+        <div id="aqlFindingsRows"></div>
+        <button type="button" class="btn btn-ghost" onclick="addAqlFindingRow()">+ Add Finding</button>
+      </div>
+    </div>
+
+    <div class="panel" style="margin-bottom:24px">
+      <div class="field"><label>Comments</label><textarea id="aqlComments" rows="3"></textarea></div>
+      <div class="field"><label>Result</label>
+        <select id="aqlResult"><option>Pass</option><option>Fail</option><option>Hold</option></select>
+      </div>
+      <button class="btn btn-primary" onclick="saveAqlProcessStage()">Save Entry →</button>
+      <div id="aqlMsg" class="form-msg"></div>
+    </div>
+
+    <div class="panel">
+      <h3>Recent ${esc(label)} Entries</h3>
+      <table class="qa-table" id="aqlTable">
+        <thead><tr><th>Date</th><th>Mode</th><th>SBU</th><th>Buyer</th><th>IR</th><th>Style</th><th>Color</th><th>Result</th></tr></thead>
+        <tbody><tr><td colspan="8" style="text-align:center;color:var(--ink-soft)">Loading…</td></tr></tbody>
+      </table>
+    </div>
+  `;
+
+  aqlSelCtrl = wireStyleSelector("aql", (sel) => {
+    refreshAqlColor(sel.detail);
+    document.getElementById("aqlBuyer").value = sel.buyer || "";
+    document.getElementById("aqlStyle").value = (sel.detail && sel.detail.styleName) || "";
+  });
+  document.getElementById("aqlColor").addEventListener("change", () => {
+    document.getElementById("aqlColorCustom").style.display = document.getElementById("aqlColor").value === "__custom__" ? "" : "none";
+  });
+  addAqlFindingRow();
+  loadAqlProcessEntries();
+}
+
+async function saveAqlProcessStage() {
+  if (typeof tcBlockIfGuest === 'function' && tcBlockIfGuest('Saving an entry')) return;
+  const msg = document.getElementById("aqlMsg");
+  const sel = aqlSelCtrl ? aqlSelCtrl.getSel() : { ir: "", detail: null };
+  if (!sel.ir) {
+    msg.textContent = "Select SBU, Buyer, and IR first (or switch on Manual Entry above).";
+    msg.className = "form-msg err show";
+    return;
+  }
+  const d = sel.detail || {};
+  const mode = document.querySelector('input[name="aqlMode"]:checked').value;
+  const colorSel = document.getElementById("aqlColor");
+  const colorCustom = document.getElementById("aqlColorCustom");
+  const color = colorSel.value === "__custom__" ? colorCustom.value.trim() : colorSel.value;
+  const checkPoints = AQL_CHECKPOINTS.map((cp, i) => ({
+    point: cp,
+    yn: document.getElementById(`aqlCp${i}Yn`).value,
+    result: document.getElementById(`aqlCp${i}Result`).value,
+    comments: document.getElementById(`aqlCp${i}Comments`).value
+  }));
+  const noDefect = document.getElementById("aqlNoDefect").checked;
+  const findings = noDefect ? [] : getAqlFindingRows();
+  const entry = {
+    process: currentAqlStage,
+    processLabel: document.getElementById("aqlProcess").value,
+    mode: mode,
+    checkContext: mode === "RMG" ? document.getElementById("aqlCheckContext").value : "",
+    date: document.getElementById("aqlDate").value,
+    inspectedBy: document.getElementById("aqlInspectedBy").value,
+    line: document.getElementById("aqlLine").value,
+    sbu: sel.sbu, buyer: sel.buyer, ir: sel.ir,
+    styleNo: d.styleName || "", size: document.getElementById("aqlSize").value,
+    color: color, compareWith: document.getElementById("aqlCompareWith").value,
+    checkPoints: checkPoints,
+    lotQty: document.getElementById("aqlLotQty").value,
+    sampleSize: mode === "RMG" ? document.getElementById("aqlSampleSize").value : "",
+    allowedCritical: document.getElementById("aqlAllowedCritical").value,
+    allowedMajor: document.getElementById("aqlAllowedMajor").value,
+    allowedMinor: document.getElementById("aqlAllowedMinor").value,
+    foundCritical: document.getElementById("aqlFoundCritical").value,
+    foundMajor: document.getElementById("aqlFoundMajor").value,
+    foundMinor: document.getElementById("aqlFoundMinor").value,
+    noDefectFound: noDefect,
+    findings: findings,
+    comments: document.getElementById("aqlComments").value,
+    result: document.getElementById("aqlResult").value,
+  };
+  try {
+    const res = await qaApi({ action: "saveAqlProcess", entry: entry });
+    if (!res.ok) throw new Error(res.error || "Save failed");
+    msg.textContent = "Entry saved.";
+    msg.className = "form-msg ok show";
+    loadAqlProcessEntries();
+  } catch (err) {
+    msg.textContent = err.message;
+    msg.className = "form-msg err show";
+  }
+}
+
+async function loadAqlProcessEntries() {
+  const tbody = document.querySelector("#aqlTable tbody");
+  if (!tbody) return;
+  try {
+    const res = await qaApi({ action: "listAqlProcess", process: currentAqlStage });
+    if (!res.ok) throw new Error(res.error || "Failed to load");
+    if (!res.entries.length) { tbody.innerHTML = `<tr><td colspan="8" style="text-align:center;color:var(--ink-soft)">No entries yet.</td></tr>`; return; }
+    tbody.innerHTML = res.entries.slice().reverse().map(e =>
+      `<tr><td>${esc(e.date)}</td><td>${esc(e.mode)}</td><td>${esc(e.sbu)}</td><td>${esc(e.buyer)}</td><td>${esc(e.ir)}</td><td>${esc(e.styleNo)}</td><td>${esc(e.color)}</td><td>${esc(e.result)}</td></tr>`
+    ).join("");
+  } catch (err) {
+    tbody.innerHTML = `<tr><td colspan="8" style="text-align:center;color:var(--reject)">${esc(err.message)}</td></tr>`;
   }
 }
 
