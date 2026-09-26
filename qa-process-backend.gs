@@ -56,6 +56,8 @@ const ORDERS_SHEET = "Orders";
 const SIZESET_SHEET = "SizeSet";
 const PPMEETING_SHEET = "PPMeeting";
 const PPMEETING_HEADERS = ["Date","SBU","Buyer","IR","StyleNo","Season","Item","PPby","OrderType","EmbellishmentType","ProductType","PlannedQty","ColorsJSON","RequirementsReview","CommentsJSON","CreatedAt"];
+const PHYSICALFUNCTIONAL_SHEET = "PhysicalFunctional";
+const PHYSICALFUNCTIONAL_HEADERS = ["Date","Time","AuditBy","Line","SBU","Buyer","IR","StyleNo","Color","CheckpointsJSON","SampleChecked","PassQty","FailQty","DefectPct","DefectType","Comments","CorrectiveAction","CreatedAt"];
 const TESTING_SHEET = "Testing";
 const ENTRIES_SHEET = "Entries";
 const QA_USERS_SHEET = "QAUsers";
@@ -109,6 +111,9 @@ function doPost(e) {
 
   if (action === "savePPMeeting") return savePPMeeting_(body.entry);
   if (action === "listPPMeeting") return jsonResponse_({ ok: true, entries: listPPMeeting_() });
+
+  if (action === "savePhysicalFunctional") return savePhysicalFunctional_(body.entry);
+  if (action === "listPhysicalFunctional") return jsonResponse_({ ok: true, entries: listPhysicalFunctional_() });
 
   if (action === "saveTesting") return saveTesting_(body.entry);
   if (action === "listTesting") return jsonResponse_({ ok: true, entries: listTesting_(body.testType) });
@@ -251,6 +256,59 @@ function listPPMeeting_() {
       date: r[0], sbu: r[1], buyer: r[2], ir: r[3], styleNo: r[4], season: r[5], item: r[6],
       ppBy: r[7], orderType: r[8], embellishmentType: r[9], productType: r[10], plannedQty: r[11],
       colors: colors, requirementsReview: r[13], comments: comments, createdAt: r[15]
+    });
+  }
+  return out;
+}
+
+// ---------- Physical/Functional Test ----------
+// Sits right after Wash in the pipeline (Physical__Functionality_
+// Testing.xlsx). Checking Points + their Checking Method/Guideline are
+// fixed on the frontend (PF_CHECKPOINT_METHODS); this just stores which
+// points were checked, plus the pass/fail result.
+
+function savePhysicalFunctional_(entry) {
+  entry = entry || {};
+  const sheet = getSheet_(PHYSICALFUNCTIONAL_SHEET, PHYSICALFUNCTIONAL_HEADERS);
+  sheet.appendRow([
+    entry.date || "", entry.time || "", entry.auditBy || "", entry.line || "",
+    entry.sbu || "", entry.buyer || "", entry.ir || "", entry.styleNo || "", entry.color || "",
+    JSON.stringify(entry.checkpoints || []), entry.sampleChecked || 0, entry.passQty || 0,
+    entry.failQty || 0, entry.defectPct || "0.0", entry.defectType || "",
+    entry.comments || "", entry.correctiveAction || "", new Date()
+  ]);
+
+  // Mirror a summary row into Entries so Style Tracking's per-stage
+  // rollup (buildStyleStatus_) sees this Physical/Functional Test too.
+  const fail = Number(entry.failQty || 0);
+  saveEntry_({
+    stage: "physicalfunctional",
+    orderNo: "",
+    styleNo: entry.styleNo || "",
+    irNo: entry.ir || "",
+    inspector: entry.auditBy || "",
+    status: fail > 0 ? "Open" : "Done",
+    score: entry.defectPct || "",
+    notes: "Physical/Functional Test — " + (entry.defectType || "")
+  });
+
+  return jsonResponse_({ ok: true });
+}
+
+function listPhysicalFunctional_() {
+  const sheet = getSheet_(PHYSICALFUNCTIONAL_SHEET, PHYSICALFUNCTIONAL_HEADERS);
+  const rows = sheet.getDataRange().getValues();
+  const out = [];
+  for (let i = 1; i < rows.length; i++) {
+    const r = rows[i];
+    if (!r[7]) continue; // StyleNo required
+    let checkpoints = [];
+    try { checkpoints = JSON.parse(r[9] || "[]"); } catch (e) {}
+    out.push({
+      date: r[0], time: r[1], auditBy: r[2], line: r[3], sbu: r[4], buyer: r[5], ir: r[6],
+      styleNo: r[7], color: r[8], checkpoints: checkpoints, sampleChecked: r[10], passQty: r[11],
+      failQty: r[12], defectPct: r[13], defectType: r[14], comments: r[15], correctiveAction: r[16],
+      createdAt: r[17]
     });
   }
   return out;

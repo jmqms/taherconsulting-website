@@ -154,6 +154,7 @@ const PROCESS_STAGES = [
   { id: "embroidery", label: "Embroidery" },
   { id: "sewing", label: "Sewing" },
   { id: "wash", label: "Wash" },
+  { id: "physicalfunctional", label: "Physical/Functional Test" },
   { id: "testing", label: "Testing" },
   { id: "finishing", label: "Finishing" },
   { id: "packing", label: "Packing Accuracy" },
@@ -260,29 +261,65 @@ function styleDetailsHTML(detail) {
 function styleSelectorHTML(prefix) {
   return `
     <div class="panel" style="margin-bottom:24px">
-      <h3>Select Style</h3>
-      <div class="form-grid">
+      <h3 style="display:flex;align-items:center;justify-content:space-between">
+        <span>Select Style</span>
+        <label style="font-weight:400;font-size:12px;display:flex;align-items:center;gap:6px;cursor:pointer">
+          <input type="checkbox" id="${prefix}ManualToggle" style="width:auto"> Manual Entry
+        </label>
+      </h3>
+      <div id="${prefix}LookupFields" class="form-grid">
         <div class="field"><label>SBU</label><select id="${prefix}Sbu"><option value="">Loading…</option></select></div>
         <div class="field"><label>Buyer</label><select id="${prefix}Buyer"><option value="">Select SBU first</option></select></div>
         <div class="field"><label>IR No</label><select id="${prefix}Ir"><option value="">Select Buyer first</option></select></div>
+      </div>
+      <div id="${prefix}ManualFields" class="form-grid" style="display:none">
+        <div class="field"><label>SBU</label><input type="text" id="${prefix}ManualSbu" placeholder="Type SBU"></div>
+        <div class="field"><label>Buyer</label><input type="text" id="${prefix}ManualBuyer" placeholder="Type Buyer"></div>
+        <div class="field"><label>IR No</label><input type="text" id="${prefix}ManualIr" placeholder="Type IR No"></div>
       </div>
     </div>
     <div class="panel" style="margin-bottom:24px">
       <h3>Style Details</h3>
       <div id="${prefix}Details" style="color:var(--ink-soft)">Select SBU → Buyer → IR to see style details.</div>
+      <div id="${prefix}ManualDetails" class="form-grid" style="display:none">
+        <div class="field"><label>Style Name</label><input type="text" id="${prefix}ManualStyleName"></div>
+        <div class="field"><label>Style Description</label><input type="text" id="${prefix}ManualStyleDesc"></div>
+        <div class="field"><label>Item</label><input type="text" id="${prefix}ManualItem"></div>
+        <div class="field"><label>Product Dept</label><input type="text" id="${prefix}ManualProductDept"></div>
+        <div class="field"><label>Season</label><input type="text" id="${prefix}ManualSeason"></div>
+        <div class="field"><label>Embellishment Category</label><input type="text" id="${prefix}ManualEmbCat"></div>
+        <div class="field"><label>Total Style Order Qty</label><input type="number" id="${prefix}ManualTotalQty" placeholder="0"></div>
+      </div>
     </div>
   `;
 }
 
-// Wires up the three dropdowns rendered by styleSelectorHTML(prefix).
-// onChange(sel) fires on every step with { sbu, buyer, ir, detail }.
+// Wires up the three dropdowns rendered by styleSelectorHTML(prefix), PLUS
+// the "Manual Entry" toggle and its free-text fields. onChange(sel) fires
+// on every change with { sbu, buyer, ir, detail, manual }. Downstream code
+// (SizeSet, PP Meeting, Testing, RA, Entries, Style Tracking) doesn't need
+// to know which mode produced sel — it looks the same either way.
 // Returns a controller with getSel() and setSel(presel) for prefill.
 function wireStyleSelector(prefix, onChange) {
   const sbuEl = document.getElementById(prefix + "Sbu");
   const buyerEl = document.getElementById(prefix + "Buyer");
   const irEl = document.getElementById(prefix + "Ir");
   const detailsEl = document.getElementById(prefix + "Details");
-  let sel = { sbu: "", buyer: "", ir: "", detail: null };
+  const manualToggle = document.getElementById(prefix + "ManualToggle");
+  const lookupFieldsEl = document.getElementById(prefix + "LookupFields");
+  const manualFieldsEl = document.getElementById(prefix + "ManualFields");
+  const manualDetailsEl = document.getElementById(prefix + "ManualDetails");
+  const mSbuEl = document.getElementById(prefix + "ManualSbu");
+  const mBuyerEl = document.getElementById(prefix + "ManualBuyer");
+  const mIrEl = document.getElementById(prefix + "ManualIr");
+  const mStyleNameEl = document.getElementById(prefix + "ManualStyleName");
+  const mStyleDescEl = document.getElementById(prefix + "ManualStyleDesc");
+  const mItemEl = document.getElementById(prefix + "ManualItem");
+  const mProductDeptEl = document.getElementById(prefix + "ManualProductDept");
+  const mSeasonEl = document.getElementById(prefix + "ManualSeason");
+  const mEmbCatEl = document.getElementById(prefix + "ManualEmbCat");
+  const mTotalQtyEl = document.getElementById(prefix + "ManualTotalQty");
+  let sel = { sbu: "", buyer: "", ir: "", detail: null, manual: false };
 
   async function refreshSbus() {
     sbuEl.innerHTML = `<option value="">Loading…</option>`;
@@ -308,7 +345,7 @@ function wireStyleSelector(prefix, onChange) {
   }
 
   sbuEl.addEventListener("change", () => {
-    sel = { sbu: sbuEl.value, buyer: "", ir: "", detail: null };
+    sel = { sbu: sbuEl.value, buyer: "", ir: "", detail: null, manual: false };
     detailsEl.innerHTML = `Select Buyer → IR to see style details.`;
     refreshBuyers();
     onChange(sel);
@@ -323,6 +360,45 @@ function wireStyleSelector(prefix, onChange) {
     sel.ir = irEl.value;
     if (sel.ir) refreshDetail();
     else { sel.detail = null; detailsEl.innerHTML = `Select IR to see style details.`; onChange(sel); }
+  });
+
+  // ---- Manual Entry mode ----
+  function pushManualChange() {
+    sel = {
+      sbu: mSbuEl.value.trim(),
+      buyer: mBuyerEl.value.trim(),
+      ir: mIrEl.value.trim(),
+      manual: true,
+      detail: {
+        styleName: mStyleNameEl.value.trim(),
+        styleDescription: mStyleDescEl.value.trim(),
+        item: mItemEl.value.trim(),
+        productDept: mProductDeptEl.value.trim(),
+        season: mSeasonEl.value.trim(),
+        embellishmentCategory: mEmbCatEl.value.trim(),
+        totalQty: Number(mTotalQtyEl.value || 0),
+        colors: []
+      }
+    };
+    onChange(sel);
+  }
+  [mSbuEl, mBuyerEl, mIrEl, mStyleNameEl, mStyleDescEl, mItemEl, mProductDeptEl, mSeasonEl, mEmbCatEl, mTotalQtyEl]
+    .forEach(el => el.addEventListener("input", pushManualChange));
+
+  manualToggle.addEventListener("change", () => {
+    const isManual = manualToggle.checked;
+    lookupFieldsEl.style.display = isManual ? "none" : "";
+    detailsEl.style.display = isManual ? "none" : "";
+    manualFieldsEl.style.display = isManual ? "" : "none";
+    manualDetailsEl.style.display = isManual ? "" : "none";
+    if (isManual) {
+      pushManualChange();
+    } else {
+      sel = { sbu: "", buyer: "", ir: "", detail: null, manual: false };
+      sbuEl.value = ""; buyerEl.innerHTML = `<option value="">Select SBU first</option>`; irEl.innerHTML = `<option value="">Select Buyer first</option>`;
+      detailsEl.innerHTML = `Select SBU → Buyer → IR to see style details.`;
+      onChange(sel);
+    }
   });
 
   refreshSbus();
@@ -356,6 +432,7 @@ function loadTab(id) {
   if (id === "styletracking") return renderStyleTracking();
   if (id === "sizeset") return renderSizeSet();
   if (id === "ppmeeting") return renderPPMeeting();
+  if (id === "physicalfunctional") return renderPhysicalFunctional();
   if (id === "testing") return renderTesting();
   if (id === "ra") return renderRiskAssessment();
   const stage = ALL_STAGES.find(s => s.id === id);
@@ -697,14 +774,15 @@ async function loadQualityRAEntries() {
 //   kind "ss" → color only
 //   kind "pp" → color + fiber composition + fabric type
 // ---------------------------------------------------------------
-let colorDetail = { ss: null, pp: null };
+let colorDetail = { ss: null, pp: null, pf: null };
 
 function colorOptionsHTML(detail, selected) {
   const names = ((detail && detail.colors) || []).map(c => c.color).filter(Boolean);
-  const head = names.length ? "Select color…" : "Select IR first";
-  return `<option value="">${head}</option>` + names.map(n =>
-    `<option value="${esc(n)}"${n === selected ? " selected" : ""}>${esc(n)}</option>`
-  ).join("");
+  const head = names.length ? "Select color…" : "Select IR first, or choose Other";
+  const opts = [`<option value="">${head}</option>`]
+    .concat(names.map(n => `<option value="${esc(n)}"${n === selected ? " selected" : ""}>${esc(n)}</option>`))
+    .concat([`<option value="__custom__"${selected === "__custom__" ? " selected" : ""}>Other (type manually)…</option>`]);
+  return opts.join("");
 }
 
 function addColorRow(kind) {
@@ -715,6 +793,7 @@ function addColorRow(kind) {
   row.innerHTML = `
     <div class="field"><label>${kind === "pp" ? "Color Name" : "Color"}</label>
       <select class="cr-color">${colorOptionsHTML(colorDetail[kind], "")}</select>
+      <input class="cr-color-custom" placeholder="Type color name" style="display:none;margin-top:6px">
     </div>
     ${kind === "pp" ? `
     <div class="field"><label>Fiber Composition</label><input class="cr-fiber" placeholder="e.g. 92% Cotton 8% Elastane"></div>
@@ -722,6 +801,11 @@ function addColorRow(kind) {
     <button type="button" class="btn btn-ghost cr-remove" title="Remove this color" onclick="removeColorRow(this)">✕</button>
   `;
   box.appendChild(row);
+  const selEl = row.querySelector(".cr-color");
+  const customEl = row.querySelector(".cr-color-custom");
+  selEl.addEventListener("change", () => {
+    customEl.style.display = selEl.value === "__custom__" ? "" : "none";
+  });
 }
 
 function removeColorRow(btn) {
@@ -732,17 +816,26 @@ function removeColorRow(btn) {
 // Called whenever the SBU → Buyer → IR selection changes.
 function refreshColorOptions(kind, detail) {
   colorDetail[kind] = detail || null;
-  document.querySelectorAll(`#${kind}ColorRows .cr-color`).forEach(sel => {
-    sel.innerHTML = colorOptionsHTML(colorDetail[kind], sel.value);
+  document.querySelectorAll(`#${kind}ColorRows .color-row`).forEach(row => {
+    const selEl = row.querySelector(".cr-color");
+    const customEl = row.querySelector(".cr-color-custom");
+    const wasCustom = selEl.value === "__custom__";
+    selEl.innerHTML = colorOptionsHTML(colorDetail[kind], selEl.value);
+    if (customEl) customEl.style.display = wasCustom ? "" : "none";
   });
 }
 
 function getColorRows(kind) {
-  return Array.from(document.querySelectorAll(`#${kind}ColorRows .color-row`)).map(r => ({
-    color: r.querySelector(".cr-color").value,
-    fiber: r.querySelector(".cr-fiber") ? r.querySelector(".cr-fiber").value.trim() : "",
-    fabric: r.querySelector(".cr-fabric") ? r.querySelector(".cr-fabric").value.trim() : "",
-  }));
+  return Array.from(document.querySelectorAll(`#${kind}ColorRows .color-row`)).map(r => {
+    const selEl = r.querySelector(".cr-color");
+    const customEl = r.querySelector(".cr-color-custom");
+    const color = selEl.value === "__custom__" ? (customEl ? customEl.value.trim() : "") : selEl.value;
+    return {
+      color: color,
+      fiber: r.querySelector(".cr-fiber") ? r.querySelector(".cr-fiber").value.trim() : "",
+      fabric: r.querySelector(".cr-fabric") ? r.querySelector(".cr-fabric").value.trim() : "",
+    };
+  });
 }
 
 // ---------------------------------------------------------------
@@ -983,6 +1076,199 @@ async function loadPPMeetingEntries() {
     `).join("");
   } catch (err) {
     tbody.innerHTML = `<tr><td colspan="7" style="text-align:center;color:var(--reject)">${esc(err.message)}</td></tr>`;
+  }
+}
+
+// ---------------------------------------------------------------
+// Physical/Functional Test tab (matches Physical__Functionality_
+// Testing.xlsx). Sits right after Wash in the pipeline. Same shared
+// Style Selector (with Manual Entry) as every other stage. Selecting a
+// Checking Point auto-shows its Checking Method/Guideline; Defect %
+// auto-calculates from Sample Checked / Fail Qty.
+// ---------------------------------------------------------------
+let pfSelCtrl = null;
+
+const PF_CHECKPOINTS = [
+  "Zipper Function", "Button Pull / Attachment", "Snap Function", "Seam Strength",
+  "Elastic Recovery", "Drawcord Safety", "Velcro Function", "Print Durability",
+  "Embroidery Safety", "Pocket Function", "Buckle / Adjuster", "Metal Detection"
+];
+
+const PF_CHECKPOINT_METHODS = {
+  "Zipper Function": "Run zipper up & down 3–5 times to check smooth movement, auto-lock, and stopper security.",
+  "Button Pull / Attachment": "Apply manual pull or gauge test to ensure secure attachment with no loosening or damage.",
+  "Snap Function": "Open and close snap 3–5 times to verify proper locking, alignment, and durability.",
+  "Seam Strength": "Apply light manual tension on stress areas to ensure no seam opening, slippage, or stitch breakage.",
+  "Elastic Recovery": "Stretch elastic and release to check proper recovery and ensure no twisting inside casing.",
+  "Drawcord Safety": "Measure length, pull both ends, and check stopper to ensure safety compliance and secure attachment.",
+  "Velcro Function": "Attach and detach 3–5 times to verify adhesion strength and secure stitching.",
+  "Print Durability": "Lightly stretch and rub printed area to check for cracking, peeling, or damage.",
+  "Embroidery Safety": "Check for loose threads, trimmed ends, and secure stitching with no sharp backing.",
+  "Pocket Function": "Insert hand to verify opening usability, proper depth, and secure stitching or closure.",
+  "Buckle / Adjuster": "Operate multiple times to ensure smooth adjustment, proper locking, and no defects.",
+  "Metal Detection": "Pass garment through metal detector to confirm no metal contamination and proper machine function."
+};
+
+function refreshPfColor(detail) {
+  colorDetail.pf = detail || null;
+  const sel = document.getElementById("pfColor");
+  const custom = document.getElementById("pfColorCustom");
+  if (!sel) return;
+  const wasCustom = sel.value === "__custom__";
+  sel.innerHTML = colorOptionsHTML(colorDetail.pf, sel.value);
+  if (custom) custom.style.display = wasCustom ? "" : "none";
+}
+
+function updatePfMethods() {
+  const checked = Array.from(document.querySelectorAll(".pf-cp:checked")).map(c => c.value);
+  const methodsEl = document.getElementById("pfMethods");
+  if (!methodsEl) return;
+  if (!checked.length) { methodsEl.innerHTML = `Select checking points above to see the method.`; return; }
+  methodsEl.innerHTML = checked.map(cp =>
+    `<div class="sd-row"><span>${esc(cp)}</span><b>${esc(PF_CHECKPOINT_METHODS[cp] || "—")}</b></div>`
+  ).join("");
+}
+
+function updatePfDefectPct() {
+  const sample = Number(document.getElementById("pfSample").value || 0);
+  const fail = Number(document.getElementById("pfFail").value || 0);
+  const pct = sample > 0 ? ((fail / sample) * 100).toFixed(1) : "0.0";
+  document.getElementById("pfDefectPct").value = pct + "%";
+}
+
+function renderPhysicalFunctional() {
+  colorDetail.pf = null;
+  const el = document.getElementById("tabContent");
+  el.innerHTML = `
+    <div class="qa-head">
+      <div class="eyebrow">Quality Process</div>
+      <h1>Physical/Functional Test</h1>
+    </div>
+    ${styleSelectorHTML("pf")}
+    <div class="panel" style="margin-bottom:24px">
+      <h3>Test Information</h3>
+      <div class="form-grid">
+        <div class="field"><label>Date</label><input id="pfDate" type="date"></div>
+        <div class="field"><label>Time</label><input id="pfTime" type="time"></div>
+        <div class="field"><label>Audit by</label><input id="pfAuditBy"></div>
+        <div class="field"><label>Line</label><input id="pfLine"></div>
+        <div class="field"><label>Buyer</label><input id="pfBuyer" readonly></div>
+        <div class="field"><label>Style</label><input id="pfStyle" readonly></div>
+        <div class="field"><label>Color</label>
+          <select id="pfColor">${colorOptionsHTML(null, "")}</select>
+          <input id="pfColorCustom" placeholder="Type color name" style="display:none;margin-top:6px">
+        </div>
+      </div>
+    </div>
+
+    <div class="panel" style="margin-bottom:24px">
+      <h3>Physical/Functional Checking Points</h3>
+      <div id="pfCheckpoints" class="form-grid" style="grid-template-columns:repeat(auto-fill,minmax(200px,1fr))">
+        ${PF_CHECKPOINTS.map(cp => `<label style="display:flex;align-items:center;gap:6px;font-weight:400;font-size:13px"><input type="checkbox" class="pf-cp" value="${esc(cp)}" style="width:auto">${esc(cp)}</label>`).join("")}
+      </div>
+      <h3 style="margin-top:16px">Checking Method / Guideline</h3>
+      <div id="pfMethods" class="sd-grid" style="color:var(--ink-soft)">Select checking points above to see the method.</div>
+    </div>
+
+    <div class="panel" style="margin-bottom:24px">
+      <h3>Result</h3>
+      <div class="form-grid">
+        <div class="field"><label>Sample Checked</label><input id="pfSample" type="number" min="0"></div>
+        <div class="field"><label>Pass Qty</label><input id="pfPass" type="number" min="0"></div>
+        <div class="field"><label>Fail Qty</label><input id="pfFail" type="number" min="0"></div>
+        <div class="field"><label>Defect %</label><input id="pfDefectPct" readonly value="0.0%"></div>
+      </div>
+      <div class="field"><label>Defect Type</label><input id="pfDefectType" placeholder="e.g. Zipper Lock Failure"></div>
+      <div class="field"><label>Comments</label><textarea id="pfComments" rows="3"></textarea></div>
+      <div class="field"><label>Corrective Action Plan</label><textarea id="pfCorrectiveAction" rows="3"></textarea></div>
+      <button class="btn btn-primary" onclick="savePhysicalFunctional()">Save Entry →</button>
+      <div id="pfMsg" class="form-msg"></div>
+    </div>
+
+    <div class="panel">
+      <h3>Recent Physical/Functional Test Entries</h3>
+      <table class="qa-table" id="pfTable">
+        <thead><tr><th>Date</th><th>SBU</th><th>Buyer</th><th>IR</th><th>Style</th><th>Color</th><th>Sample</th><th>Fail</th><th>Defect %</th></tr></thead>
+        <tbody><tr><td colspan="9" style="text-align:center;color:var(--ink-soft)">Loading…</td></tr></tbody>
+      </table>
+    </div>
+  `;
+
+  pfSelCtrl = wireStyleSelector("pf", (sel) => {
+    refreshPfColor(sel.detail);
+    document.getElementById("pfBuyer").value = sel.buyer || "";
+    document.getElementById("pfStyle").value = (sel.detail && sel.detail.styleName) || "";
+  });
+  document.getElementById("pfColor").addEventListener("change", () => {
+    document.getElementById("pfColorCustom").style.display = document.getElementById("pfColor").value === "__custom__" ? "" : "none";
+  });
+  document.getElementById("pfCheckpoints").addEventListener("change", updatePfMethods);
+  ["pfSample", "pfPass", "pfFail"].forEach(id => document.getElementById(id).addEventListener("input", updatePfDefectPct));
+
+  loadPhysicalFunctionalEntries();
+}
+
+async function savePhysicalFunctional() {
+  if (typeof tcBlockIfGuest === 'function' && tcBlockIfGuest('Saving a Physical/Functional Test entry')) return;
+  const msg = document.getElementById("pfMsg");
+  const sel = pfSelCtrl ? pfSelCtrl.getSel() : { ir: "", detail: null };
+  if (!sel.ir) {
+    msg.textContent = "Select SBU, Buyer, and IR first (or switch on Manual Entry above).";
+    msg.className = "form-msg err show";
+    return;
+  }
+  const d = sel.detail || {};
+  const colorSel = document.getElementById("pfColor");
+  const colorCustom = document.getElementById("pfColorCustom");
+  const color = colorSel.value === "__custom__" ? colorCustom.value.trim() : colorSel.value;
+  const sample = Number(document.getElementById("pfSample").value || 0);
+  const pass = Number(document.getElementById("pfPass").value || 0);
+  const fail = Number(document.getElementById("pfFail").value || 0);
+  const defectPct = sample > 0 ? ((fail / sample) * 100).toFixed(1) : "0.0";
+  const checkpoints = Array.from(document.querySelectorAll(".pf-cp:checked")).map(c => c.value);
+  const entry = {
+    date: document.getElementById("pfDate").value,
+    time: document.getElementById("pfTime").value,
+    auditBy: document.getElementById("pfAuditBy").value,
+    line: document.getElementById("pfLine").value,
+    sbu: sel.sbu,
+    buyer: sel.buyer,
+    ir: sel.ir,
+    styleNo: d.styleName || "",
+    color: color,
+    checkpoints: checkpoints,
+    sampleChecked: sample,
+    passQty: pass,
+    failQty: fail,
+    defectPct: defectPct,
+    defectType: document.getElementById("pfDefectType").value,
+    comments: document.getElementById("pfComments").value,
+    correctiveAction: document.getElementById("pfCorrectiveAction").value,
+  };
+  try {
+    const res = await qaApi({ action: "savePhysicalFunctional", entry: entry });
+    if (!res.ok) throw new Error(res.error || "Save failed");
+    msg.textContent = "Entry saved.";
+    msg.className = "form-msg ok show";
+    loadPhysicalFunctionalEntries();
+  } catch (err) {
+    msg.textContent = err.message;
+    msg.className = "form-msg err show";
+  }
+}
+
+async function loadPhysicalFunctionalEntries() {
+  const tbody = document.querySelector("#pfTable tbody");
+  if (!tbody) return;
+  try {
+    const res = await qaApi({ action: "listPhysicalFunctional" });
+    if (!res.ok) throw new Error(res.error || "Failed to load");
+    if (!res.entries.length) { tbody.innerHTML = `<tr><td colspan="9" style="text-align:center;color:var(--ink-soft)">No entries yet.</td></tr>`; return; }
+    tbody.innerHTML = res.entries.slice().reverse().map(e =>
+      `<tr><td>${esc(e.date)}</td><td>${esc(e.sbu)}</td><td>${esc(e.buyer)}</td><td>${esc(e.ir)}</td><td>${esc(e.styleNo)}</td><td>${esc(e.color)}</td><td>${esc(e.sampleChecked)}</td><td>${esc(e.failQty)}</td><td>${esc(e.defectPct)}%</td></tr>`
+    ).join("");
+  } catch (err) {
+    tbody.innerHTML = `<tr><td colspan="9" style="text-align:center;color:var(--reject)">${esc(err.message)}</td></tr>`;
   }
 }
 
