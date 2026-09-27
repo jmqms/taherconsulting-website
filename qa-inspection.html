@@ -156,6 +156,10 @@ async function qaiApi(payload) {
 // ---- Sidebar ----
 const sideEl = document.getElementById("qiSide");
 const STANDALONE_PAGES = {
+  "1st Bundle Inspection": "1st-bundle-inspection.html",
+  "Sewing Inline Inspection": "sewing-inline-inspection.html",
+  "Finishing Inline Inspection": "finishing-inline-inspection.html",
+  "1st Carton Inspection": "1st-carton-inspection.html",
   "Pre-Final Inspection": "pre-final-inspection.html",
   "Final Inspection": "final-inspection.html"
 };
@@ -428,9 +432,9 @@ async function runSearch() {
   }
 }
 
-// Default landing tab
-document.querySelector('.qi-side button[data-tab="1st Bundle Inspection"]').classList.add("active");
-renderInspectionForm(INSPECTION_TYPES[0]);
+// Default landing tab (all 6 inspection types are now standalone pages, so land on Search)
+searchBtn.classList.add("active");
+renderSearch();
 </script>
 
 <script src="js/module-auth.js"></script>
