@@ -538,6 +538,25 @@ async function renderOverview() {
 let stSelected = { sbu: "", buyer: "", ir: "" };
 let stkCtrl = null;
 
+function raEntryDetailHTML(raEntry) {
+  if (!raEntry) return `<div style="color:var(--ink-soft)">No Risk Assessment submitted yet for this IR — go to the Risk Assessment (RA) stage.</div>`;
+  return `
+    <div style="margin-bottom:10px">
+      <span class="status-pill ${raEntry.riskDecision === "Accept" ? "Done" : raEntry.riskDecision === "Reject" ? "Open" : "In-Progress"}">${esc(raEntry.riskDecision || "—")}</span>
+      <span style="margin-left:10px;color:var(--ink-soft);font-size:13px">${esc(raEntry.orderType || "")} order &middot; RA by ${esc(raEntry.raBy || "—")} on ${esc(raEntry.raDate || "—")}</span>
+    </div>
+    <table class="qa-table">
+      <thead><tr><th>Process</th><th>Changed?</th><th>Seasonal Changes (If Any)</th></tr></thead>
+      <tbody>
+        ${Object.keys(raEntry.changes || {}).map(k => `
+          <tr><td>${esc(k)}</td><td>${esc((raEntry.changes[k]||{}).status || '—')}</td><td>${esc((raEntry.changes[k]||{}).notes || '')}</td></tr>
+        `).join("")}
+      </tbody>
+    </table>
+    ${raEntry.actionComments ? `<div style="margin-top:10px;font-size:13.5px"><b>Action and Comments:</b> ${esc(raEntry.actionComments)}</div>` : ""}
+  `;
+}
+
 function renderStyleTracking() {
   const el = document.getElementById("tabContent");
   el.innerHTML = `
@@ -588,21 +607,7 @@ async function loadStyleTrackingResults() {
       </div>
       <div class="panel" style="margin-bottom:20px">
         <h3>Risk Assessment (RA)</h3>
-        ${raEntry ? `
-          <div style="margin-bottom:10px">
-            <span class="status-pill ${raEntry.riskDecision === "Accept" ? "Done" : raEntry.riskDecision === "Reject" ? "Open" : "In-Progress"}">${esc(raEntry.riskDecision || "—")}</span>
-            <span style="margin-left:10px;color:var(--ink-soft);font-size:13px">${esc(raEntry.orderType || "")} order &middot; RA by ${esc(raEntry.raBy || "—")} on ${esc(raEntry.raDate || "—")}</span>
-          </div>
-          <table class="qa-table">
-            <thead><tr><th>Process</th><th>Changed?</th><th>Seasonal Changes (If Any)</th></tr></thead>
-            <tbody>
-              ${Object.keys(raEntry.changes || {}).map(k => `
-                <tr><td>${esc(k)}</td><td>${esc((raEntry.changes[k]||{}).status || '—')}</td><td>${esc((raEntry.changes[k]||{}).notes || '')}</td></tr>
-              `).join("")}
-            </tbody>
-          </table>
-          ${raEntry.actionComments ? `<div style="margin-top:10px;font-size:13.5px"><b>Action and Comments:</b> ${esc(raEntry.actionComments)}</div>` : ""}
-        ` : `<div style="color:var(--ink-soft)">No Risk Assessment submitted yet for this IR — go to the Risk Assessment (RA) stage.</div>`}
+        ${raEntryDetailHTML(raEntry)}
       </div>
       <div class="panel">
         <h3>Stage-by-Stage Progress</h3>
@@ -658,28 +663,46 @@ let lastByStage = {};
 function humanizeKey(k) {
   return k.replace(/([A-Z])/g, " $1").replace(/^./, c => c.toUpperCase()).trim();
 }
-function prettyDetailValue(v) {
+function prettyDetailValue(key, v) {
   if (v === null || v === undefined || v === "") return "—";
-  if (Array.isArray(v)) {
+  if (key === "checkPoints" && Array.isArray(v)) {
     if (!v.length) return "—";
-    if (typeof v[0] === "object") {
-      return v.map(item => Object.entries(item).map(([k, val]) => `${esc(humanizeKey(k))}: ${esc(String(val))}`).join(", ")).join("<br>");
-    }
-    return esc(v.join(", "));
+    return `<table class="qa-table" style="margin:0"><thead><tr><th>Check Point</th><th>Yes/No/NA</th><th>Result</th><th>Comments</th></tr></thead><tbody>${
+      v.map(cp => `<tr><td>${esc(cp.point || "")}</td><td>${esc(cp.yn || "—")}</td><td>${esc(cp.result || "—")}</td><td>${esc(cp.comments || "")}</td></tr>`).join("")
+    }</tbody></table>`;
   }
+  if (key === "findings" && Array.isArray(v)) {
+    if (!v.length) return "—";
+    return `<table class="qa-table" style="margin:0"><thead><tr><th>Defect Name</th><th>Type</th><th>Qty</th></tr></thead><tbody>${
+      v.map(f => `<tr><td>${esc(f.name || "")}</td><td>${esc(f.type || "")}</td><td>${esc(String(f.qty))}</td></tr>`).join("")
+    }</tbody></table>`;
+  }
+  if (key === "colors" && Array.isArray(v)) {
+    if (!v.length) return "—";
+    return esc(v.map(c => typeof c === "object" ? Object.values(c).filter(Boolean).join(" / ") : c).join(", "));
+  }
+  if (key === "comments" && v && typeof v === "object") {
+    const parts = Object.entries(v).filter(([, val]) => val);
+    return parts.length ? parts.map(([k, val]) => `<b>${esc(k)}:</b> ${esc(String(val))}`).join("<br>") : "—";
+  }
+  if (Array.isArray(v)) return v.length ? esc(v.join(", ")) : "—";
   if (typeof v === "object") {
-    return Object.entries(v).map(([k, val]) => `${esc(humanizeKey(k))}: ${esc(String(val))}`).join("<br>");
+    const parts = Object.entries(v).filter(([, val]) => val !== "" && val !== null && val !== undefined);
+    return parts.length ? parts.map(([k, val]) => `${esc(humanizeKey(k))}: ${esc(String(val))}`).join("<br>") : "—";
   }
   if (typeof v === "boolean") return v ? "Yes" : "No";
   return esc(String(v));
 }
 function renderEntryDetailsTable(entry) {
   const skip = ["sbu", "buyer", "ir", "process"];
-  return `<table class="qa-table"><tbody>${
-    Object.keys(entry).filter(k => !skip.includes(k)).map(k =>
-      `<tr><td style="font-weight:600;width:220px;vertical-align:top">${esc(humanizeKey(k))}</td><td>${prettyDetailValue(entry[k])}</td></tr>`
-    ).join("")
-  }</tbody></table>`;
+  return `<table class="qa-table">
+    <thead><tr><th style="width:220px">Field</th><th>Value</th></tr></thead>
+    <tbody>${
+      Object.keys(entry).filter(k => !skip.includes(k)).map(k =>
+        `<tr><td style="font-weight:600;vertical-align:top">${esc(humanizeKey(k))}</td><td>${prettyDetailValue(k, entry[k])}</td></tr>`
+      ).join("")
+    }</tbody>
+  </table>`;
 }
 
 async function showStageDetails(stageId) {
@@ -716,7 +739,7 @@ async function showStageDetails(stageId) {
       ${entries.length ? entries.map((e, idx) => `
         <div style="margin-bottom:${idx < entries.length - 1 ? "18px" : "0"};${idx < entries.length - 1 ? "padding-bottom:18px;border-bottom:1px solid var(--line)" : ""}">
           ${entries.length > 1 ? `<div style="font-weight:600;margin-bottom:6px">Entry ${idx + 1}</div>` : ""}
-          ${renderEntryDetailsTable(e)}
+          ${stageId === "ra" ? raEntryDetailHTML(e) : renderEntryDetailsTable(e)}
         </div>
       `).join("") : `<div style="color:var(--ink-soft)">No detail entries found for this IR.</div>`}
     </div>
