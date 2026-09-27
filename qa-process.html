@@ -567,6 +567,7 @@ async function loadStyleTrackingResults() {
       String(e.sbu).trim() === stSelected.sbu && String(e.buyer).trim() === stSelected.buyer && String(e.ir).trim() === stSelected.ir
     );
     const byStage = statusRes.ok ? statusRes.byStage : {};
+    lastByStage = byStage;
 
     // Process-wise summary counts
     let doneN = 0, progN = 0, missN = 0, overlapN = 0;
@@ -606,7 +607,7 @@ async function loadStyleTrackingResults() {
       <div class="panel">
         <h3>Stage-by-Stage Progress</h3>
         <table class="qa-table">
-          <thead><tr><th>Stage</th><th>Status</th><th>Entries</th><th>Last Update</th><th>Details</th><th></th></tr></thead>
+          <thead><tr><th>Stage</th><th>Status</th><th>Entries</th><th>Last Update</th><th></th></tr></thead>
           <tbody>
             ${ALL_STAGES.map(s => {
               const rows = byStage[s.id] || [];
@@ -620,14 +621,9 @@ async function loadStyleTrackingResults() {
                   <td><span class="status-pill ${esc(pillClass)}">${esc(label)}</span></td>
                   <td>${rows.length}</td>
                   <td>${esc(String(last))}</td>
-                  <td>${rows.length
-                    ? `<button class="btn btn-ghost" style="padding:4px 10px;font-size:11.5px" id="detailsBtn-${s.id}" onclick="toggleStageDetailRow('${s.id}')">👁 See Details</button>`
-                    : `<span style="color:var(--ink-soft)">—</span>`}</td>
-                  <td><button class="btn btn-ghost" style="padding:4px 10px;font-size:11.5px" onclick="goToStageForTracking('${s.id}')">+ Add Entry</button></td>
-                </tr>
-                <tr id="detailsRow-${s.id}" style="display:none">
-                  <td colspan="6" style="background:var(--paper);padding:14px 12px">
-                    ${renderStageDetailRows(rows)}
+                  <td>
+                    <button class="btn btn-ghost" style="padding:4px 10px;font-size:11.5px" onclick="showStageDetails('${s.id}')">See Details</button>
+                    <button class="btn btn-ghost" style="padding:4px 10px;font-size:11.5px" onclick="goToStageForTracking('${s.id}')">+ Add Entry</button>
                   </td>
                 </tr>
               `;
@@ -635,58 +631,98 @@ async function loadStyleTrackingResults() {
           </tbody>
         </table>
       </div>
+      <div id="stkStageDetails" style="display:none;margin-top:20px"></div>
     `;
   } catch (err) {
     el.innerHTML = `<div class="panel" style="color:var(--reject)">${esc(err.message)}</div>`;
   }
 }
 
-// Expand/collapse the process-entry details for one stage, inline
-// below its row in the Stage-by-Stage Progress table.
-function toggleStageDetailRow(stageId) {
-  const row = document.getElementById(`detailsRow-${stageId}`);
-  const btn = document.getElementById(`detailsBtn-${stageId}`);
-  if (!row) return;
-  const showing = row.style.display !== "none";
-  row.style.display = showing ? "none" : "table-row";
-  if (btn) btn.textContent = showing ? "👁 See Details" : "▲ Hide Details";
+// Which stages have a richer, dedicated record (beyond the thin Entries
+// mirror) to show in Style Tracking's "See Details" — fetched fresh and
+// matched by IR. Stages not listed here fall back to the Entries-mirror
+// rows already loaded (timestamp/status/score/inspector/notes).
+const STAGE_DETAIL_SOURCES = {
+  sizeset: { action: "listSizeSet" },
+  ppmeeting: { action: "listPPMeeting" },
+  physicalfunctional: { action: "listPhysicalFunctional" },
+  print: { action: "listAqlProcess", params: { process: "print" } },
+  embroidery: { action: "listAqlProcess", params: { process: "embroidery" } },
+  wash: { action: "listAqlProcess", params: { process: "wash" } },
+  heatseal: { action: "listAqlProcess", params: { process: "heatseal" } },
+  ra: { action: "listQualityRA" },
+};
+
+let lastByStage = {};
+
+function humanizeKey(k) {
+  return k.replace(/([A-Z])/g, " $1").replace(/^./, c => c.toUpperCase()).trim();
+}
+function prettyDetailValue(v) {
+  if (v === null || v === undefined || v === "") return "—";
+  if (Array.isArray(v)) {
+    if (!v.length) return "—";
+    if (typeof v[0] === "object") {
+      return v.map(item => Object.entries(item).map(([k, val]) => `${esc(humanizeKey(k))}: ${esc(String(val))}`).join(", ")).join("<br>");
+    }
+    return esc(v.join(", "));
+  }
+  if (typeof v === "object") {
+    return Object.entries(v).map(([k, val]) => `${esc(humanizeKey(k))}: ${esc(String(val))}`).join("<br>");
+  }
+  if (typeof v === "boolean") return v ? "Yes" : "No";
+  return esc(String(v));
+}
+function renderEntryDetailsTable(entry) {
+  const skip = ["sbu", "buyer", "ir", "process"];
+  return `<table class="qa-table"><tbody>${
+    Object.keys(entry).filter(k => !skip.includes(k)).map(k =>
+      `<tr><td style="font-weight:600;width:220px;vertical-align:top">${esc(humanizeKey(k))}</td><td>${prettyDetailValue(entry[k])}</td></tr>`
+    ).join("")
+  }</tbody></table>`;
 }
 
-// Renders each stage's process entries (already fetched via
-// styleStatus, filtered to the selected SBU/Buyer/IR) as a small
-// table. Field set adapts to whatever the entry actually carries,
-// since different stages (AQL process, RA, Testing, etc.) log
-// different columns.
-function renderStageDetailRows(rows) {
-  if (!rows || !rows.length) {
-    return `<div style="color:var(--ink-soft);font-size:13px">No process entries yet.</div>`;
+async function showStageDetails(stageId) {
+  const stage = ALL_STAGES.find(s => s.id === stageId);
+  if (!stage) return;
+  const box = document.getElementById("stkStageDetails");
+  if (!box) return;
+  box.style.display = "";
+  box.innerHTML = `<div class="panel"><h3>Details — ${esc(stage.label)}</h3><div style="color:var(--ink-soft)">Loading…</div></div>`;
+  box.scrollIntoView({ behavior: "smooth", block: "nearest" });
+
+  const source = STAGE_DETAIL_SOURCES[stageId];
+  let entries = [];
+  try {
+    if (source) {
+      const params = Object.assign({ action: source.action }, source.params || {});
+      const res = await qaApi(params);
+      const list = res.ok ? (res.entries || []) : [];
+      entries = list.filter(e => String(e.ir || "").trim() === stSelected.ir);
+    } else {
+      entries = lastByStage[stageId] || [];
+    }
+  } catch (err) {
+    box.innerHTML = `<div class="panel" style="color:var(--reject)">${esc(err.message)}</div>`;
+    return;
   }
-  const preferredCols = ["timestamp", "date", "mode", "inspector", "inspectedBy", "line",
-    "styleNo", "size", "color", "status", "result", "score", "notes", "comments"];
-  const colLabels = {
-    timestamp: "Date", date: "Date", mode: "Mode", inspector: "Inspector", inspectedBy: "Inspected By",
-    line: "Line", styleNo: "Style", size: "Size", color: "Color", status: "Status", result: "Result",
-    score: "Score", notes: "Notes", comments: "Comments",
-  };
-  const presentCols = preferredCols.filter(k => rows.some(r => r[k] !== undefined && r[k] !== "" && r[k] !== null));
-  const cols = presentCols.length ? presentCols : Object.keys(rows[0]).filter(k => typeof rows[0][k] !== "object");
-  return `
-    <table class="qa-table" style="font-size:12.5px">
-      <thead><tr>${cols.map(c => `<th>${esc(colLabels[c] || c)}</th>`).join("")}</tr></thead>
-      <tbody>
-        ${rows.map(r => `
-          <tr>${cols.map(c => {
-            const v = r[c];
-            if (c === "status" || c === "result") {
-              return `<td><span class="status-pill ${esc(String(v||"Open").replace(" ","-"))}">${esc(String(v||""))}</span></td>`;
-            }
-            return `<td>${esc(v !== undefined && v !== null ? String(v) : "")}</td>`;
-          }).join("")}</tr>
-        `).join("")}
-      </tbody>
-    </table>
+
+  box.innerHTML = `
+    <div class="panel">
+      <h3 style="display:flex;align-items:center;justify-content:space-between">
+        <span>Details — ${esc(stage.label)}</span>
+        <button class="btn btn-ghost" style="padding:4px 10px;font-size:11.5px" onclick="document.getElementById('stkStageDetails').style.display='none'">✕ Close</button>
+      </h3>
+      ${entries.length ? entries.map((e, idx) => `
+        <div style="margin-bottom:${idx < entries.length - 1 ? "18px" : "0"};${idx < entries.length - 1 ? "padding-bottom:18px;border-bottom:1px solid var(--line)" : ""}">
+          ${entries.length > 1 ? `<div style="font-weight:600;margin-bottom:6px">Entry ${idx + 1}</div>` : ""}
+          ${renderEntryDetailsTable(e)}
+        </div>
+      `).join("") : `<div style="color:var(--ink-soft)">No detail entries found for this IR.</div>`}
+    </div>
   `;
 }
+
 
 function goToStageForTracking(stageId) {
   const stage = ALL_STAGES.find(s => s.id === stageId);
@@ -1333,71 +1369,145 @@ async function loadPhysicalFunctionalEntries() {
 }
 
 // ---------------------------------------------------------------
+// ANSI-ASQ Z1.4 / ISO 2859-1 single-sampling AQL engine — same tables
+// and logic as Pre-Final/Final Inspection, ported so RMG checks here
+// auto-calculate Sample Size and Defect Allowed the same way.
+// ---------------------------------------------------------------
+const AQL_COLS = [0.010,0.015,0.025,0.040,0.065,0.10,0.15,0.25,0.40,0.65,1.0,1.5,2.5,4.0,6.5,10];
+const CODE_LETTERS = ['A','B','C','D','E','F','G','H','J','K','L','M','N','P','Q','R'];
+const CODE_SIZE = { A:2,B:3,C:5,D:8,E:13,F:20,G:32,H:50,J:80,K:125,L:200,M:315,N:500,P:800,Q:1250,R:2000 };
+const CODE_ZERO_COL = { A:15,B:14,C:13,D:12,E:11,F:11,G:10,H:9,J:8,K:7,L:6,M:5,N:4,P:3,Q:2,R:1 };
+const AC_SEQ = [0,1,2,3,5,7,10,14,21];
+const LOT_BANDS = [
+  {min:2,      max:8,       c:{'S-1':'A','S-2':'A','S-3':'A','S-4':'A','General I':'A','General II':'A','General III':'B'}},
+  {min:9,      max:15,      c:{'S-1':'A','S-2':'A','S-3':'A','S-4':'A','General I':'A','General II':'B','General III':'C'}},
+  {min:16,     max:25,      c:{'S-1':'A','S-2':'A','S-3':'B','S-4':'B','General I':'B','General II':'C','General III':'D'}},
+  {min:26,     max:50,      c:{'S-1':'A','S-2':'B','S-3':'B','S-4':'C','General I':'C','General II':'D','General III':'E'}},
+  {min:51,     max:90,      c:{'S-1':'B','S-2':'B','S-3':'C','S-4':'C','General I':'C','General II':'E','General III':'F'}},
+  {min:91,     max:150,     c:{'S-1':'B','S-2':'B','S-3':'C','S-4':'D','General I':'D','General II':'F','General III':'G'}},
+  {min:151,    max:280,     c:{'S-1':'B','S-2':'C','S-3':'D','S-4':'E','General I':'E','General II':'G','General III':'H'}},
+  {min:281,    max:500,     c:{'S-1':'B','S-2':'C','S-3':'D','S-4':'E','General I':'F','General II':'H','General III':'J'}},
+  {min:501,    max:1200,    c:{'S-1':'C','S-2':'C','S-3':'E','S-4':'F','General I':'G','General II':'J','General III':'K'}},
+  {min:1201,   max:3200,    c:{'S-1':'C','S-2':'D','S-3':'E','S-4':'G','General I':'H','General II':'K','General III':'L'}},
+  {min:3201,   max:10000,   c:{'S-1':'C','S-2':'D','S-3':'F','S-4':'G','General I':'J','General II':'L','General III':'M'}},
+  {min:10001,  max:35000,   c:{'S-1':'C','S-2':'D','S-3':'F','S-4':'H','General I':'K','General II':'M','General III':'N'}},
+  {min:35001,  max:150000,  c:{'S-1':'D','S-2':'E','S-3':'G','S-4':'J','General I':'L','General II':'N','General III':'P'}},
+  {min:150001, max:500000,  c:{'S-1':'D','S-2':'E','S-3':'G','S-4':'J','General I':'M','General II':'P','General III':'Q'}},
+  {min:500001, max:Infinity,c:{'S-1':'D','S-2':'E','S-3':'H','S-4':'K','General I':'N','General II':'Q','General III':'R'}}
+];
+const AQL_INSPECTION_LEVELS = ['General I','General II','General III','S-1','S-2','S-3','S-4'];
+const AQL_OPTIONS = [0,0.065,0.1,0.15,0.25,0.4,0.65,1.0,1.5,2.5,4.0,6.5,10];
+
+function codeLetterFor(lotSize, level){
+  const q = Number(lotSize)||0;
+  if (q < 2) return '';
+  const band = LOT_BANDS.find(b => q >= b.min && q <= b.max);
+  if (!band) return '';
+  return band.c[level] || band.c['General II'];
+}
+function aqlColIndex(aql){
+  const v = Number(aql);
+  let best = 0, bd = Infinity;
+  AQL_COLS.forEach((c,i)=>{ const d = Math.abs(c - v); if (d < bd){ bd = d; best = i; } });
+  return best;
+}
+function singlePlan(codeLetter, aql){
+  if (!codeLetter) return null;
+  if (Number(aql) === 0){
+    return { code: codeLetter, n: CODE_SIZE[codeLetter], ac: 0, re: 1 };
+  }
+  const ai = aqlColIndex(aql);
+  let ci = CODE_LETTERS.indexOf(codeLetter);
+  let guard = 0;
+  while (ci >= 0 && ci < CODE_LETTERS.length && guard++ < 40){
+    const L = CODE_LETTERS[ci];
+    const k = ai - CODE_ZERO_COL[L];
+    if (k < 0){ ci++; continue; }
+    if (k > AC_SEQ.length - 1){ ci--; continue; }
+    return { code:L, n:CODE_SIZE[L], ac:AC_SEQ[k], re:AC_SEQ[k]+1 };
+  }
+  return null;
+}
+function computeAQL(lotQty, critical, major, minor, aqlCritical, aqlMajor, aqlMinor, level, noDefectsConfirmed){
+  level = level || 'General II';
+  const lot  = Number(lotQty) || 0;
+  const code = codeLetterFor(lot, level);
+  const pC = singlePlan(code, aqlCritical);
+  const pM = singlePlan(code, aqlMajor);
+  const pN = singlePlan(code, aqlMinor);
+  const sampleSize = Math.max(pC?pC.n:0, pM?pM.n:0, pN?pN.n:0);
+  const criticalAllowed = Number(aqlCritical) > 0 ? (pC?pC.ac:0) : 0;
+  const majorAllowed = pM ? pM.ac : 0;
+  const minorAllowed = pN ? pN.ac : 0;
+  const fail = critical > criticalAllowed || major > majorAllowed || minor > minorAllowed;
+  return {
+    sampleSize: sampleSize, codeLetter: code, lotQty: lot, level: level,
+    criticalAllowed: criticalAllowed, majorAllowed: majorAllowed, minorAllowed: minorAllowed,
+    result: (critical||major||minor) ? (fail ? 'FAIL' : 'PASS') : (noDefectsConfirmed ? 'PASS' : '')
+  };
+}
+
+let aqlComputedResult = "";
+
+// ---------------------------------------------------------------
 // Printing / Embroidery / Wash / Heat-Seal — shared AQL process form
 // (matches Printing__Embroidery__Wash__Heat-Seal.xlsx). One shared
 // function renders all four stages (only one tab is on screen at a
 // time, so fixed "aql" element IDs are safe). RMG = sampling-based
-// spot check (needs 1st Bundle / Inline Check context + Sampling
-// Plan/Sample Size); FPU = Main Process 100% Check (same form, minus
-// the sampling-specific fields).
+// spot check (needs 1st Bundle / Inline Check context; Sample Size
+// and Defect Allowed auto-calculate via the AQL engine above). FPU =
+// Main Process 100% Check (same form, but no sampling — Defect
+// Allowed and Result are entered manually instead).
 // ---------------------------------------------------------------
 let aqlSelCtrl = null;
 let currentAqlStage = null;
 
 const AQL_CHECKPOINTS = ["Approval", "Shading", "Measurements", "Grading", "Test Report", "Hand feel", "Placement", "Design", "SPI", "Tension", "Process Parameter", "Calibration"];
 
+
+
 function toggleAqlMode() {
   const isRmg = document.querySelector('input[name="aqlMode"]:checked').value === "RMG";
   document.getElementById("aqlCheckContextField").style.display = isRmg ? "" : "none";
   document.getElementById("aqlSamplingField").style.display = isRmg ? "" : "none";
-  document.getElementById("aqlSampleSizeField").style.display = isRmg ? "" : "none";
-  updateAqlSampling();
+  document.getElementById("aqlAllowedCritical").readOnly = isRmg;
+  document.getElementById("aqlAllowedMajor").readOnly = isRmg;
+  document.getElementById("aqlAllowedMinor").readOnly = isRmg;
+  document.getElementById("aqlResultAutoField").style.display = isRmg ? "" : "none";
+  document.getElementById("aqlResultManualField").style.display = isRmg ? "none" : "";
+  document.getElementById("aqlLotQtyLabel").textContent = isRmg ? "Lot Qty" : "Total Qty Checked";
+  recalcAql();
 }
 
-// ---------------------------------------------------------------
-// Auto Sampling Calculation — ANSI/ASQ Z1.4 (ISO 2859-1), General
-// Inspection Level II, Single Sampling Plan, Normal Inspection.
-// AQL 1.5 for Major/Minor (fixed above), AQL 0 / zero-tolerance for
-// Critical. Sample Size + Defect Allowed (Ac) auto-fill from Lot Qty,
-// same behaviour as the Pre-Final / Final Inspection AQL calculator.
-// ---------------------------------------------------------------
-const AQL_SAMPLING_TABLE = [
-  { max: 8,       sample: 2,    ac: 0 },
-  { max: 15,      sample: 3,    ac: 0 },
-  { max: 25,      sample: 5,    ac: 0 },
-  { max: 50,      sample: 8,    ac: 0 },
-  { max: 90,      sample: 13,   ac: 1 },
-  { max: 150,     sample: 20,   ac: 1 },
-  { max: 280,     sample: 32,   ac: 2 },
-  { max: 500,     sample: 50,   ac: 3 },
-  { max: 1200,    sample: 80,   ac: 5 },
-  { max: 3200,    sample: 125,  ac: 7 },
-  { max: 10000,   sample: 200,  ac: 10 },
-  { max: 35000,   sample: 315,  ac: 14 },
-  { max: 150000,  sample: 500,  ac: 21 },
-  { max: 500000,  sample: 800,  ac: 21 },
-  { max: Infinity,sample: 1250, ac: 21 },
-];
+// RMG: Lot Qty + Inspection Level + AQL selections -> auto Sample Size,
+// Code Letter and Defect Allowed (same ANSI/ASQC engine as Pre-Final/
+// Final), then Found Defect vs Allowed -> auto PASS/FAIL, same as those
+// two modules. FPU has no sampling basis, so this only runs for RMG.
+function recalcAql() {
+  const modeEl = document.querySelector('input[name="aqlMode"]:checked');
+  if (!modeEl || modeEl.value !== "RMG") return;
+  const lotQty = document.getElementById("aqlLotQty").value;
+  const level = document.getElementById("aqlInspectionLevel").value;
+  const aqlC = document.getElementById("aqlAqlCritical").value;
+  const aqlM = document.getElementById("aqlAqlMajor").value;
+  const aqlMn = document.getElementById("aqlAqlMinor").value;
+  const foundC = Number(document.getElementById("aqlFoundCritical").value || 0);
+  const foundM = Number(document.getElementById("aqlFoundMajor").value || 0);
+  const foundMn = Number(document.getElementById("aqlFoundMinor").value || 0);
+  const noDefect = document.getElementById("aqlNoDefect").checked;
 
-function calcAqlSampling(lotQty) {
-  const qty = Number(lotQty) || 0;
-  if (qty <= 0) return null;
-  const row = AQL_SAMPLING_TABLE.find(r => qty <= r.max) || AQL_SAMPLING_TABLE[AQL_SAMPLING_TABLE.length - 1];
-  return { sampleSize: row.sample, allowedCritical: 0, allowedMajor: row.ac, allowedMinor: row.ac };
-}
+  const aql = computeAQL(lotQty, foundC, foundM, foundMn, aqlC, aqlM, aqlMn, level, noDefect);
+  document.getElementById("aqlAutoCodeLetter").value = aql.codeLetter || "-";
+  document.getElementById("aqlSampleSize").value = aql.sampleSize || 0;
+  document.getElementById("aqlAllowedCritical").value = aql.criticalAllowed;
+  document.getElementById("aqlAllowedMajor").value = aql.majorAllowed;
+  document.getElementById("aqlAllowedMinor").value = aql.minorAllowed;
 
-function updateAqlSampling() {
-  const lotInput = document.getElementById("aqlLotQty");
-  const sizeInput = document.getElementById("aqlSampleSize");
-  const cInput = document.getElementById("aqlAllowedCritical");
-  const mInput = document.getElementById("aqlAllowedMajor");
-  const nInput = document.getElementById("aqlAllowedMinor");
-  if (!lotInput || !sizeInput) return;
-  const r = calcAqlSampling(lotInput.value);
-  sizeInput.value = r ? r.sampleSize : "";
-  cInput.value = r ? r.allowedCritical : "";
-  mInput.value = r ? r.allowedMajor : "";
-  nInput.value = r ? r.allowedMinor : "";
+  aqlComputedResult = aql.result;
+  const badge = document.getElementById("aqlResultAuto");
+  badge.textContent = aql.result || "Pending";
+  badge.style.color = aql.result === "FAIL" ? "var(--reject)" : aql.result === "PASS" ? "var(--pass)" : "var(--ink-soft)";
+  badge.style.fontWeight = "600";
 }
 
 function toggleAqlNoDefect() {
@@ -1502,33 +1612,40 @@ function renderAqlProcessStage(stageId, label) {
     </div>
 
     <div class="panel" style="margin-bottom:24px" id="aqlSamplingField">
-      <h3>Sampling Plan &amp; AQL</h3>
+      <h3>Sampling Plan &amp; AQL <span style="font-weight:400;font-size:12px;color:var(--ink-soft)">— ANSI-ASQ Z1.4 / ISO 2859-1, same tables as Pre-Final/Final Inspection</span></h3>
       <div class="form-grid">
         <div class="field"><label>Sampling Plan</label><input value="Single Sampling Plan for Normal Inspection" readonly></div>
-        <div class="field"><label>AQL — Critical</label><input value="0" readonly></div>
-        <div class="field"><label>AQL — Major</label><input value="1.5" readonly></div>
-        <div class="field"><label>AQL — Minor</label><input value="1.5" readonly></div>
+        <div class="field"><label>Inspection Level</label>
+          <select id="aqlInspectionLevel" onchange="recalcAql()">${AQL_INSPECTION_LEVELS.map(l => `<option${l === "General II" ? " selected" : ""}>${l}</option>`).join("")}</select>
+        </div>
+        <div class="field"><label>Code Letter</label><input id="aqlAutoCodeLetter" readonly></div>
+        <div class="field"><label>Sample Size</label><input id="aqlSampleSize" readonly></div>
+        <div class="field"><label>AQL — Critical</label>
+          <select id="aqlAqlCritical" onchange="recalcAql()">${AQL_OPTIONS.map(o => `<option value="${o}"${o === 0 ? " selected" : ""}>${o}</option>`).join("")}</select>
+        </div>
+        <div class="field"><label>AQL — Major</label>
+          <select id="aqlAqlMajor" onchange="recalcAql()">${AQL_OPTIONS.map(o => `<option value="${o}"${o === 1.5 ? " selected" : ""}>${o}</option>`).join("")}</select>
+        </div>
+        <div class="field"><label>AQL — Minor</label>
+          <select id="aqlAqlMinor" onchange="recalcAql()">${AQL_OPTIONS.map(o => `<option value="${o}"${o === 1.5 ? " selected" : ""}>${o}</option>`).join("")}</select>
+        </div>
       </div>
     </div>
 
     <div class="panel" style="margin-bottom:24px">
-      <h3 style="display:flex;align-items:center;justify-content:space-between">
-        <span>Lot / Defect Summary</span>
-        <span style="font-weight:400;font-size:11.5px;color:var(--ink-soft)">Sample Size &amp; Defect Allowed auto-calculate from Lot Qty (ANSI/ASQ Z1.4, Level II, Normal)</span>
-      </h3>
+      <h3>Lot / Defect Summary</h3>
       <div class="form-grid">
-        <div class="field"><label>Lot Qty</label><input id="aqlLotQty" type="number" min="0" oninput="updateAqlSampling()"></div>
-        <div class="field" id="aqlSampleSizeField"><label>Sample Size (auto)</label><input id="aqlSampleSize" type="number" min="0" readonly></div>
+        <div class="field"><label id="aqlLotQtyLabel">Lot Qty</label><input id="aqlLotQty" type="number" min="0" onchange="recalcAql()"></div>
       </div>
       <div class="form-grid" style="grid-template-columns:1fr 1fr 1fr">
-        <div class="field"><label>Defect Allowed — Critical (auto)</label><input id="aqlAllowedCritical" type="number" min="0" readonly></div>
-        <div class="field"><label>Defect Allowed — Major (auto)</label><input id="aqlAllowedMajor" type="number" min="0" readonly></div>
-        <div class="field"><label>Defect Allowed — Minor (auto)</label><input id="aqlAllowedMinor" type="number" min="0" readonly></div>
+        <div class="field"><label>Defect Allowed — Critical</label><input id="aqlAllowedCritical" type="number" min="0"></div>
+        <div class="field"><label>Defect Allowed — Major</label><input id="aqlAllowedMajor" type="number" min="0"></div>
+        <div class="field"><label>Defect Allowed — Minor</label><input id="aqlAllowedMinor" type="number" min="0"></div>
       </div>
       <div class="form-grid" style="grid-template-columns:1fr 1fr 1fr">
-        <div class="field"><label>Found Defect — Critical</label><input id="aqlFoundCritical" type="number" min="0"></div>
-        <div class="field"><label>Found Defect — Major</label><input id="aqlFoundMajor" type="number" min="0"></div>
-        <div class="field"><label>Found Defect — Minor</label><input id="aqlFoundMinor" type="number" min="0"></div>
+        <div class="field"><label>Found Defect — Critical</label><input id="aqlFoundCritical" type="number" min="0" onchange="recalcAql()"></div>
+        <div class="field"><label>Found Defect — Major</label><input id="aqlFoundMajor" type="number" min="0" onchange="recalcAql()"></div>
+        <div class="field"><label>Found Defect — Minor</label><input id="aqlFoundMinor" type="number" min="0" onchange="recalcAql()"></div>
       </div>
     </div>
 
@@ -1536,7 +1653,7 @@ function renderAqlProcessStage(stageId, label) {
       <h3 style="display:flex;align-items:center;justify-content:space-between">
         <span>Findings</span>
         <label style="font-weight:400;font-size:12px;display:flex;align-items:center;gap:6px;cursor:pointer">
-          <input type="checkbox" id="aqlNoDefect" style="width:auto" onchange="toggleAqlNoDefect()"> No Defect Found
+          <input type="checkbox" id="aqlNoDefect" style="width:auto" onchange="toggleAqlNoDefect();recalcAql()"> No Defect Found
         </label>
       </h3>
       <div id="aqlFindingsBox">
@@ -1547,8 +1664,12 @@ function renderAqlProcessStage(stageId, label) {
 
     <div class="panel" style="margin-bottom:24px">
       <div class="field"><label>Comments</label><textarea id="aqlComments" rows="3"></textarea></div>
-      <div class="field"><label>Result</label>
+      <div class="field" id="aqlResultManualField" style="display:none"><label>Result</label>
         <select id="aqlResult"><option>Pass</option><option>Fail</option><option>Hold</option></select>
+      </div>
+      <div class="field" id="aqlResultAutoField">
+        <label>Result (auto, from AQL — found vs allowed)</label>
+        <div id="aqlResultAuto" style="padding:10px 0;font-size:15px">Pending</div>
       </div>
       <button class="btn btn-primary" onclick="saveAqlProcessStage()">Save Entry →</button>
       <div id="aqlMsg" class="form-msg"></div>
@@ -1572,7 +1693,7 @@ function renderAqlProcessStage(stageId, label) {
     document.getElementById("aqlColorCustom").style.display = document.getElementById("aqlColor").value === "__custom__" ? "" : "none";
   });
   addAqlFindingRow();
-  updateAqlSampling();
+  toggleAqlMode();
   loadAqlProcessEntries();
 }
 
@@ -1587,6 +1708,11 @@ async function saveAqlProcessStage() {
   }
   const d = sel.detail || {};
   const mode = document.querySelector('input[name="aqlMode"]:checked').value;
+  if (mode === "RMG" && !aqlComputedResult) {
+    msg.textContent = "Enter Found Defect counts, or tick 'No Defect Found', so the AQL result isn't left ambiguous.";
+    msg.className = "form-msg err show";
+    return;
+  }
   const colorSel = document.getElementById("aqlColor");
   const colorCustom = document.getElementById("aqlColorCustom");
   const color = colorSel.value === "__custom__" ? colorCustom.value.trim() : colorSel.value;
@@ -1610,6 +1736,11 @@ async function saveAqlProcessStage() {
     styleNo: d.styleName || "", size: document.getElementById("aqlSize").value,
     color: color, compareWith: document.getElementById("aqlCompareWith").value,
     checkPoints: checkPoints,
+    inspectionLevel: mode === "RMG" ? document.getElementById("aqlInspectionLevel").value : "",
+    codeLetter: mode === "RMG" ? document.getElementById("aqlAutoCodeLetter").value : "",
+    aqlCritical: mode === "RMG" ? document.getElementById("aqlAqlCritical").value : "",
+    aqlMajor: mode === "RMG" ? document.getElementById("aqlAqlMajor").value : "",
+    aqlMinor: mode === "RMG" ? document.getElementById("aqlAqlMinor").value : "",
     lotQty: document.getElementById("aqlLotQty").value,
     sampleSize: mode === "RMG" ? document.getElementById("aqlSampleSize").value : "",
     allowedCritical: document.getElementById("aqlAllowedCritical").value,
@@ -1621,7 +1752,7 @@ async function saveAqlProcessStage() {
     noDefectFound: noDefect,
     findings: findings,
     comments: document.getElementById("aqlComments").value,
-    result: document.getElementById("aqlResult").value,
+    result: mode === "RMG" ? ({ PASS: "Pass", FAIL: "Fail" }[aqlComputedResult] || "") : document.getElementById("aqlResult").value,
   };
   try {
     const res = await qaApi({ action: "saveAqlProcess", entry: entry });
