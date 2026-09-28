@@ -5,6 +5,7 @@
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>1st Bundle Inspection — J.M. Fabrics Limited</title>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf-autotable/3.8.2/jspdf.plugin.autotable.min.js"></script>
 <style>
 :root{
   --bg:#F1F0EA; --panel:#FFFFFF; --text:#1F1D1A; --muted:#726F68; --line:#E3E1D9;
@@ -57,6 +58,12 @@ table.rep-table{width:100%;border-collapse:collapse;}
 .row-add-btn{margin-top:8px;}
 .check{display:flex;align-items:center;gap:6px;font-size:13px;}
 .overflow-x{overflow-x:auto;}
+.grp-hd-row{display:flex;justify-content:space-between;align-items:center;gap:10px;}
+.grp-pic{display:flex;align-items:center;gap:6px;}
+.grp-pic-thumbs{display:flex;gap:4px;}
+.grp-pic-thumbs img{width:22px;height:22px;object-fit:cover;border-radius:4px;border:1px solid var(--line);cursor:pointer;}
+.cam-btn{border:1px solid var(--line);background:#fff;border-radius:6px;padding:3px 8px;font-size:11px;cursor:pointer;white-space:nowrap;}
+.sign-table input{min-width:120px;}
 </style>
 </head>
 <body>
@@ -144,6 +151,11 @@ const CHECKLIST_GROUPS = [
   { group: 'Functional Test', items: ['Zipper Running Smoothly', 'Button/Snap Functioning Correctly', 'Pull Test', 'Elastic Stretch Acceptable', 'Drawcord Functionality Verified', 'Minimum Neck Stretch', 'Pocket Functional', 'Hood Functionality', 'Adjustable Strap Functionality', 'Toggle/Cord Lock Function', 'Buckle Functionality'] }
 ];
 const SUMMARY_GROUPS = ['Documents Review', 'Appearance', 'Construction', 'Measurements', 'Attachment', 'Labels & Artwork', 'Critical Defect', 'Functional Test'];
+const SIGNOFF_ROLES = ['Inspector','Factory QA / Representative','Quality Manager (JMF)','Buyer / Client Representative'];
+// Only these two groups get a photo-capture control, pinned to the
+// top-right corner of their group header row in the checklist table.
+const PHOTO_GROUPS = CHECKLIST_GROUPS.slice(0,2).map(g=>g.group);
+const STATUS_RESULT_MAP = { 'Yes':'Pass', 'No':'Fail', 'N/A':'N/A' };
 
 
 function flatChecklist(){
@@ -165,10 +177,12 @@ function emptyReportState(){
   return {
     header: emptyHeader(),
     checklist: flatChecklist().map(c => ({ group:c.group, label:c.label, status:'', result:'', comments:'' })),
+    groupPictures: PHOTO_GROUPS.reduce((o,g)=>{ o[g]=[]; return o; }, {}),
     defects: [],
     noDefectsFound:false,
     comments:'',
     decision:'',
+    signOff: SIGNOFF_ROLES.map(role => ({ role, name:'', signature:'' })),
   };
 }
 let state = Object.assign({
@@ -280,6 +294,59 @@ async function loadStyleDetail(sbu, buyer, ir){
 /* ============================= HELPERS ============================= */
 function esc(s){ return (s||'').toString().replace(/[&<>"']/g, c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c])); }
 function showToast(msg){ state.toast=msg; render(); setTimeout(()=>{ state.toast=null; render(); }, 2600); }
+
+/* ---- Group-level photo capture (Documents Review / Product Appearance corners) ---- */
+function picThumbSrc_(p){ return p.dataUrl || p.thumbUrl || p.url || ''; }
+function compressImageToBase64(file, maxW, quality){
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onload = () => {
+      const img = new Image();
+      img.onload = () => {
+        const scale = Math.min(1, maxW / img.width);
+        const canvas = document.createElement('canvas');
+        canvas.width = Math.max(1, Math.round(img.width * scale));
+        canvas.height = Math.max(1, Math.round(img.height * scale));
+        const ctx = canvas.getContext('2d');
+        ctx.fillStyle = '#ffffff'; ctx.fillRect(0,0,canvas.width,canvas.height);
+        ctx.drawImage(img, 0, 0, canvas.width, canvas.height);
+        resolve(canvas.toDataURL('image/jpeg', quality));
+      };
+      img.onerror = () => reject(new Error('That file could not be read as an image.'));
+      img.src = reader.result;
+    };
+    reader.onerror = () => reject(new Error('That file could not be read.'));
+    reader.readAsDataURL(file);
+  });
+}
+async function handleGroupPictureUpload(group, file){
+  showToast('Uploading photo\u2026');
+  let dataUrl = null;
+  try{ dataUrl = await compressImageToBase64(file, 1200, 0.7); }
+  catch(e){ showToast('Could not read that photo \u2014 try a JPG or PNG.'); render(); return; }
+  const base64 = dataUrl.split(',')[1];
+  state.groupPictures[group] = state.groupPictures[group] || [];
+  try{
+    const res = await qaApi({ action:'uploadImage', base64:base64, filename:file.name, mimeType:'image/jpeg' });
+    if (!res.ok) throw new Error(res.error||'Upload failed');
+    state.groupPictures[group].push({ url:res.url, thumbUrl:res.thumbUrl, fileId:res.fileId, name:file.name, dataUrl:dataUrl });
+  }catch(e){
+    state.groupPictures[group].push({ url:'', thumbUrl:'', fileId:'', name:file.name, dataUrl:dataUrl, localOnly:true });
+    showToast('Photo kept locally \u2014 could not reach Drive.');
+  }
+  render();
+}
+function groupPictureWidget(group){
+  const pics = (state.groupPictures && state.groupPictures[group]) || [];
+  return `
+    <div class="grp-pic">
+      <input type="file" accept="image/*" capture="environment" style="display:none" data-gpic-input="${esc(group)}">
+      <button type="button" class="cam-btn" data-gpic-add="${esc(group)}">&#128247; ${pics.length ? pics.length+' photo'+(pics.length>1?'s':'') : 'Add Photo'}</button>
+      <div class="grp-pic-thumbs">
+        ${pics.map((p,pi)=>`<img src="${esc(picThumbSrc_(p))}" data-gpic-view="${esc(group)}:${pi}">`).join('')}
+      </div>
+    </div>`;
+}
 function defectTotals(){
   const t = { Critical:0, Major:0, Minor:0 };
   state.defects.forEach(d => { t[d.type] = (t[d.type]||0) + (Number(d.qty)||0); });
@@ -333,6 +400,7 @@ function renderEntry(){
   ${renderWorkmanshipPanel(aql)}
   ${renderCommentsPanel()}
   ${renderSummaryPanel(aql)}
+  ${renderSignOffPanel()}
   <div class="row" style="margin-top:6px;">
     <button type="button" class="btn primary" id="saveBtn">Save Inspection</button>
     <button type="button" class="btn ghost" id="pdfBtn">Export PDF</button>
@@ -441,7 +509,7 @@ function renderAqlPanel(h, aql){
 function renderChecklistPanel(){
   let lastGroup=null;
   const rows = state.checklist.map((c,i)=>{
-    const hd = c.group!==lastGroup ? `<tr class="rep-group-hd"><td colspan="4">${esc(c.group)}</td></tr>` : '';
+    const hd = c.group!==lastGroup ? `<tr class="rep-group-hd"><td colspan="4"><div class="grp-hd-row"><span>${esc(c.group)}</span>${PHOTO_GROUPS.indexOf(c.group)!==-1 ? groupPictureWidget(c.group) : ''}</div></td></tr>` : '';
     lastGroup = c.group;
     return hd + `
     <tr>
@@ -520,6 +588,26 @@ function renderSummaryPanel(aql){
   </div>`;
 }
 
+function renderSignOffPanel(){
+  return `
+  <div class="panel panel-pad section-block">
+    <h2 class="section-title">Acknowledgements &amp; Sign-Off</h2>
+    <div class="overflow-x">
+    <table class="rep-table sign-table">
+      <thead><tr><th>Role</th><th>Name</th><th>Signature / Date</th></tr></thead>
+      <tbody>
+        ${state.signOff.map((s,i)=>`
+          <tr>
+            <td>${esc(s.role)}</td>
+            <td><input type="text" data-so="${i}:name" value="${esc(s.name)}"></td>
+            <td><input type="text" data-so="${i}:signature" value="${esc(s.signature)}" placeholder="Name / date"></td>
+          </tr>`).join('')}
+      </tbody>
+    </table>
+    </div>
+  </div>`;
+}
+
 function renderLog(){
   const rows = state.reports.slice().sort((a,b)=> new Date(b.header.date)-new Date(a.header.date)).map(r=>{
     const aql = computeAQL(r.header.lotQty, 0,0,0, r.header.aqlCritical, r.header.aqlMajor, r.header.aqlMinor, r.header.inspectionLevel, true);
@@ -565,10 +653,34 @@ function bindEvents(){
     const evt = el.tagName==='SELECT' ? 'change' : 'input';
     el.addEventListener(evt, ()=>{
       const [i,field] = el.dataset.ck.split(':');
-      state.checklist[Number(i)][field] = el.value;
+      const row = state.checklist[Number(i)];
+      row[field] = el.value;
+      // Setting Status auto-fills Result (Yes->Pass, No->Fail, N/A->N/A) so a
+      // row doesn't sit as "Hold" just because Result wasn't clicked too —
+      // Result can still be corrected manually afterward.
+      if (field === 'status' && STATUS_RESULT_MAP[el.value]) row.result = STATUS_RESULT_MAP[el.value];
       render();
     });
   });
+
+  document.querySelectorAll('[data-gpic-add]').forEach(el=>el.addEventListener('click', ()=>{
+    const input = document.querySelector(`[data-gpic-input="${CSS.escape(el.dataset.gpicAdd)}"]`);
+    if (input) input.click();
+  }));
+  document.querySelectorAll('[data-gpic-input]').forEach(el=>el.addEventListener('change', (ev)=>{
+    const file = ev.target.files && ev.target.files[0];
+    if (file) handleGroupPictureUpload(el.dataset.gpicInput, file);
+  }));
+  document.querySelectorAll('[data-gpic-view]').forEach(el=>el.addEventListener('click', ()=>{
+    const [group,pi] = el.dataset.gpicView.split(':');
+    const p = (state.groupPictures[group]||[])[Number(pi)];
+    if (p && p.url) window.open(p.url,'_blank');
+  }));
+
+  document.querySelectorAll('[data-so]').forEach(el=>el.addEventListener('input', ()=>{
+    const [i,field] = el.dataset.so.split(':');
+    state.signOff[Number(i)][field] = el.value;
+  }));
 
   document.querySelectorAll('[data-df]').forEach(el=>{
     const evt = el.tagName==='SELECT' ? 'change' : 'input';
@@ -607,7 +719,7 @@ function bindEvents(){
   document.querySelectorAll('[data-view-report]').forEach(el=>el.addEventListener('click', ()=>{
     const r = state.reports.find(x=>x.id===el.dataset.viewReport);
     if (!r) return;
-    Object.assign(state, JSON.parse(JSON.stringify({ header:r.header, checklist:r.checklist, defects:r.defects, noDefectsFound:r.noDefectsFound, comments:r.comments, decision:r.decision })));
+    Object.assign(state, JSON.parse(JSON.stringify({ header:r.header, checklist:r.checklist, groupPictures:r.groupPictures||PHOTO_GROUPS.reduce((o,g)=>{o[g]=[];return o;},{}), defects:r.defects, noDefectsFound:r.noDefectsFound, comments:r.comments, decision:r.decision, signOff:r.signOff||SIGNOFF_ROLES.map(role=>({role,name:'',signature:''})) })));
     state.editingId = r.id;
     state.tab = 'entry';
     render();
@@ -626,10 +738,12 @@ function saveInspection(){
     id: state.editingId || ('r'+Date.now()),
     header: JSON.parse(JSON.stringify(h)),
     checklist: JSON.parse(JSON.stringify(state.checklist)),
+    groupPictures: JSON.parse(JSON.stringify(state.groupPictures)),
     defects: JSON.parse(JSON.stringify(state.defects)),
     noDefectsFound: state.noDefectsFound,
     comments: state.comments,
     decision: state.decision,
+    signOff: JSON.parse(JSON.stringify(state.signOff)),
     overall: overallResult_(),
   };
   report.header.inspectionType = INSPECTION_TYPE;
@@ -641,61 +755,179 @@ function saveInspection(){
   render();
 }
 
-/* ============================= PDF EXPORT ============================= */
+/* ============================= PDF EXPORT (professional, autoTable-based) ============================= */
+function resultColor_(v){
+  if (v==='Pass'||v==='PASS') return [230,238,232];
+  if (v==='Fail'||v==='FAIL') return [246,228,222];
+  return [255,255,255];
+}
 function exportPdf(){
   const { jsPDF } = window.jspdf;
   const doc = new jsPDF({ unit:'mm', format:'a4' });
   const pageW = doc.internal.pageSize.getWidth();
+  const marginX = 10;
   let y = 14;
-  function heading(t){ doc.setFontSize(11); doc.setFont(undefined,'bold'); doc.text(t, 10, y); y+=6; doc.setFont(undefined,'normal'); }
-  function line(t){ doc.setFontSize(9.5); const lines = doc.splitTextToSize(t, pageW-20); doc.text(lines, 10, y); y += lines.length*4.5; }
-  function checkPage(){ if (y > 275){ doc.addPage(); y = 14; } }
 
-  doc.setFontSize(14); doc.setFont(undefined,'bold');
-  doc.text('J.M. Fabrics Limited', pageW/2, y, { align:'center' }); y+=6;
-  doc.setFontSize(11); doc.text(INSPECTION_TYPE, pageW/2, y, { align:'center' }); y+=8;
+  // ---- Letterhead ----
+  doc.setFontSize(15); doc.setFont(undefined,'bold');
+  doc.text('J.M. FABRICS LIMITED', pageW/2, y, { align:'center' }); y += 6.5;
+  doc.setFontSize(11.5);
+  doc.text(INSPECTION_TYPE.toUpperCase() + ' REPORT', pageW/2, y, { align:'center' }); y += 3;
+  doc.setDrawColor(180,178,168); doc.setLineWidth(0.4);
+  doc.line(marginX, y, pageW-marginX, y); y += 6;
   doc.setFont(undefined,'normal');
 
+  function sectionTitle(t){
+    doc.setFontSize(10.5); doc.setFont(undefined,'bold');
+    doc.setFillColor(246,245,241);
+    doc.rect(marginX, y-4, pageW-marginX*2, 6.5, 'F');
+    doc.text(t.toUpperCase(), marginX+2, y);
+    doc.setFont(undefined,'normal');
+    y += 6;
+  }
+  function afterTable(){ y = doc.lastAutoTable.finalY + 7; }
+  function ensureSpace(min){ if (y > 297 - min){ doc.addPage(); y = 14; } }
+
   const h = state.header;
-  heading('Order Information');
-  line('Buyer: ' + (h.buyer||'-') + '   Style: ' + (h.styleName||h.ir||'-') + '   Line: ' + (h.line||'-') + '   Size: ' + (h.size||'-'));
-  line('Color: ' + (h.color||'-') + '   Fiber/Composition: ' + (h.fiberComposition||'-') + '   Product Type: ' + (h.productType||'-'));
-  line('Date: ' + (h.date||'-') + '   Time: ' + (h.startTime||'-') + '   Inspected By: ' + (h.inspectorName||'-'));
-  
-  y += 2; checkPage();
 
-  const aql = aqlFor(); const t = defectTotals();
-  heading('Sampling Plan & AQL (ISO 2859-1 / ANSI-ASQ Z1.4, Single, Normal)');
-  line('Inspection Level: ' + h.inspectionLevel + '   Lot Qty: ' + (h.lotQty||'-') + '   Sample Size: ' + (aql.sampleSize||'-') + ' (code ' + (aql.codeLetter||'-') + ')');
-  line('AQL — Critical: ' + h.aqlCritical + ' Major: ' + h.aqlMajor + ' Minor: ' + h.aqlMinor);
-  line('Defect Allowed — Critical: ' + aql.critAllowed + ' Major: ' + aql.majAllowed + ' Minor: ' + aql.minAllowed);
-  line('Found Defect — Critical: ' + t.Critical + ' Major: ' + t.Major + ' Minor: ' + t.Minor + '   AQL Result: ' + (aql.result||'-'));
-  y += 2; checkPage();
-
-  heading('Checklist');
-  let lastGroup = null;
-  state.checklist.forEach(c => {
-    checkPage();
-    if (c.group !== lastGroup){ doc.setFont(undefined,'bold'); line(c.group); doc.setFont(undefined,'normal'); lastGroup = c.group; }
-    line('- ' + c.label + '   [' + (c.status||'-') + ' / ' + (c.result||'-') + ']' + (c.comments? ('  Comments: '+c.comments) : ''));
+  // ---- Order Information ----
+  sectionTitle('Order Information');
+  doc.autoTable({
+    startY: y, margin:{left:marginX, right:marginX}, theme:'grid',
+    styles:{ fontSize:8.5, cellPadding:2 }, tableLineColor:[227,225,217], tableLineWidth:0.15,
+    body: [
+      ['Buyer', h.buyer||'-', 'Style', h.styleName||h.ir||'-'],
+      ['Line', h.line||'-', 'Size', h.size||'-'],
+      ['Color', h.color||'-', 'Product Type', h.productType||'-'],
+      ['Fiber / Composition', h.fiberComposition||'-', '', ''],
+      ['Inspection Date', h.date||'-', 'Inspection Time', h.startTime||'-'],
+      ['Inspected By', h.inspectorName||'-', 'Inspection Type', INSPECTION_TYPE],
+    ],
+    columnStyles:{ 0:{fontStyle:'bold', textColor:[114,111,104], cellWidth:38}, 2:{fontStyle:'bold', textColor:[114,111,104], cellWidth:38} },
   });
-  y += 2; checkPage();
+  afterTable(); ensureSpace(40);
 
-  heading('Workmanship Findings');
-  if (!state.defects.length){ line(state.noDefectsFound ? 'No workmanship defects found.' : 'No defects logged.'); }
-  state.defects.forEach((d,i)=>{ checkPage(); line((i+1)+'. '+ (d.name||'-') + ' — ' + d.type + ' x' + (d.qty||1)); });
-  y += 2; checkPage();
+  // ---- Sampling Plan & AQL ----
+  const aql = aqlFor(); const t = defectTotals();
+  sectionTitle('Sampling Plan & AQL  (ISO 2859-1 / ANSI-ASQ Z1.4 \u2014 Single, Normal Inspection)');
+  doc.autoTable({
+    startY: y, margin:{left:marginX, right:marginX}, theme:'grid', styles:{ fontSize:8.5, cellPadding:2 },
+    head: [['Inspection Level', 'Lot Qty', 'Sample Size (code)', 'AQL Cr / Mj / Mn', 'AQL Result']],
+    body: [[ h.inspectionLevel, h.lotQty||'-', (aql.sampleSize||'-') + ' (' + (aql.codeLetter||'-') + ')',
+             h.aqlCritical+' / '+h.aqlMajor+' / '+h.aqlMinor, aql.result||'-' ]],
+    headStyles:{ fillColor:[31,29,26], textColor:255, fontSize:8 },
+    didParseCell: function(data){ if (data.section==='body' && data.column.index===4) data.cell.styles.fillColor = resultColor_(data.cell.raw); },
+  });
+  y = doc.lastAutoTable.finalY + 3;
+  doc.autoTable({
+    startY: y, margin:{left:marginX, right:marginX}, theme:'grid', styles:{ fontSize:8.5, cellPadding:2 },
+    head: [['', 'Critical', 'Major', 'Minor']],
+    body: [ ['Defect Allowed', aql.critAllowed, aql.majAllowed, aql.minAllowed], ['Found Defect', t.Critical, t.Major, t.Minor] ],
+    headStyles:{ fillColor:[246,245,241], textColor:[31,29,26], fontSize:8 },
+    columnStyles:{ 0:{fontStyle:'bold'} },
+  });
+  afterTable(); ensureSpace(40);
 
-  heading('Comments');
-  line(state.comments || '-');
-  y += 2; checkPage();
+  // ---- Checklist (grouped) ----
+  sectionTitle('Checklist');
+  CHECKLIST_GROUPS.forEach(g => {
+    ensureSpace(25);
+    doc.setFontSize(9); doc.setFont(undefined,'bold');
+    doc.text(g.group, marginX, y); y += 1;
+    doc.setFont(undefined,'normal');
+    const body = state.checklist.filter(c=>c.group===g.group).map(c=>[c.label, c.status||'-', c.result||'-', c.comments||'']);
+    doc.autoTable({
+      startY: y+2, margin:{left:marginX, right:marginX}, theme:'grid', styles:{ fontSize:8, cellPadding:1.8 },
+      head: [['Check Point','Status','Result','Comments']],
+      body: body,
+      headStyles:{ fillColor:[246,245,241], textColor:[31,29,26], fontSize:7.5 },
+      columnStyles:{ 0:{cellWidth:70}, 1:{cellWidth:18}, 2:{cellWidth:18} },
+      didParseCell: function(data){ if (data.section==='body' && data.column.index===2) data.cell.styles.fillColor = resultColor_(data.cell.raw); },
+    });
+    y = doc.lastAutoTable.finalY + 5;
+  });
+  ensureSpace(40);
 
-  heading('Summary');
-  SUMMARY_GROUPS.forEach(g => { checkPage(); line(g + ': ' + groupResult_(g)); });
+  // ---- Workmanship Findings ----
+  sectionTitle('Workmanship Findings');
+  if (!state.defects.length){
+    doc.setFontSize(8.5); doc.text(state.noDefectsFound ? 'No workmanship defects found.' : 'No defects logged.', marginX, y); y += 6;
+  } else {
+    doc.autoTable({
+      startY: y, margin:{left:marginX, right:marginX}, theme:'grid', styles:{ fontSize:8.5, cellPadding:2 },
+      head: [['SL','Defect Name','Defect Type','Qty']],
+      body: state.defects.map((d,i)=>[i+1, d.name||'-', d.type, d.qty||1]),
+      headStyles:{ fillColor:[246,245,241], textColor:[31,29,26], fontSize:8 },
+    });
+    afterTable();
+  }
+  ensureSpace(30);
+
+  // ---- Comments ----
+  sectionTitle('Comments');
+  doc.setFontSize(8.5);
+  const commentLines = doc.splitTextToSize(state.comments || '-', pageW - marginX*2);
+  doc.text(commentLines, marginX, y); y += commentLines.length*4.2 + 6;
+  ensureSpace(60);
+
+  // ---- Summary ----
+  sectionTitle('Summary');
   const workResult = aql.result==='FAIL'?'Fail':(aql.result==='PASS'?'Pass':'Hold');
-  line('Workmanship: ' + workResult);
-  doc.setFont(undefined,'bold'); line('Overall Result: ' + overallResult_()); doc.setFont(undefined,'normal');
-  line('Decision: ' + (state.decision || '-'));
+  const overall = overallResult_();
+  doc.autoTable({
+    startY: y, margin:{left:marginX, right:marginX}, theme:'grid', styles:{ fontSize:8.5, cellPadding:2 },
+    head: [['Item','Result (Pass / Fail / Hold)']],
+    body: SUMMARY_GROUPS.map(g=>[g, groupResult_(g)]).concat([['Workmanship', workResult],['Overall Result', overall]]),
+    headStyles:{ fillColor:[31,29,26], textColor:255, fontSize:8 },
+    didParseCell: function(data){
+      if (data.section==='body' && data.column.index===1) data.cell.styles.fillColor = resultColor_(data.cell.raw);
+      if (data.section==='body' && data.row.index === SUMMARY_GROUPS.length+1) data.cell.styles.fontStyle = 'bold';
+    },
+  });
+  y = doc.lastAutoTable.finalY + 3;
+  doc.setFontSize(9.5); doc.setFont(undefined,'bold');
+  doc.text('Decision: ' + (state.decision || '-'), marginX, y); y += 8;
+  doc.setFont(undefined,'normal');
+  ensureSpace(40);
+
+  // ---- Sign-off ----
+  sectionTitle('Acknowledgements & Sign-Off');
+  doc.autoTable({
+    startY: y, margin:{left:marginX, right:marginX}, theme:'grid', styles:{ fontSize:8.5, cellPadding:3, minCellHeight:10 },
+    head: [['Role','Name','Signature / Date']],
+    body: state.signOff.map(s=>[s.role, s.name||'', s.signature||'']),
+    headStyles:{ fillColor:[246,245,241], textColor:[31,29,26], fontSize:8 },
+  });
+  y = doc.lastAutoTable.finalY + 10;
+
+  // ---- Group photo appendix (Documents Review / Product Appearance) ----
+  const anyPics = PHOTO_GROUPS.some(g => (state.groupPictures[g]||[]).length);
+  if (anyPics){
+    ensureSpace(50);
+    sectionTitle('Photo Evidence');
+    PHOTO_GROUPS.forEach(g => {
+      const pics = state.groupPictures[g] || [];
+      if (!pics.length) return;
+      ensureSpace(45);
+      doc.setFontSize(9); doc.setFont(undefined,'bold'); doc.text(g, marginX, y); doc.setFont(undefined,'normal'); y += 4;
+      let x = marginX;
+      pics.forEach(p => {
+        if (x + 40 > pageW - marginX){ x = marginX; y += 34; ensureSpace(40); }
+        try{ doc.addImage(picThumbSrc_(p), 'JPEG', x, y, 36, 30); }catch(e){}
+        x += 40;
+      });
+      y += 36;
+    });
+  }
+
+  // ---- Footer: generated timestamp ----
+  const pageCount = doc.internal.getNumberOfPages();
+  for (let p=1; p<=pageCount; p++){
+    doc.setPage(p);
+    doc.setFontSize(7.5); doc.setTextColor(150,148,140);
+    doc.text('Generated ' + new Date().toLocaleString() + '  \u2014  Page ' + p + ' of ' + pageCount, pageW/2, 291, { align:'center' });
+    doc.setTextColor(0,0,0);
+  }
 
   doc.save((INSPECTION_TYPE.replace(/\s+/g,'_')) + '_' + (h.date||'') + '.pdf');
 }
