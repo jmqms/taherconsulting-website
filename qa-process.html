@@ -656,7 +656,49 @@ const STAGE_DETAIL_SOURCES = {
   wash: { action: "listAqlProcess", params: { process: "wash" } },
   heatseal: { action: "listAqlProcess", params: { process: "heatseal" } },
   ra: { action: "listQualityRA" },
+  // Inspection pages: full saved reports, shown the same way as the AQL process stages
+  bundle1: { action: "list1stBundle", kind: "report", page: "1st-bundle-inspection.html" },
+  sewinginline: { action: "listSewingInline", kind: "report", page: "sewing-inline-inspection.html" },
+  finishinginline: { action: "listFinishingInline", kind: "report", page: "finishing-inline-inspection.html" },
+  carton1: { action: "list1stCarton", kind: "report", page: "1st-carton-inspection.html" },
 };
+
+// Turn a saved inspection report into the same flat shape the AQL stages use,
+// so "See Details" renders it with the same tables.
+function inspectionReportToEntry_(r) {
+  const h = r.header || {}, a = r.aql || {};
+  const photos = [];
+  Object.keys(r.groupPictures || {}).forEach(g => (r.groupPictures[g] || []).forEach((p, i) => {
+    if (p.url) photos.push({ label: g + " #" + (i + 1), url: p.url });
+  }));
+  return {
+    _reportId: r.id,
+    date: h.date, time: h.startTime, inspectedBy: h.inspectorName, line: h.line,
+    sbu: h.sbu, buyer: h.buyer, ir: h.ir, styleNo: h.styleName,
+    styleDescription: h.styleDescription, item: h.item, productDept: h.productDept, season: h.season,
+    embellishmentCategory: h.embellishmentCategory, orderQty: h.orderQty,
+    size: h.size, color: h.color, fiberComposition: h.fiberComposition, productType: h.productType,
+    cartonNumber: h.cartonNumber,
+    decision: r.decision, overallResult: r.overall,
+    inspectionLevel: h.inspectionLevel, lotQty: h.lotQty, sampleSize: a.sampleSize, codeLetter: a.codeLetter,
+    aqlCritical: h.aqlCritical, aqlMajor: h.aqlMajor, aqlMinor: h.aqlMinor,
+    allowedCritical: a.critAllowed, allowedMajor: a.majAllowed, allowedMinor: a.minAllowed,
+    foundCritical: a.foundCritical, foundMajor: a.foundMajor, foundMinor: a.foundMinor,
+    aqlResult: a.result, noDefectFound: !!r.noDefectsFound,
+    checkPoints: (r.checklist || []).map(c => ({ group: c.group, point: c.label, yn: c.status, result: c.result, comments: c.comments })),
+    findings: r.defects || [],
+    comments: r.comments,
+    signOff: r.signOff || [],
+    photos: photos,
+  };
+}
+
+// Opens the inspection page in a new tab; it builds and downloads the PDF itself.
+function downloadInspectionPdf(stageId, reportId) {
+  const src = STAGE_DETAIL_SOURCES[stageId];
+  if (!src || !src.page || !reportId) return;
+  window.open(src.page + "?pdf=" + encodeURIComponent(reportId), "_blank");
+}
 
 let lastByStage = {};
 
@@ -667,9 +709,21 @@ function prettyDetailValue(key, v) {
   if (v === null || v === undefined || v === "") return "—";
   if (key === "checkPoints" && Array.isArray(v)) {
     if (!v.length) return "—";
+    let lastGroup = null;
     return `<table class="qa-table" style="margin:0"><thead><tr><th>Check Point</th><th>Yes/No/NA</th><th>Result</th><th>Comments</th></tr></thead><tbody>${
-      v.map(cp => `<tr><td>${esc(cp.point || "")}</td><td>${esc(cp.yn || "—")}</td><td>${esc(cp.result || "—")}</td><td>${esc(cp.comments || "")}</td></tr>`).join("")
+      v.map(cp => {
+        const hd = (cp.group && cp.group !== lastGroup) ? `<tr><td colspan="4" style="font-weight:700;background:var(--panel-soft, #f6f5f1)">${esc(cp.group)}</td></tr>` : "";
+        lastGroup = cp.group || lastGroup;
+        return hd + `<tr><td>${esc(cp.point || "")}</td><td>${esc(cp.yn || "—")}</td><td>${esc(cp.result || "—")}</td><td>${esc(cp.comments || "")}</td></tr>`;
+      }).join("")
     }</tbody></table>`;
+  }
+  if (key === "signOff" && Array.isArray(v)) {
+    const rows = v.filter(x => x && (x.name || x.signature));
+    return rows.length ? rows.map(x => `<b>${esc(x.role || "")}:</b> ${esc(x.name || "")}${x.signature ? " (" + esc(x.signature) + ")" : ""}`).join("<br>") : "—";
+  }
+  if (key === "photos" && Array.isArray(v)) {
+    return v.length ? v.map(p => `<a href="${esc(p.url)}" target="_blank" rel="noopener">${esc(p.label)}</a>`).join("<br>") : "—";
   }
   if (key === "findings" && Array.isArray(v)) {
     if (!v.length) return "—";
@@ -698,7 +752,7 @@ function renderEntryDetailsTable(entry) {
   return `<table class="qa-table">
     <thead><tr><th style="width:220px">Field</th><th>Value</th></tr></thead>
     <tbody>${
-      Object.keys(entry).filter(k => !skip.includes(k)).map(k =>
+      Object.keys(entry).filter(k => !skip.includes(k) && k.charAt(0) !== "_").map(k =>
         `<tr><td style="font-weight:600;vertical-align:top">${esc(humanizeKey(k))}</td><td>${prettyDetailValue(k, entry[k])}</td></tr>`
       ).join("")
     }</tbody>
@@ -720,8 +774,15 @@ async function showStageDetails(stageId) {
     if (source) {
       const params = Object.assign({ action: source.action }, source.params || {});
       const res = await qaApi(params);
-      const list = res.ok ? (res.entries || []) : [];
-      entries = list.filter(e => String(e.ir || "").trim() === stSelected.ir);
+      if (source.kind === "report") {
+        const reps = res.ok ? (res.reports || []) : [];
+        entries = reps.filter(r => String((r.header || {}).ir || "").trim() === stSelected.ir).map(inspectionReportToEntry_);
+        // nothing saved as a full report for this IR: fall back to the summary row
+        if (!entries.length) entries = lastByStage[stageId] || [];
+      } else {
+        const list = res.ok ? (res.entries || []) : [];
+        entries = list.filter(e => String(e.ir || "").trim() === stSelected.ir);
+      }
     } else {
       entries = lastByStage[stageId] || [];
     }
@@ -738,7 +799,10 @@ async function showStageDetails(stageId) {
       </h3>
       ${entries.length ? entries.map((e, idx) => `
         <div style="margin-bottom:${idx < entries.length - 1 ? "18px" : "0"};${idx < entries.length - 1 ? "padding-bottom:18px;border-bottom:1px solid var(--line)" : ""}">
-          ${entries.length > 1 ? `<div style="font-weight:600;margin-bottom:6px">Entry ${idx + 1}</div>` : ""}
+          ${entries.length > 1 || e._reportId ? `<div style="display:flex;align-items:center;justify-content:space-between;font-weight:600;margin-bottom:6px">
+            <span>${entries.length > 1 ? "Entry " + (idx + 1) : ""}</span>
+            ${e._reportId ? `<button class="btn btn-ghost" style="padding:4px 10px;font-size:11.5px" onclick="downloadInspectionPdf('${esc(stageId)}','${esc(e._reportId)}')">⬇ Download PDF</button>` : ""}
+          </div>` : ""}
           ${stageId === "ra" ? raEntryDetailHTML(e) : renderEntryDetailsTable(e)}
         </div>
       `).join("") : `<div style="color:var(--ink-soft)">No detail entries found for this IR.</div>`}
