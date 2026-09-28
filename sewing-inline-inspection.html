@@ -93,6 +93,7 @@ const LOT_BANDS = [
   {min:150001,max:500000,c:{'S-1':'D','S-2':'E','S-3':'G','S-4':'J','General I':'M','General II':'P','General III':'Q'}},
   {min:500001,max:Infinity,c:{'S-1':'D','S-2':'E','S-3':'H','S-4':'K','General I':'N','General II':'Q','General III':'R'}}
 ];
+const AQL_OPTIONS = [0,0.065,0.10,0.15,0.25,0.40,0.65,1.0,1.5,2.5,4.0,6.5,10];
 const INSPECTION_LEVELS = ['General I','General II','General III','S-1','S-2','S-3','S-4'];
 const DEFECT_TYPES = ['Critical','Major','Minor'];
 const DECISIONS = ['Accepted','Rework Required','Rejected'];
@@ -127,12 +128,16 @@ function computeAQL(lotQty, foundC, foundM, foundN, aqlC, aqlM, aqlN, level, noD
   const lot = Number(lotQty)||0;
   const code = codeLetterFor(lot, level);
   const pC = singlePlan(code, aqlC), pM = singlePlan(code, aqlM), pN = singlePlan(code, aqlN);
-  const sampleSize = Math.max(pC?pC.n:0, pM?pM.n:0, pN?pN.n:0);
+  let sampleSize = Math.max(pC?pC.n:0, pM?pM.n:0, pN?pN.n:0);
+  // Z1.4: when the plan's sample size is >= lot size, inspect the whole lot
+  const planSample = sampleSize;
+  const fullLot = lot > 0 && sampleSize > lot;
+  if (fullLot) sampleSize = lot;
   const critAllowed = Number(aqlC)>0 ? (pC?pC.ac:0) : 0;
   const majAllowed = pM?pM.ac:0, minAllowed = pN?pN.ac:0;
   const fail = foundC > critAllowed || foundM > majAllowed || foundN > minAllowed;
   const anyFound = foundC||foundM||foundN;
-  return { sampleSize, codeLetter:code, critAllowed, majAllowed, minAllowed,
+  return { sampleSize, planSample, fullLot, codeLetter:code, critAllowed, majAllowed, minAllowed,
     result: anyFound ? (fail?'FAIL':'PASS') : (noDefectsFound ? 'PASS' : '') };
 }
 
@@ -140,6 +145,7 @@ function computeAQL(lotQty, foundC, foundM, foundN, aqlC, aqlM, aqlN, level, noD
 const INSPECTION_TYPE = 'Sewing Inline Inspection';
 const MODULE_KIND = 'sewinginline';
 const MODULE_STORAGE_KEY = 'sewinginline-reports-fallback';
+const STAGE_ID = 'sewinginline';
 const CHECKLIST_GROUPS = [
   { group: 'Documents Review', items: ['Style File Review', 'Risk Assessment Review', 'Tech Pack Review', 'PP Meeting Review', 'PP Sample Comments Review', 'Approval Sample Review', 'Duplicate Counter Sample Review', 'Trims Card Review', 'Test Report'] },
   { group: 'Product Appearance', items: ['PP Sample vs Bulk Production Correct?', 'Styling Check', 'Fabric Color', 'Fabric Hand Feel', 'Fabric Appearance', 'Shading (Panel to Panel)', 'Overall Garments Appearance'] },
@@ -150,7 +156,7 @@ const CHECKLIST_GROUPS = [
   { group: 'Critical Defect Check', items: ['Missing Operation', 'Wrong Component Attachment', 'Wrong Label Information', 'Safety Requirement Complied', 'Sharp Edge/Point Check'] },
   { group: 'Functional Test', items: ['Zipper Running Smoothly', 'Button/Snap Functioning Correctly', 'Pull Test', 'Elastic Stretch Acceptable', 'Drawcord Functionality Verified', 'Minimum Neck Stretch', 'Pocket Functional', 'Hood Functionality', 'Adjustable Strap Functionality', 'Toggle/Cord Lock Function', 'Buckle Functionality'] }
 ];
-const SUMMARY_GROUPS = ['Documents Review', 'Appearance', 'Construction', 'Measurements', 'Attachment', 'Labels & Artwork', 'Critical Defect', 'Functional Test'];
+const SUMMARY_ROWS = [{ group: 'Documents Review', label: 'Documents Review' }, { group: 'Product Appearance', label: 'Appearance' }, { group: 'Sewing Construction', label: 'Construction' }, { group: 'Measurement Check', label: 'Measurements' }, { group: 'Attachment', label: 'Attachment' }, { group: 'Label & Artwork Verification', label: 'Labels & Artwork' }, { group: 'Critical Defect Check', label: 'Critical Defect' }, { group: 'Functional Test', label: 'Functional Test' }];  // [{group, label}] group = exact checklist group name
 const SIGNOFF_ROLES = ['Inspector','Factory QA / Representative','Quality Manager (JMF)','Buyer / Client Representative'];
 // Only these two groups get a photo-capture control, pinned to the
 // top-right corner of their group header row in the checklist table.
@@ -167,10 +173,10 @@ function flatChecklist(){
 /* ============================= STATE ============================= */
 function emptyHeader(){
   return {
-    dataMode:'auto', sbu:'', buyer:'', ir:'', styleId:'', styleName:'', styleDescription:'', item:'', productDept:'', season:'',
+    dataMode:'auto', sbu:'', buyer:'', ir:'', styleId:'', styleName:'', styleDescription:'', item:'', productDept:'', season:'', embellishmentCategory:'', orderQty:'',
     date:new Date().toISOString().slice(0,10), startTime:'', inspectorName:'',
     line:'', size:'', color:'', fiberComposition:'', productType:'',
-    lotQty:'', inspectionLevel:'General II', aqlCritical:0, aqlMajor:2.5, aqlMinor:4.0,
+    lotQty:'', inspectionLevel:'General II', aqlCritical:0, aqlMajor:2.5, aqlMinor:4,
   };
 }
 function emptyReportState(){
@@ -231,9 +237,14 @@ async function loadReports(){
   loadSbuOptions();
   try{ render(); }catch(e){ console.error('[loadReports] render threw:', e); }
 }
+function stripPics_(r){
+  const c = JSON.parse(JSON.stringify(r));
+  Object.keys(c.groupPictures||{}).forEach(g => (c.groupPictures[g]||[]).forEach(p => { if (p.fileId) delete p.dataUrl; }));
+  return c;
+}
 async function persistReports(){
   try{
-    const res = await qaApi({ action:"saveSewingInline", reports: state.reports });
+    const res = await qaApi({ action:"saveSewingInline", reports: state.reports.map(stripPics_) });
     if (!res.ok) throw new Error(res.error||"Save failed");
   }catch(e){
     try{ localStorage.setItem(MODULE_STORAGE_KEY, JSON.stringify(state.reports)); }catch(e2){}
@@ -284,7 +295,8 @@ async function loadStyleDetail(sbu, buyer, ir){
       state.header.item = d.item||'';
       state.header.productDept = d.productDept||'';
       state.header.season = d.season||'';
-      if (!state.header.lotQty) state.header.lotQty = d.totalQty||'';
+      state.header.orderQty = d.totalQty||'';
+      state.header.embellishmentCategory = d.embellishmentCategory||'';
       state.colorOptions = (d.colors||[]).map(c=>c.color).filter(Boolean);
     }
   }catch(e){}
@@ -359,12 +371,13 @@ function aqlFor(){
 function groupResult_(groupName){
   const rows = state.checklist.filter(c => c.group === groupName);
   const results = rows.map(r=>r.result).filter(Boolean);
-  if (!results.length) return 'Hold';
-  return results.includes('Fail') ? 'Fail' : 'Pass';
+  if (results.includes('Fail')) return 'Fail';
+  if (results.length < rows.length) return 'Hold';
+  return 'Pass';
 }
 function overallResult_(){
   const aql = aqlFor();
-  const groupResults = SUMMARY_GROUPS.map(g => groupResult_(g));
+  const groupResults = SUMMARY_ROWS.map(r => groupResult_(r.group));
   const workResult = aql.result === 'FAIL' ? 'Fail' : (aql.result === 'PASS' ? 'Pass' : 'Hold');
   const all = groupResults.concat([workResult]);
   if (all.includes('Fail')) return 'Fail';
@@ -375,6 +388,7 @@ function overallResult_(){
 /* ============================= RENDER ============================= */
 function render(){
   const app = document.getElementById('app');
+  const sy = window.scrollY;
   app.innerHTML = `
     <div class="wrap">
       <div class="top">
@@ -389,6 +403,7 @@ function render(){
     ${state.toast ? `<div class="toast">${esc(state.toast)}</div>` : ''}
   `;
   bindEvents();
+  window.scrollTo(0, sy);
 }
 
 function renderEntry(){
@@ -422,6 +437,12 @@ function renderOrderInfoPanel(h){
       <div class="f"><span class="field-label">Buyer</span><input type="text" data-hf="buyer" value="${esc(h.buyer)}"></div>
       <div class="f"><span class="field-label">IR / Style</span><input type="text" data-hf="ir" value="${esc(h.ir)}"></div>
       <div class="f"><span class="field-label">Style Name</span><input type="text" data-hf="styleName" value="${esc(h.styleName)}"></div>
+      <div class="f"><span class="field-label">Style Description</span><input type="text" data-hf="styleDescription" value="${esc(h.styleDescription)}"></div>
+      <div class="f"><span class="field-label">Item</span><input type="text" data-hf="item" value="${esc(h.item)}"></div>
+      <div class="f"><span class="field-label">Product Dept</span><input type="text" data-hf="productDept" value="${esc(h.productDept)}"></div>
+      <div class="f"><span class="field-label">Season</span><input type="text" data-hf="season" value="${esc(h.season)}"></div>
+      <div class="f"><span class="field-label">Embellishment Category</span><input type="text" data-hf="embellishmentCategory" value="${esc(h.embellishmentCategory)}"></div>
+      <div class="f"><span class="field-label">Order Qty</span><input type="number" data-hf="orderQty" value="${esc(h.orderQty)}"></div>
     </div>` : `
     <div class="header-grid">
       <div class="f"><span class="field-label">SBU</span>
@@ -443,6 +464,11 @@ function renderOrderInfoPanel(h){
         </select>
       </div>
       <div class="f"><span class="field-label">Style Name</span><input type="text" value="${esc(h.styleName)}" readonly></div>
+      <div class="f"><span class="field-label">Style Description</span><input type="text" value="${esc(h.styleDescription)}" readonly></div>
+      <div class="f"><span class="field-label">Item / Product Dept</span><input type="text" value="${esc([h.item,h.productDept].filter(Boolean).join(' / '))}" readonly></div>
+      <div class="f"><span class="field-label">Season</span><input type="text" value="${esc(h.season)}" readonly></div>
+      <div class="f"><span class="field-label">Embellishment Category</span><input type="text" value="${esc(h.embellishmentCategory)}" readonly></div>
+      <div class="f"><span class="field-label">Order Qty</span><input type="text" value="${esc(h.orderQty)}" readonly></div>
     </div>`}
     <div class="header-grid" style="margin-top:12px;">
       <div class="f"><span class="field-label">Inspection Date</span><input type="date" data-hf="date" value="${esc(h.date)}"></div>
@@ -475,9 +501,9 @@ function renderAqlPanel(h, aql){
         <select data-hf="inspectionLevel">${INSPECTION_LEVELS.map(l=>`<option ${h.inspectionLevel===l?'selected':''}>${l}</option>`).join('')}</select>
       </div>
       <div class="f"><span class="field-label">Lot Qty</span><input type="number" data-hf="lotQty" value="${esc(h.lotQty)}"></div>
-      <div class="f"><span class="field-label">AQL Critical</span><input type="number" step="0.01" data-hf="aqlCritical" value="${esc(h.aqlCritical)}"></div>
-      <div class="f"><span class="field-label">AQL Major</span><input type="number" step="0.01" data-hf="aqlMajor" value="${esc(h.aqlMajor)}"></div>
-      <div class="f"><span class="field-label">AQL Minor</span><input type="number" step="0.01" data-hf="aqlMinor" value="${esc(h.aqlMinor)}"></div>
+      <div class="f"><span class="field-label">AQL Critical</span><select data-hf-num="aqlCritical">${AQL_OPTIONS.map(a=>`<option value="${a}" ${Number(h.aqlCritical)===a?'selected':''}>${a}</option>`).join('')}</select></div>
+      <div class="f"><span class="field-label">AQL Major</span><select data-hf-num="aqlMajor">${AQL_OPTIONS.map(a=>`<option value="${a}" ${Number(h.aqlMajor)===a?'selected':''}>${a}</option>`).join('')}</select></div>
+      <div class="f"><span class="field-label">AQL Minor</span><select data-hf-num="aqlMinor">${AQL_OPTIONS.map(a=>`<option value="${a}" ${Number(h.aqlMinor)===a?'selected':''}>${a}</option>`).join('')}</select></div>
     </div>
     <div class="overflow-x">
     <table class="rep-table">
@@ -485,7 +511,7 @@ function renderAqlPanel(h, aql){
       <tbody>
         <tr>
           <td>${esc(h.lotQty)||'-'} <span class="subtle-note">(code ${aql.codeLetter||'-'})</span></td>
-          <td>${aql.sampleSize||'-'}</td>
+          <td>${aql.sampleSize||'-'}${aql.fullLot ? ` <div class="subtle-note">100% inspection &mdash; plan needs ${aql.planSample}, lot is smaller</div>` : ''}</td>
           <td>Defect Allowed</td>
           <td>${aql.critAllowed}</td>
           <td>${aql.majAllowed}</td>
@@ -562,9 +588,9 @@ function renderCommentsPanel(){
 }
 
 function renderSummaryPanel(aql){
-  const rows = SUMMARY_GROUPS.map(g => {
-    const r = groupResult_(g);
-    return `<tr><td>${esc(g)}</td><td><span class="badge ${r==='Fail'?'fail':r==='Pass'?'pass':''}">${r}</span></td></tr>`;
+  const rows = SUMMARY_ROWS.map(sr => {
+    const r = groupResult_(sr.group);
+    return `<tr><td>${esc(sr.label)}</td><td><span class="badge ${r==='Fail'?'fail':r==='Pass'?'pass':''}">${r}</span></td></tr>`;
   }).join('');
   const workResult = aql.result==='FAIL'?'Fail':(aql.result==='PASS'?'Pass':'Hold');
   const overall = overallResult_();
@@ -647,6 +673,7 @@ function bindEvents(){
     if (key==='ir'){ loadStyleDetail(state.header.sbu, state.header.buyer, el.value); }
     render();
   }));
+  document.querySelectorAll('[data-hf-num]').forEach(el=>el.addEventListener('change', ()=>{ state.header[el.dataset.hfNum]=Number(el.value); render(); }));
   document.querySelectorAll('[data-hf-sel2]').forEach(el=>el.addEventListener('change', ()=>{ state.header[el.dataset.hfSel2]=el.value; render(); }));
 
   document.querySelectorAll('[data-ck]').forEach(el=>{
@@ -659,6 +686,7 @@ function bindEvents(){
       // row doesn't sit as "Hold" just because Result wasn't clicked too —
       // Result can still be corrected manually afterward.
       if (field === 'status' && STATUS_RESULT_MAP[el.value]) row.result = STATUS_RESULT_MAP[el.value];
+      if (field === 'comments') return;   // typing: no re-render, keeps focus & scroll
       render();
     });
   });
@@ -683,12 +711,16 @@ function bindEvents(){
   }));
 
   document.querySelectorAll('[data-df]').forEach(el=>{
-    const evt = el.tagName==='SELECT' ? 'change' : 'input';
-    el.addEventListener(evt, ()=>{
+    el.addEventListener('input', (ev)=>{ if (el.tagName==='INPUT') handleDf(el, ev); });
+    el.addEventListener('change', (ev)=>{ handleDf(el, ev); });
+    function handleDf(el, ev){
       const [i,field] = el.dataset.df.split(':');
       state.defects[Number(i)][field] = field==='qty' ? Number(el.value)||0 : el.value;
+      if (field === 'name') return;       // typing: no re-render, keeps focus & scroll
+      if (field === 'qty' && ev && ev.type==='input') return;
+      if (ev && ev.type==='input') return;
       render();
-    });
+    }
   });
   document.querySelectorAll('[data-remove-defect]').forEach(el=>el.addEventListener('click', ()=>{
     state.defects.splice(Number(el.dataset.removeDefect),1); render();
@@ -731,6 +763,18 @@ function bindEvents(){
   }));
 }
 
+async function mirrorToStyleTracking_(report){
+  const h = report.header;
+  const statusMap = { 'Accepted':'Done', 'Rework Required':'In Progress', 'Rejected':'Open' };
+  try{
+    await qaApi({ action:'saveEntry', entry:{
+      stage: STAGE_ID, orderNo:'', styleNo: h.styleName||'', irNo: h.ir||'',
+      inspector: h.inspectorName||'', status: statusMap[report.decision] || 'In Progress',
+      score: report.overall||'', notes: (report.decision||'') + (report.comments ? ' - '+report.comments : '')
+    }});
+  }catch(e){ console.error('[styleTracking mirror]', e); }
+}
+
 function saveInspection(){
   const h = state.header;
   if (!h.buyer || !h.line){ showToast('Please fill in at least Buyer and Line before saving.'); return; }
@@ -748,9 +792,11 @@ function saveInspection(){
   };
   report.header.inspectionType = INSPECTION_TYPE;
   const idx = state.reports.findIndex(r=>r.id===report.id);
+  const isNew = idx < 0;
   if (idx>=0) state.reports[idx]=report; else state.reports.push(report);
   state.editingId = report.id;
   persistReports();
+  if (isNew) mirrorToStyleTracking_(report);
   showToast('Inspection saved.');
   render();
 }
@@ -761,7 +807,15 @@ function resultColor_(v){
   if (v==='Fail'||v==='FAIL') return [246,228,222];
   return [255,255,255];
 }
-function exportPdf(){
+async function exportPdf(){
+  // Photos saved earlier only keep a Drive id; pull them back for the PDF.
+  for (const g of PHOTO_GROUPS){
+    for (const p of (state.groupPictures[g]||[])){
+      if (!p.dataUrl && p.fileId && !p._pdfData){
+        try{ const r = await qaApi({ action:'fetchImageBase64', fileId:p.fileId }); if (r.ok) p._pdfData = 'data:'+(r.mimeType||'image/jpeg')+';base64,'+r.base64; }catch(e){}
+      }
+    }
+  }
   const { jsPDF } = window.jspdf;
   const doc = new jsPDF({ unit:'mm', format:'a4' });
   const pageW = doc.internal.pageSize.getWidth();
@@ -877,11 +931,11 @@ function exportPdf(){
   doc.autoTable({
     startY: y, margin:{left:marginX, right:marginX}, theme:'grid', styles:{ fontSize:8.5, cellPadding:2 },
     head: [['Item','Result (Pass / Fail / Hold)']],
-    body: SUMMARY_GROUPS.map(g=>[g, groupResult_(g)]).concat([['Workmanship', workResult],['Overall Result', overall]]),
+    body: SUMMARY_ROWS.map(sr=>[sr.label, groupResult_(sr.group)]).concat([['Workmanship', workResult],['Overall Result', overall]]),
     headStyles:{ fillColor:[31,29,26], textColor:255, fontSize:8 },
     didParseCell: function(data){
       if (data.section==='body' && data.column.index===1) data.cell.styles.fillColor = resultColor_(data.cell.raw);
-      if (data.section==='body' && data.row.index === SUMMARY_GROUPS.length+1) data.cell.styles.fontStyle = 'bold';
+      if (data.section==='body' && data.row.index === SUMMARY_ROWS.length+1) data.cell.styles.fontStyle = 'bold';
     },
   });
   y = doc.lastAutoTable.finalY + 3;
@@ -913,7 +967,7 @@ function exportPdf(){
       let x = marginX;
       pics.forEach(p => {
         if (x + 40 > pageW - marginX){ x = marginX; y += 34; ensureSpace(40); }
-        try{ doc.addImage(picThumbSrc_(p), 'JPEG', x, y, 36, 30); }catch(e){}
+        try{ doc.addImage(p.dataUrl || p._pdfData, 'JPEG', x, y, 36, 30); }catch(e){}
         x += 40;
       });
       y += 36;
