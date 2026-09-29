@@ -491,116 +491,108 @@
     let _cloudDataInFlight = null;
     const CLOUD_CACHE_TTL_MS = 60000; // 1 minute
 
-    // ---- Persistent (IndexedDB) cache: rows are downloaded once, afterwards only
-    //      NEW rows are fetched (?since=lastRow). Makes every tab load fast.
-    let _persist = null;
-    const IDB_NAME = 'qms_audit_cache', IDB_STORE = 'kv';
-    function idbOpen() {
-        return new Promise((res, rej) => {
-            if (!window.indexedDB) return rej(new Error('no indexedDB'));
-            const r = indexedDB.open(IDB_NAME, 1);
-            r.onupgradeneeded = () => r.result.createObjectStore(IDB_STORE);
-            r.onsuccess = () => res(r.result);
-            r.onerror = () => rej(r.error);
-        });
-    }
-    async function idbGet(k) {
+    // ---- Query engine ---------------------------------------------------------
+    // The Sheet holds hundreds of thousands of rows, so the browser never downloads it all.
+    // The server filters / summarises, we only receive small results. Results are cached
+    // for a few minutes per query.
+    const _queryCache = {};
+    const QUERY_TTL_MS = 5 * 60 * 1000;
+    const QUERY_CHUNK = 40000;
+
+    async function cloudGet(params) {
+        if (!CLOUD_API_URL) throw new Error('APPS_SCRIPT_URL is not set in audit.html');
+        const qs = Object.keys(params)
+            .filter(k => params[k] !== undefined && params[k] !== null && params[k] !== '')
+            .map(k => k + '=' + encodeURIComponent(params[k])).join('&');
+        let res;
         try {
-            const db = await idbOpen();
-            return await new Promise(res => {
-                const q = db.transaction(IDB_STORE).objectStore(IDB_STORE).get(k);
-                q.onsuccess = () => res(q.result || null);
-                q.onerror = () => res(null);
-            });
-        } catch (e) { return null; }
-    }
-    async function idbSet(k, v) {
-        try {
-            const db = await idbOpen();
-            await new Promise(res => {
-                const t = db.transaction(IDB_STORE, 'readwrite');
-                t.objectStore(IDB_STORE).put(v, k);
-                t.oncomplete = t.onerror = t.onabort = () => res();
-            });
-        } catch (e) {}
-    }
-    async function idbDel(k) {
-        try {
-            const db = await idbOpen();
-            await new Promise(res => {
-                const t = db.transaction(IDB_STORE, 'readwrite');
-                t.objectStore(IDB_STORE).delete(k);
-                t.oncomplete = t.onerror = t.onabort = () => res();
-            });
-        } catch (e) {}
+            res = await fetch(CLOUD_API_URL + '?' + qs, { redirect: 'follow' });
+        } catch (err) {
+            throw new Error('[build 2026-09-29g] Cannot reach the audit database. In Apps Script: Deploy > Manage deployments > "Who has access" = Anyone, and authorize the script once. (' + err.message + ')');
+        }
+        const data = await readBackendJson(res);
+        if (data && data.status === 'error') throw new Error(data.message);
+        return data;
     }
 
-    function fetchCloudDataCached(forceRefresh) {
-        const now = Date.now();
-        if (!forceRefresh && _cloudDataCache && (now - _cloudDataCacheTime < CLOUD_CACHE_TTL_MS)) {
-            return Promise.resolve(_cloudDataCache);
-        }
-        if (_cloudDataInFlight) {
-            return _cloudDataInFlight;
-        }
-        if (!CLOUD_API_URL) {
-            return Promise.reject(new Error('APPS_SCRIPT_URL is not set in audit.html'));
-        }
-        const cacheKey = 'rows:' + CLOUD_API_URL;
-        _cloudDataInFlight = (async () => {
-            try {
-                if (!_persist) _persist = await idbGet(cacheKey);
-                let ptr = (_persist && Array.isArray(_persist.rows)) ? (_persist.lastRow || 0) : 0;
-                let rows = ptr > 0 ? _persist.rows.slice() : [];
-                let legacyArray = null;
+    // Each month has its own tab (January'26, February'26 ...). Ask which months exist.
+    let _archiveMonths = null, _archiveMonthsTime = 0;
+    async function getArchiveMonths() {
+        if (_archiveMonths && Date.now() - _archiveMonthsTime < 10 * 60 * 1000) return _archiveMonths;
+        const r = await cloudGet({ op: 'sources' });
+        _archiveMonths = Array.isArray(r.months) ? r.months : [];
+        _archiveMonthsTime = Date.now();
+        return _archiveMonths;
+    }
 
-                // Download in small pages so no single request can time out
-                for (let guard = 0; guard < 500; guard++) {
-                    const res = await fetch(CLOUD_API_URL + '?since=' + ptr + '&limit=3000', { redirect: 'follow' });
-                    const data = await readBackendJson(res);
-                    if (Array.isArray(data)) { legacyArray = data; break; } // older backend: full data
-                    if (data && data.status === 'error') throw new Error(data.message);
-                    if (data.reset) rows = [];
-                    rows = rows.concat(data.rows);
-                    const next = data.lastRow;
-                    const done = next >= data.totalRows || next <= ptr;
-                    ptr = next;
-                    if (done) break;
-                }
-
-                if (legacyArray) {
-                    rows = legacyArray;
-                } else {
-                    _persist = { lastRow: ptr, rows: rows };
-                    idbSet(cacheKey, _persist);
-                }
-                _cloudDataCache = rows;
-                _cloudDataCacheTime = Date.now();
-                return rows;
-            } catch (err) {
-                if (err instanceof TypeError) {
-                    throw new Error('[build 2026-09-29d] Cannot reach the audit database. In Apps Script: Deploy > Manage deployments > set "Who has access" = Anyone, then authorize the script once. (' + err.message + ')');
-                }
-                throw err;
-            } finally {
-                _cloudDataInFlight = null;
+    // Scan ONE month tab (src like '2026-09')
+    async function querySource(filters, mode, src, onProgress) {
+        const range = await cloudGet({ op: 'range', src: src, from: filters.from, to: filters.to });
+        if (!range.firstRow) return [];
+        const starts = [];
+        for (let s = range.firstRow; s <= range.lastRow; s += QUERY_CHUNK) starts.push(s);
+        const parts = new Array(starts.length);
+        let next = 0, done = 0;
+        const worker = async () => {
+            while (next < starts.length) {
+                const my = next++;
+                const s = starts[my];
+                parts[my] = await cloudGet(Object.assign({}, filters, {
+                    op: 'query', mode: mode, src: src, start: s, end: Math.min(range.lastRow, s + QUERY_CHUNK - 1)
+                }));
+                done++;
+                if (onProgress) onProgress(done, starts.length);
             }
-        })();
-        return _cloudDataInFlight;
+        };
+        await Promise.all([worker(), worker(), worker()]);
+        let out = [];
+        parts.forEach(p => { out = out.concat(mode === 'rows' ? (p.rows || []) : (p.groups || [])); });
+        return out;
     }
 
-    // Light reset: next call only fetches NEW rows from the server
-    function invalidateCloudDataCache() {
-        _cloudDataCache = null;
-        _cloudDataCacheTime = 0;
+    // filters: {from,to,sbu,section,subcategory,question,status}; mode: 'rows' | 'agg'
+    // 'agg' returns [{sbu,line,section,subcategory,question,total,pass,fail}]
+    async function queryCloud(filters, mode, onProgress) {
+        const key = mode + '|' + JSON.stringify(filters);
+        const hit = _queryCache[key];
+        if (hit && Date.now() - hit.t < QUERY_TTL_MS) return hit.v;
+
+        // only the month tabs (e.g. September'26) that overlap the requested date range
+        const months = await getArchiveMonths();
+        const fromM = filters.from ? filters.from.slice(0, 7) : '';
+        const toM = filters.to ? filters.to.slice(0, 7) : '';
+        const sources = months.filter(m => (!fromM || m >= fromM) && (!toM || m <= toM));
+
+        let merged = [];
+        for (let i = 0; i < sources.length; i++) {
+            const prog = onProgress ? (d, t) => onProgress(d, t, sources[i]) : null;
+            merged = merged.concat(await querySource(filters, mode, sources[i], prog));
+        }
+
+        let result;
+        if (mode === 'rows') {
+            result = merged;
+        } else {
+            const map = {};
+            merged.forEach(g => {
+                const k = g[0] + '|' + g[1] + '|' + g[2] + '|' + g[3] + '|' + g[4];
+                if (!map[k]) map[k] = { sbu: g[0], line: g[1], section: g[2], subcategory: g[3], question: g[4], total: 0, pass: 0, fail: 0 };
+                map[k].total += g[5]; map[k].pass += g[6]; map[k].fail += g[7];
+            });
+            result = Object.values(map);
+        }
+        _queryCache[key] = { t: Date.now(), v: result };
+        return result;
     }
 
-    // Full reset: forget the stored copy, next call downloads everything again
-    function resetPersistentCache() {
-        invalidateCloudDataCache();
-        _persist = null;
-        idbDel('rows:' + CLOUD_API_URL);
+    function progressText(el, colspan) {
+        return (done, total, label) => {
+            el.innerHTML = `<tr><td colspan="${colspan}" class="loading-text">🔄 Scanning ${label || 'database'}… ${done}/${total}</td></tr>`;
+        };
     }
+
+    function invalidateCloudDataCache() { for (const k in _queryCache) delete _queryCache[k]; _archiveMonths = null; }
+    function resetPersistentCache() { invalidateCloudDataCache(); }
 
     let totalActiveCheckpoints = 0;
     let currentUserRole = 'staff';
@@ -1118,29 +1110,13 @@
         dashboardRequestSeq++;
         const thisRequestId = dashboardRequestSeq;
         
-        fetchCloudDataCached()
-        .then(dataStream => {
+        queryCloud({ from: startDateVal, to: endDateVal, sbu: sbuFilter }, 'agg', progressText(tableBody, 6))
+        .then(filteredData => {
             if (thisRequestId !== dashboardRequestSeq) return; // a newer request has since been made — discard this stale response
-            if(!Array.isArray(dataStream)) { throw new Error("Invalid format."); }
-            
-            const startRange = startDateVal ? new Date(startDateVal) : null;
-            const endRange = endDateVal ? new Date(endDateVal) : null;
-            if(startRange) startRange.setHours(0,0,0,0);
-            if(endRange) endRange.setHours(23,59,59,999);
 
-            const filteredData = dataStream.filter(row => {
-                if (sbuFilter !== 'ALL' && row.sbu !== sbuFilter) return false;
-                if (row.date) {
-                    const checkDate = new Date(row.date);
-                    if (startRange && checkDate < startRange) return false;
-                    if (endRange && checkDate > endRange) return false;
-                }
-                return true;
-            });
-
-            const countTotal = filteredData.length;
-            const countPass = filteredData.filter(e => e.status === 'Pass').length;
-            const countFail = filteredData.filter(e => e.status === 'Fail').length;
+            const countTotal = filteredData.reduce((n, g) => n + g.total, 0);
+            const countPass = filteredData.reduce((n, g) => n + g.pass, 0);
+            const countFail = filteredData.reduce((n, g) => n + g.fail, 0);
             const totalApplicable = countPass + countFail;
 
             const trackingPercentage = totalApplicable > 0 
@@ -1162,13 +1138,13 @@
             filteredData.forEach(row => {
                 const groupToken = `${row.sbu}|||${row.line}|||${row.section}`;
                 if (!performanceMatrix[groupToken]) { performanceMatrix[groupToken] = { pass: 0, fail: 0 }; }
-                if (row.status === 'Pass') performanceMatrix[groupToken].pass++;
-                else if (row.status === 'Fail') performanceMatrix[groupToken].fail++;
+                performanceMatrix[groupToken].pass += row.pass;
+                performanceMatrix[groupToken].fail += row.fail;
 
                 const questionToken = `${row.line}|||${row.section}|||${row.subcategory}|||${row.question}`;
                 if (!structuralFailMap[questionToken]) { structuralFailMap[questionToken] = { total: 0, fail: 0 }; }
-                structuralFailMap[questionToken].total++;
-                if (row.status === 'Fail') { structuralFailMap[questionToken].fail++; }
+                structuralFailMap[questionToken].total += row.total;
+                structuralFailMap[questionToken].fail += row.fail;
             });
 
             tableBody.innerHTML = '';
@@ -1225,7 +1201,8 @@
         const tableBody = document.getElementById('logs-table-body');
         tableBody.innerHTML = `<tr><td colspan="9" class="loading-text">🔄 Syncing database tables...</td></tr>`;
         
-        fetchCloudDataCached()
+        cloudGet({ op: 'tail', n: 300 })
+        .then(resp => resp.rows || [])
         .then(dataArray => {
             tableBody.innerHTML = '';
             if(!Array.isArray(dataArray) || dataArray.length === 0) {
@@ -1310,7 +1287,7 @@
         analysisRequestSeq++;
         const thisRequestId = analysisRequestSeq;
 
-        fetchCloudDataCached()
+        queryCloud({ from: analyticStart, to: analyticEnd, sbu: sbuScope, section: selectedSection, subcategory: selectedSubSection, question: exactTargetQuestion }, 'rows', progressText(mainAnalyticsTable, 5))
         .then(cloudCache => {
             if (thisRequestId !== analysisRequestSeq) return;
             if(!Array.isArray(cloudCache)) return;
@@ -1398,7 +1375,7 @@
             if (!counts[key]) {
                 counts[key] = { subcategory: r.subcategory || '-', question: r.question, count: 0 };
             }
-            counts[key].count++;
+            counts[key].count += (r.total || 1);
         });
         return computeCompetitionRanking(Object.values(counts));
     }
@@ -1437,26 +1414,9 @@
         ncRequestSeq++;
         const thisRequestId = ncRequestSeq;
 
-        fetchCloudDataCached()
-        .then(dataStream => {
+        queryCloud({ from: startVal, to: endVal, sbu: sbuScope, status: 'Fail' }, 'agg', progressText(sewingBody, 4))
+        .then(failRows => {
             if (thisRequestId !== ncRequestSeq) return;
-            if (!Array.isArray(dataStream)) { throw new Error("Invalid format."); }
-
-            const startRange = startVal ? new Date(startVal) : null;
-            const endRange = endVal ? new Date(endVal) : null;
-            if (startRange) startRange.setHours(0, 0, 0, 0);
-            if (endRange) endRange.setHours(23, 59, 59, 999);
-
-            const failRows = dataStream.filter(row => {
-                if (row.status !== 'Fail') return false;
-                if (sbuScope !== 'ALL' && row.sbu !== sbuScope) return false;
-                if (row.date) {
-                    const rowDate = new Date(row.date);
-                    if (startRange && rowDate < startRange) return false;
-                    if (endRange && rowDate > endRange) return false;
-                }
-                return true;
-            });
 
             renderNCTable('nc-sewing-body', buildSectionNCRanking(failRows, 'Sewing'));
             renderNCTable('nc-finishing-body', buildSectionNCRanking(failRows, 'Finishing'));
@@ -1481,7 +1441,7 @@
 
         if (!targetDate) { alert("Please select an appraisal target date."); return; }
 
-        fetchCloudDataCached()
+        queryCloud({ from: targetDate, to: targetDate, sbu: targetSBU }, 'rows')
         .then(dataStream => {
             if(!Array.isArray(dataStream)) return;
             const matches = dataStream.filter(row => row.sbu === targetSBU && row.date === targetDate);
