@@ -491,6 +491,50 @@
     let _cloudDataInFlight = null;
     const CLOUD_CACHE_TTL_MS = 60000; // 1 minute
 
+    // ---- Persistent (IndexedDB) cache: rows are downloaded once, afterwards only
+    //      NEW rows are fetched (?since=lastRow). Makes every tab load fast.
+    let _persist = null;
+    const IDB_NAME = 'qms_audit_cache', IDB_STORE = 'kv';
+    function idbOpen() {
+        return new Promise((res, rej) => {
+            if (!window.indexedDB) return rej(new Error('no indexedDB'));
+            const r = indexedDB.open(IDB_NAME, 1);
+            r.onupgradeneeded = () => r.result.createObjectStore(IDB_STORE);
+            r.onsuccess = () => res(r.result);
+            r.onerror = () => rej(r.error);
+        });
+    }
+    async function idbGet(k) {
+        try {
+            const db = await idbOpen();
+            return await new Promise(res => {
+                const q = db.transaction(IDB_STORE).objectStore(IDB_STORE).get(k);
+                q.onsuccess = () => res(q.result || null);
+                q.onerror = () => res(null);
+            });
+        } catch (e) { return null; }
+    }
+    async function idbSet(k, v) {
+        try {
+            const db = await idbOpen();
+            await new Promise(res => {
+                const t = db.transaction(IDB_STORE, 'readwrite');
+                t.objectStore(IDB_STORE).put(v, k);
+                t.oncomplete = t.onerror = t.onabort = () => res();
+            });
+        } catch (e) {}
+    }
+    async function idbDel(k) {
+        try {
+            const db = await idbOpen();
+            await new Promise(res => {
+                const t = db.transaction(IDB_STORE, 'readwrite');
+                t.objectStore(IDB_STORE).delete(k);
+                t.oncomplete = t.onerror = t.onabort = () => res();
+            });
+        } catch (e) {}
+    }
+
     function fetchCloudDataCached(forceRefresh) {
         const now = Date.now();
         if (!forceRefresh && _cloudDataCache && (now - _cloudDataCacheTime < CLOUD_CACHE_TTL_MS)) {
@@ -502,28 +546,60 @@
         if (!CLOUD_API_URL) {
             return Promise.reject(new Error('APPS_SCRIPT_URL is not set in audit.html'));
         }
-        _cloudDataInFlight = fetch(CLOUD_API_URL, { redirect: 'follow' })
-            .then(res => readBackendJson(res))
-            .then(data => {
-                if (data && !Array.isArray(data) && data.status === 'error') throw new Error(data.message);
-                _cloudDataCache = data;
+        const cacheKey = 'rows:' + CLOUD_API_URL;
+        _cloudDataInFlight = (async () => {
+            try {
+                if (!_persist) _persist = await idbGet(cacheKey);
+                let ptr = (_persist && Array.isArray(_persist.rows)) ? (_persist.lastRow || 0) : 0;
+                let rows = ptr > 0 ? _persist.rows.slice() : [];
+                let legacyArray = null;
+
+                // Download in small pages so no single request can time out
+                for (let guard = 0; guard < 500; guard++) {
+                    const res = await fetch(CLOUD_API_URL + '?since=' + ptr + '&limit=3000', { redirect: 'follow' });
+                    const data = await readBackendJson(res);
+                    if (Array.isArray(data)) { legacyArray = data; break; } // older backend: full data
+                    if (data && data.status === 'error') throw new Error(data.message);
+                    if (data.reset) rows = [];
+                    rows = rows.concat(data.rows);
+                    const next = data.lastRow;
+                    const done = next >= data.totalRows || next <= ptr;
+                    ptr = next;
+                    if (done) break;
+                }
+
+                if (legacyArray) {
+                    rows = legacyArray;
+                } else {
+                    _persist = { lastRow: ptr, rows: rows };
+                    idbSet(cacheKey, _persist);
+                }
+                _cloudDataCache = rows;
                 _cloudDataCacheTime = Date.now();
-                _cloudDataInFlight = null;
-                return data;
-            })
-            .catch(err => {
-                _cloudDataInFlight = null;
+                return rows;
+            } catch (err) {
                 if (err instanceof TypeError) {
-                    throw new Error('[build 2026-09-29b] Cannot reach the audit database. In Apps Script: Deploy > Manage deployments > set "Who has access" = Anyone, then authorize the script once. (' + err.message + ')');
+                    throw new Error('[build 2026-09-29d] Cannot reach the audit database. In Apps Script: Deploy > Manage deployments > set "Who has access" = Anyone, then authorize the script once. (' + err.message + ')');
                 }
                 throw err;
-            });
+            } finally {
+                _cloudDataInFlight = null;
+            }
+        })();
         return _cloudDataInFlight;
     }
 
+    // Light reset: next call only fetches NEW rows from the server
     function invalidateCloudDataCache() {
         _cloudDataCache = null;
         _cloudDataCacheTime = 0;
+    }
+
+    // Full reset: forget the stored copy, next call downloads everything again
+    function resetPersistentCache() {
+        invalidateCloudDataCache();
+        _persist = null;
+        idbDel('rows:' + CLOUD_API_URL);
     }
 
     let totalActiveCheckpoints = 0;
@@ -1394,7 +1470,7 @@
 
     function clearAllData() {
         if (currentUserRole === 'guest') { alert('🔒 Guest accounts cannot clear data.'); return; }
-        invalidateCloudDataCache();
+        resetPersistentCache();
         alert('Visual cleared and refreshed from server. The underlying structural files inside your Google Sheet are unmodified.');
         document.getElementById('logs-table-body').innerHTML = `<tr><td colspan="9" style="text-align:center; color:#64748b;">Cache empty. Change tabs to query cloud server database.</td></tr>`;
     }
