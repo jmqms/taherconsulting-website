@@ -513,6 +513,9 @@
             })
             .catch(err => {
                 _cloudDataInFlight = null;
+                if (err instanceof TypeError) {
+                    throw new Error('[build 2026-09-29b] Cannot reach the audit database. In Apps Script: Deploy > Manage deployments > set "Who has access" = Anyone, then authorize the script once. (' + err.message + ')');
+                }
                 throw err;
             });
         return _cloudDataInFlight;
