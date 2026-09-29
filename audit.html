@@ -460,7 +460,23 @@
 </div>
 
 <script>
-    const CLOUD_API_URL = "https://script.google.com/macros/s/AKfycbyXBkqRch0vlUkcGnYiJDKsxjXtRe4cA2q_eeJJ1Q659MIW1FTzVowOfNJBo0bYTes-/exec";
+    // ===== ONE-PLACE CONFIG =====================================================
+    // Paste the NEW Apps Script "Web app" URL here (Deploy > New deployment).
+    // Audit data (save/read) uses this backend. Login stays on the common user management backend below.
+    const APPS_SCRIPT_URL = "https://script.google.com/macros/s/AKfycbw9mCxRwIZW-32zzRIFkG5bdVkHYBjX3DCC7ACqfZUKNjAWenmLIP3v6eSmvAJoe9s/exec";
+    const CLOUD_API_URL = APPS_SCRIPT_URL;
+    // ============================================================================
+
+    // Reads a backend response safely and gives a human-readable error
+    async function readBackendJson(res) {
+        if (!res.ok) throw new Error('Backend returned HTTP ' + res.status);
+        const text = await res.text();
+        try {
+            return JSON.parse(text);
+        } catch (e) {
+            throw new Error('Backend returned a web page instead of data. Re-deploy the Apps Script as Web app (Execute as: Me, Who has access: Anyone) and update APPS_SCRIPT_URL.');
+        }
+    }
 
     // ---- Shared read cache for CLOUD_API_URL ----------------------------
     // Several tabs (Dashboard, Logs, Analysis, NC Analysis, Bulk Report)
@@ -483,9 +499,13 @@
         if (_cloudDataInFlight) {
             return _cloudDataInFlight;
         }
-        _cloudDataInFlight = fetch(CLOUD_API_URL)
-            .then(res => res.json())
+        if (!CLOUD_API_URL) {
+            return Promise.reject(new Error('APPS_SCRIPT_URL is not set in audit.html'));
+        }
+        _cloudDataInFlight = fetch(CLOUD_API_URL, { redirect: 'follow' })
+            .then(res => readBackendJson(res))
             .then(data => {
+                if (data && !Array.isArray(data) && data.status === 'error') throw new Error(data.message);
                 _cloudDataCache = data;
                 _cloudDataCacheTime = Date.now();
                 _cloudDataInFlight = null;
@@ -509,7 +529,7 @@
     // ---- Login now checked against the "AuditUsers" tab of the shared
     //      Google Sheet (see users-backend.gs) instead of a hardcoded list.
     //      Add/remove auditors directly in that Sheet — no code edit needed.
-    const AUDIT_AUTH_API_URL = "https://script.google.com/macros/s/AKfycbwUHhuey3xss614nJPgXQwl449URBPX-SRgldd28JWLFrFSkRcJreYqDDK_hbIpr3Qi/exec";
+    const AUDIT_AUTH_API_URL = "https://script.google.com/macros/s/AKfycbwUHhuey3xss614nJPgXQwl449URBPX-SRgldd28JWLFrFSkRcJreYqDDK_hbIpr3Qi/exec"; // common user management (taherconsultingbd.com)
     const AUDIT_AUTH_SHEET = "AuditUsers";
 
     const SESSION_KEY = "jmfabrics_qms_session";
@@ -938,7 +958,7 @@
             headers: { 'Content-Type': 'text/plain;charset=utf-8' },
             body: JSON.stringify(payloadRows)
         })
-        .then(res => res.json())
+        .then(res => readBackendJson(res))
         .then((response) => {
             if(response.status === "success") {
                 invalidateCloudDataCache();
