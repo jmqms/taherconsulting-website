@@ -28,7 +28,7 @@
    control is added into the existing #tc-guard-bar if present.
    =========================================================== */
 
-const MODULE_AUTH_API_URL = "https://script.google.com/macros/s/AKfycbx7Cwnp8hoKuxcQ57TlllwBaA7zr9S2bcFVi9-mzyyY8RhRL3YiUpbJMFohLmQZkf1a/exec";
+const MODULE_AUTH_API_URL = "https://script.google.com/macros/s/AKfycbwUHhuey3xss614nJPgXQwl449URBPX-SRgldd28JWLFrFSkRcJreYqDDK_hbIpr3Qi/exec";
 
 function tcInitModuleAuth(opts) {
   const sessionKey = "tc_module_" + opts.moduleKey;
@@ -111,27 +111,55 @@ function tcInitModuleAuth(opts) {
     btn.disabled = true;
     btn.textContent = "Checking…";
 
-    try {
-      const res = await fetch(MODULE_AUTH_API_URL, {
-        method: "POST",
-        headers: { "Content-Type": "text/plain;charset=utf-8" },
-        body: JSON.stringify({ action: "login", userId, password, sheet: opts.sheetName }),
-      });
-      const data = await res.json();
-      if (!data.ok) {
-        errBox.textContent = data.error || "Incorrect User ID or password.";
-        errBox.style.display = "block";
-        btn.disabled = false;
-        btn.textContent = "Sign In →";
-        return;
+    // Apps Script web apps sometimes take a few seconds to wake up (cold
+    // start) or have a brief blip, which used to show "could not reach the
+    // login server" on the very first try even though a retry works fine.
+    // Try a few times with a real per-attempt timeout before giving up.
+    let data = null, lastErr = null;
+    for (let attempt = 1; attempt <= 3 && !data; attempt++) {
+      if (attempt > 1) btn.textContent = "Checking… (retry " + attempt + ")";
+      try {
+        const controller = new AbortController();
+        const timeoutId = setTimeout(() => controller.abort(), 12000);
+        let res;
+        try {
+          res = await fetch(MODULE_AUTH_API_URL, {
+            method: "POST",
+            headers: { "Content-Type": "text/plain;charset=utf-8" },
+            body: JSON.stringify({ action: "login", userId, password, sheet: opts.sheetName }),
+            signal: controller.signal,
+          });
+        } finally {
+          clearTimeout(timeoutId);
+        }
+        const rawText = await res.text();
+        try {
+          data = JSON.parse(rawText);
+        } catch (parseErr) {
+          throw new Error("non_json_response: " + rawText.slice(0, 200));
+        }
+      } catch (err) {
+        lastErr = err;
+        console.error("[module-auth] login attempt " + attempt + " failed:", err);
+        if (attempt < 3) await new Promise(r => setTimeout(r, attempt * 900));
       }
-      applySession({ name: data.name, role: data.role });
-    } catch (err) {
-      errBox.textContent = "Could not reach the login server. Check your connection and try again.";
+    }
+
+    if (!data) {
+      errBox.textContent = "Could not reach the login server after several tries. Check your connection and try again.";
       errBox.style.display = "block";
       btn.disabled = false;
       btn.textContent = "Sign In →";
+      return;
     }
+    if (!data.ok) {
+      errBox.textContent = data.error || "Incorrect User ID or password.";
+      errBox.style.display = "block";
+      btn.disabled = false;
+      btn.textContent = "Sign In →";
+      return;
+    }
+    applySession({ name: data.name, role: data.role });
   }
 
   function applySession(session) {
