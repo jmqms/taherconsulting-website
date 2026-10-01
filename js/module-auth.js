@@ -80,7 +80,10 @@ function tcInitModuleAuth(opts) {
         <label>User ID</label>
         <input type="text" id="tc-module-userid" autocomplete="off">
         <label>Password</label>
-        <input type="password" id="tc-module-password" autocomplete="off">
+        <div style="position:relative">
+          <input type="password" id="tc-module-password" autocomplete="off" style="padding-right:44px">
+          <button type="button" id="tc-module-pw-toggle" aria-label="Show password" style="position:absolute;right:8px;top:50%;transform:translateY(-50%);background:none;border:none;cursor:pointer;font-size:16px;line-height:1;padding:4px">👁</button>
+        </div>
         <button class="tc-signin" id="tc-module-signin">Sign In →</button>
         ${allowGuest ? '<button class="tc-guest" id="tc-module-guest">Continue as Guest (View Only)</button>' : ''}
       </div>
@@ -89,6 +92,14 @@ function tcInitModuleAuth(opts) {
 
     document.getElementById("tc-module-signin").addEventListener("click", doLogin);
     document.getElementById("tc-module-password").addEventListener("keydown", e => { if (e.key === "Enter") doLogin(); });
+    document.getElementById("tc-module-pw-toggle").addEventListener("click", () => {
+      const pwEl = document.getElementById("tc-module-password");
+      const toggleEl = document.getElementById("tc-module-pw-toggle");
+      const showing = pwEl.type === "text";
+      pwEl.type = showing ? "password" : "text";
+      toggleEl.textContent = showing ? "👁" : "🙈";
+      toggleEl.setAttribute("aria-label", showing ? "Show password" : "Hide password");
+    });
     if (allowGuest) {
       document.getElementById("tc-module-guest").addEventListener("click", () => {
         applySession({ name: "Guest", role: "guest" });
