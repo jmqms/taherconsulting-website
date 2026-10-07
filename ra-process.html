@@ -79,6 +79,7 @@
     <span id="tc-guest-badge" style="display:none;background:#B84226;color:#F1F0EA;padding:3px 9px;border-radius:2px;margin-left:10px;font-size:10.5px;letter-spacing:.06em">VIEW ONLY &middot; GUEST</span>
   </span>
 </div>
+<script src="js/master-order.js"></script>
 <script>
 window.TC_IS_GUEST = false;
 (function(){
@@ -177,6 +178,11 @@ document.getElementById("qaSide").addEventListener("click", (e) => {
 });
 
 async function raApi(payload) {
+  // Master Order lookups come from data/masterOrders.json (fast, static). Falls back to the backend below if unavailable.
+  if (window.MasterOrder && payload && MasterOrder.handles(payload.action)) {
+    const local = await MasterOrder.handle(payload, "ra");
+    if (local) return local;
+  }
   if (RA_API_URL.indexOf("PASTE_YOUR") === 0) {
     throw new Error("RA backend not connected yet — see ra-process-backend.gs for setup steps.");
   }

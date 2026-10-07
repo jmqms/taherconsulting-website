@@ -158,6 +158,7 @@ input[readonly]{background:var(--panel-2);color:var(--muted);}
     <span id="tc-guest-badge" style="display:none;background:#B84226;color:#F1F0EA;padding:3px 9px;border-radius:2px;margin-left:10px;font-size:10.5px;letter-spacing:.06em">VIEW ONLY &middot; GUEST</span>
   </span>
 </div>
+<script src="js/master-order.js"></script>
 <script>
 window.TC_IS_GUEST = false;
 (function(){
@@ -389,6 +390,11 @@ const QA_API_URL = "https://script.google.com/macros/s/AKfycbzZ2Kn-5XlYWyJL2x9eY
 // times with a growing delay before giving up, and log the real response
 // body to the console so a persistent failure can actually be diagnosed.
 async function qaApi(payload){
+  // Master Order lookups come from data/masterOrders.json (fast, static). Falls back to the backend below if unavailable.
+  if (window.MasterOrder && payload && MasterOrder.handles(payload.action)) {
+    const local = await MasterOrder.handle(payload, "qa");
+    if (local) return local;
+  }
   if (QA_API_URL.indexOf("PASTE_YOUR") === 0) throw new Error("Backend not connected yet");
   let lastErr = null;
   const attempts = 4;
