@@ -6,6 +6,7 @@
 <title>QA Inspection — Taher Consulting</title>
 <link rel="icon" type="image/svg+xml" href="assets/favicon.svg">
 <script src="https://cdnjs.cloudflare.com/ajax/libs/html2pdf.js/0.10.1/html2pdf.bundle.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.4/chart.umd.min.js"></script>
 <link rel="stylesheet" href="css/style.css">
 <style>
   body{background:var(--paper);}
@@ -118,6 +119,8 @@ document.addEventListener("DOMContentLoaded", () => {
 
 <div id="pdfReportRoot"></div>
 
+<script src="js/master-order.js"></script>
+<script src="js/qa-insights.js"></script>
 <script>
 const QAI_API_URL = "PASTE_YOUR_GOOGLE_APPS_SCRIPT_EXEC_URL_HERE";
 
@@ -163,6 +166,11 @@ const STANDALONE_PAGES = {
   "Pre-Final Inspection": "pre-final-inspection.html",
   "Final Inspection": "final-inspection.html"
 };
+[["styletracking", "📍 Style Tracking"], ["dashboard", "📊 Inspector Dashboard"]].forEach(([id, label]) => {
+  const b = document.createElement("button");
+  b.dataset.tab = id; b.textContent = label;
+  sideEl.appendChild(b);
+});
 INSPECTION_TYPES.forEach(t => {
   const btn = document.createElement("button");
   if (STANDALONE_PAGES[t.id]) {
@@ -191,6 +199,7 @@ sideEl.addEventListener("click", (e) => {
 });
 
 function loadTab(id) {
+  if (id === "styletracking" || id === "dashboard") return QAInsights.render(id, document.getElementById("tabContent"));
   if (id === "search") return renderSearch();
   const type = INSPECTION_TYPES.find(t => t.id === id);
   if (type) return renderInspectionForm(type);
