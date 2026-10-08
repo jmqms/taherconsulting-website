@@ -9,12 +9,12 @@
   var API = "https://script.google.com/macros/s/AKfycbzZ2Kn-5XlYWyJL2x9eYwtuQwm9dWNX8okS47B4Bjh8OcMQkMhwuZEJapfPaW68ZVIZ/exec";
 
   var TYPES = [
-    { key: "1st Bundle", action: "list1stBundle", name: "1st Bundle Inspection" },
-    { key: "Sewing Inline", action: "listSewingInline", name: "Sewing Inline Inspection" },
-    { key: "Finishing Inline", action: "listFinishingInline", name: "Finishing Inline Inspection" },
-    { key: "1st Carton", action: "list1stCarton", name: "1st Carton Inspection" },
-    { key: "Pre-Final", action: "listPreFinal", name: "Pre-Final Inspection" },
-    { key: "Final", action: "listFinal", name: "Final Inspection" }
+    { key: "1st Bundle", page: "1st-bundle-inspection.html", action: "list1stBundle", name: "1st Bundle Inspection" },
+    { key: "Sewing Inline", page: "sewing-inline-inspection.html", action: "listSewingInline", name: "Sewing Inline Inspection" },
+    { key: "Finishing Inline", page: "finishing-inline-inspection.html", action: "listFinishingInline", name: "Finishing Inline Inspection" },
+    { key: "1st Carton", page: "1st-carton-inspection.html", action: "list1stCarton", name: "1st Carton Inspection" },
+    { key: "Pre-Final", page: "pre-final-inspection.html", action: "listPreFinal", name: "Pre-Final Inspection" },
+    { key: "Final", page: "final-inspection.html", action: "listFinal", name: "Final Inspection" }
   ];
   // Process order requested by the user. "doc" stages are read from the
   // Documents Review checklist inside the 1st Bundle report.
@@ -83,7 +83,7 @@
           if (h.inspectionType && h.inspectionType !== x.t.name) return;
           data.recs.push({
             type: x.t.key, ir: norm(h.ir), sbu: norm(h.sbu), buyer: norm(h.buyer), style: norm(h.styleName),
-            date: normDate(h.date), inspector: norm(h.inspectorName) || "(not entered)", outcome: outcomeOf(r), r: r
+            id: r.id || "", page: x.t.page, decision: norm(r.decision), date: normDate(h.date), inspector: norm(h.inspectorName) || "(not entered)", outcome: outcomeOf(r), r: r
           });
         });
       });
@@ -108,7 +108,7 @@
         var it = (b.r.checklist || []).filter(function (c) { return c.label === s.doc; })[0];
         var v = it ? norm(it.status) : "";
         return { s: s, status: v === "Yes" ? "Done" : v === "No" ? "Issue" : v === "N/A" ? "N/A" : "Pending",
-          date: b.date, inspector: b.inspector, note: (it && it.comments) || (v ? "Marked " + v : "Not marked in 1st Bundle") };
+          rec: b, date: b.date, inspector: b.inspector, note: (it && it.comments) || (v ? "Marked " + v : "Not marked in 1st Bundle") };
       }
       if (s.testing) {
         var t = data.testing.filter(function (x) { return norm(x.ir) === ir; });
@@ -120,7 +120,7 @@
       var L = latest(s.type);
       if (!L.last) return { s: s, status: "Pending" };
       var map = { Pass: "Done", Fail: "Issue", Rework: "In Progress", Done: "Done" };
-      return { s: s, status: map[L.last.outcome] || "Done", date: L.last.date, inspector: L.last.inspector,
+      return { s: s, status: map[L.last.outcome] || "Done", rec: L.last, date: L.last.date, inspector: L.last.inspector,
         note: L.last.outcome + (L.count > 1 ? " (" + L.count + " reports)" : "") };
     });
   }
@@ -169,6 +169,9 @@
       ".qx-warn{font:12.5px var(--mono);background:var(--reject-dim);color:var(--reject);border:1px solid var(--reject);padding:9px 12px;border-radius:2px;margin-bottom:14px}";
     document.head.appendChild(s);
   }
+  function pdfLink(rec) {
+    return rec && rec.id && rec.page ? '<a href="' + rec.page + "?pdf=" + encodeURIComponent(rec.id) + '" target="_blank" rel="noopener">PDF ↓</a>' : "—";
+  }
   function warnHTML(data) {
     return data.failed.length ? '<div class="qx-warn">Could not load: ' + esc(data.failed.join(", ")) + ". Those stages show as Pending / have no counts. Check your connection and press Refresh.</div>" : "";
   }
@@ -194,10 +197,10 @@
         var named = data.recs.filter(function (x) { return x.ir === norm(ir.value); })[0];
         out.innerHTML = '<div class="qx-card"><b>' + esc(ir.value) + "</b>" + (named && named.style ? " — " + esc(named.style) : "") +
           '<div style="font:12px var(--mono);color:var(--ink-soft);margin-top:4px">' + done + " of " + rows.length + ' stages complete</div><div class="qx-bar"><i style="width:' + Math.round(done / rows.length * 100) + '%"></i></div></div>' +
-          '<div class="qx-card qx-wrap"><table><thead><tr><th>#</th><th>Stage</th><th>Status</th><th>Date</th><th>Inspector / Party</th><th>Details</th></tr></thead><tbody>' +
+          '<div class="qx-card qx-wrap"><table><thead><tr><th>#</th><th>Stage</th><th>Status</th><th>Date</th><th>Inspector / Party</th><th>Details</th><th>Report</th></tr></thead><tbody>' +
           rows.map(function (r, i) {
             return "<tr><td>" + (i + 1) + "</td><td><b>" + esc(r.s.label) + '</b></td><td><span class="qx-chip st-' + r.status.replace(/[^A-Za-z]/g, "") + '">' + esc(r.status) + "</span></td><td>" +
-              esc(r.date || "—") + "</td><td>" + esc(r.inspector || "—") + "</td><td>" + esc(r.note || "") + "</td></tr>";
+              esc(r.date || "—") + "</td><td>" + esc(r.inspector || "—") + "</td><td>" + esc(r.note || "") + "</td><td>" + pdfLink(r.rec) + "</td></tr>";
           }).join("") + "</tbody></table></div>";
       }
       function fillIr(list) { ir.innerHTML = opts(list, "", "Select IR"); show(); }
@@ -291,8 +294,40 @@
     });
   }
 
+  function renderSearch(el) {
+    el.innerHTML = '<div class="qx"><h1>Search Reports</h1><div class="qx-card">Loading reports…</div></div>';
+    loadAll().then(function (data) {
+      var recs = data.recs.filter(function (x) { return x.outcome !== "Draft"; });
+      var buyers = Object.keys(recs.reduce(function (o, x) { if (x.buyer) o[x.buyer] = 1; return o; }, {})).sort();
+      el.innerHTML = '<div class="qx"><h1>Search Reports</h1><div class="sub">Every saved inspection report. Click PDF to download the full report.</div>' + warnHTML(data) +
+        '<div class="qx-card"><div class="qx-filters"><div><label>Type</label><select id="sType"></select></div><div><label>Buyer</label><select id="sBuyer"></select></div>' +
+        '<div><label>IR No</label><input id="sIr"></div><div><label>Style</label><input id="sStyle"></div><div><label>From</label><input type="date" id="sFrom"></div><div><label>To</label><input type="date" id="sTo"></div>' +
+        '<div style="align-self:end"><button class="btn btn-ghost" id="sRef">↻ Refresh</button></div></div></div><div class="qx-card qx-wrap"><div id="sCount" style="font:12px var(--mono);color:var(--ink-soft);margin-bottom:8px"></div>' +
+        '<table><thead><tr><th>Date</th><th>Type</th><th>SBU</th><th>Buyer</th><th>IR</th><th>Style</th><th>Inspector</th><th>Result</th><th>PDF</th></tr></thead><tbody id="sBody"></tbody></table></div></div>';
+      var $ = function (id) { return el.querySelector("#" + id); };
+      $("sType").innerHTML = opts(TYPES.map(function (t) { return t.key; }), "", "All types");
+      $("sBuyer").innerHTML = opts(buyers, "", "All buyers");
+      function draw() {
+        var ir = $("sIr").value.trim().toLowerCase(), st = $("sStyle").value.trim().toLowerCase(), f = $("sFrom").value, t = $("sTo").value;
+        var rows = recs.filter(function (x) {
+          return (!$("sType").value || x.type === $("sType").value) && (!$("sBuyer").value || x.buyer === $("sBuyer").value) &&
+            (!ir || x.ir.toLowerCase().indexOf(ir) >= 0) && (!st || x.style.toLowerCase().indexOf(st) >= 0) && (!f || x.date >= f) && (!t || (x.date && x.date <= t));
+        }).sort(function (a, b) { return a.date < b.date ? 1 : -1; });
+        $("sCount").textContent = rows.length + " report(s)" + (rows.length > 300 ? " — showing latest 300" : "");
+        $("sBody").innerHTML = rows.slice(0, 300).map(function (x) {
+          return "<tr><td>" + esc(x.date || "—") + "</td><td>" + esc(x.type) + "</td><td>" + esc(x.sbu) + "</td><td>" + esc(x.buyer) + "</td><td>" + esc(x.ir) + "</td><td>" + esc(x.style) +
+            "</td><td>" + esc(x.inspector) + "</td><td>" + esc(x.decision || x.outcome) + "</td><td>" + pdfLink(x) + "</td></tr>";
+        }).join("") || '<tr><td colspan="9">No reports match.</td></tr>';
+      }
+      ["sType", "sBuyer", "sFrom", "sTo"].forEach(function (id) { $(id).onchange = draw; });
+      ["sIr", "sStyle"].forEach(function (id) { $(id).oninput = draw; });
+      $("sRef").onclick = function () { cache = null; renderSearch(el); };
+      draw();
+    });
+  }
+
   window.QAInsights = {
-    render: function (tab, el) { injectCss(); return tab === "dashboard" ? renderDashboard(el) : (destroyCharts(), renderTracking(el)); },
+    render: function (tab, el) { injectCss(); destroyCharts(); return tab === "dashboard" ? renderDashboard(el) : tab === "search" ? renderSearch(el) : renderTracking(el); },
     _t: { tracking: tracking, aggregate: aggregate, outcomeOf: outcomeOf, normDate: normDate }
   };
 })();
