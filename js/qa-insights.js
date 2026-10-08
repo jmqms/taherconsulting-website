@@ -51,6 +51,14 @@
       .finally(function () { clearTimeout(t); });
   }
 
+  // One person = one row: typed names / PSI codes / employee IDs resolve to the official PSI list.
+  function canonInsp(raw) {
+    raw = norm(raw);
+    if (!raw) return "(not entered)";
+    var m = window.PSITeam && PSITeam.resolve(raw);
+    return m ? m.name : raw;
+  }
+  function psiOf(name) { return window.PSITeam ? PSITeam.byName(name) : null; }
   function outcomeOf(r) {
     if (/draft/i.test(norm(r.status))) return "Draft";
     var d = norm(r.decision);
@@ -83,7 +91,7 @@
           if (h.inspectionType && h.inspectionType !== x.t.name) return;
           data.recs.push({
             type: x.t.key, ir: norm(h.ir), sbu: norm(h.sbu), buyer: norm(h.buyer), style: norm(h.styleName),
-            id: r.id || "", page: x.t.page, decision: norm(r.decision), date: normDate(h.date), inspector: norm(h.inspectorName) || "(not entered)", outcome: outcomeOf(r), r: r
+            id: r.id || "", page: x.t.page, decision: norm(r.decision), date: normDate(h.date), inspector: canonInsp(h.inspectorName), outcome: outcomeOf(r), r: r
           });
         });
       });
@@ -298,13 +306,15 @@
     loadAll().then(function (data) {
       var recs = data.recs.filter(function (x) { return x.outcome !== "Draft"; });
       var buyers = Object.keys(recs.reduce(function (o, x) { if (x.buyer) o[x.buyer] = 1; return o; }, {})).sort();
-      var insps = Object.keys(recs.reduce(function (o, x) { o[x.inspector] = 1; return o; }, {})).sort();
+      var seen = recs.reduce(function (o, x) { o[x.inspector] = 1; return o; }, {});
+      var teamNames = window.PSITeam ? PSITeam.team.map(function (m) { return m.name; }) : [];
+      var insps = teamNames.concat(Object.keys(seen).filter(function (n) { return teamNames.indexOf(n) < 0; }).sort());
       var today = new Date(), ymd = function (d) { return d.getFullYear() + "-" + ("0" + (d.getMonth() + 1)).slice(-2) + "-" + ("0" + d.getDate()).slice(-2); };
       var f = { from: ymd(new Date(today.getFullYear(), today.getMonth() - 2, 1)), to: ymd(today), buyer: "", insp: "", type: "" };
       el.innerHTML = '<div class="qx"><h1>Inspector Dashboard</h1><div class="sub">Counts every saved (non-draft) report from 1st Bundle, Sewing Inline, Finishing Inline, 1st Carton, Pre-Final and Final.</div>' + warnHTML(data) +
         '<div class="qx-card"><div class="qx-filters"><div><label>From</label><input type="date" id="qxFrom"></div><div><label>To</label><input type="date" id="qxTo"></div>' +
         '<div><label>Buyer</label><select id="qxB"></select></div><div><label>Inspector</label><select id="qxI"></select></div><div><label>Inspection</label><select id="qxT"></select></div>' +
-        '<div style="align-self:end"><button class="btn btn-ghost" id="qxRef">↻ Refresh</button></div></div></div><div id="qxBody"></div></div>';
+        '<div style="align-self:end"><label style="display:flex;gap:6px;align-items:center;text-transform:none;letter-spacing:0;margin-bottom:8px"><input type="checkbox" id="qxAll" style="width:auto"> Show all PSI members</label><button class="btn btn-ghost" id="qxRef">↻ Refresh</button></div></div></div><div id="qxBody"></div></div>';
       var $ = function (id) { return el.querySelector("#" + id); };
       $("qxFrom").value = f.from; $("qxTo").value = f.to;
       $("qxB").innerHTML = opts(buyers, "", "All buyers"); $("qxI").innerHTML = opts(insps, "", "All inspectors");
@@ -319,6 +329,8 @@
         var inspKeys = Object.keys(a.byInsp).sort(function (x, y) { return a.byInsp[y].n - a.byInsp[x].n; });
         var buyKeys = Object.keys(a.byBuyer).sort(function (x, y) { return a.byBuyer[y].n - a.byBuyer[x].n; });
         var shownTypes = TYPES.map(function (t) { return t.key; }).filter(function (k) { return !f.type || k === f.type; });
+        var tableKeys = inspKeys.slice();
+        if ($("qxAll").checked && window.PSITeam) PSITeam.team.forEach(function (m) { if (!a.byInsp[m.name] && (!f.insp || f.insp === m.name)) tableKeys.push(m.name); });
         var kpi = function (n, l) { return '<div class="qx-card qx-kpi"><b>' + n + "</b><span>" + l + "</span></div>"; };
         $("qxBody").innerHTML =
           '<div class="qx-grid">' + kpi(a.rows.length, "Inspections") + kpi(Object.keys(a.styles).length, "Styles checked") + kpi(inspKeys.length, "Inspectors") +
@@ -326,13 +338,13 @@
           '<div class="qx-card"><b>Date-wise inspections</b><div id="cDay"></div></div>' +
           '<div class="qx-card"><b>Monthly — styles checked per inspection type</b><div id="cMon"></div></div>' +
           '<div class="qx-card"><b>Buyer-wise inspections</b><div id="cBuy"></div></div>' +
-          '<div class="qx-card qx-wrap"><b>Inspector-wise performance</b><table><thead><tr><th>Inspector</th>' + shownTypes.map(function (k) { return "<th>" + esc(k) + "</th>"; }).join("") +
+          '<div class="qx-card qx-wrap"><b>Inspector-wise performance</b><table><thead><tr><th>Inspector</th><th>PSI</th><th>Designation</th>' + shownTypes.map(function (k) { return "<th>" + esc(k) + "</th>"; }).join("") +
           "<th>Total</th><th>Styles</th><th>Pass rate</th></tr></thead><tbody>" +
-          (inspKeys.map(function (k) {
-            var o = a.byInsp[k];
-            return "<tr><td><b>" + esc(k) + "</b></td>" + shownTypes.map(function (t) { return "<td>" + (o.types[t] || 0) + "</td>"; }).join("") +
+          (tableKeys.map(function (k) {
+            var o = a.byInsp[k] || { n: 0, pass: 0, judged: 0, set: {}, types: {} }, m = psiOf(k);
+            return "<tr><td><b>" + esc(k) + "</b></td><td>" + esc(m ? m.code : "—") + "</td><td>" + esc(m ? m.designation : "Not in PSI list") + "</td>" + shownTypes.map(function (t) { return "<td>" + (o.types[t] || 0) + "</td>"; }).join("") +
               "<td>" + o.n + "</td><td>" + Object.keys(o.set).length + "</td><td>" + (o.judged ? Math.round(o.pass / o.judged * 100) + "%" : "—") + "</td></tr>";
-          }).join("") || '<tr><td colspan="' + (shownTypes.length + 4) + '">No inspections in this range.</td></tr>') + "</tbody></table></div>" +
+          }).join("") || '<tr><td colspan="' + (shownTypes.length + 6) + '">No inspections in this range.</td></tr>') + "</tbody></table></div>" +
           '<div class="qx-card qx-wrap"><b>Buyer-wise × Inspector-wise (inspections)</b><table><thead><tr><th>Buyer</th>' + inspKeys.map(function (k) { return "<th>" + esc(k) + "</th>"; }).join("") + "<th>Total</th></tr></thead><tbody>" +
           (buyKeys.map(function (b) {
             return "<tr><td><b>" + esc(b) + "</b></td>" + inspKeys.map(function (k) { return "<td>" + (a.matrix[b][k] || "") + "</td>"; }).join("") + "<td>" + a.byBuyer[b].n + "</td></tr>";
@@ -344,7 +356,7 @@
         }), true);
         $("cBuy").innerHTML = chartSvg("bar", buyKeys, [{ name: "Inspections", color: PALETTE[1], data: buyKeys.map(function (b) { return a.byBuyer[b].n; }) }], false);
       }
-      ["qxFrom", "qxTo", "qxB", "qxI", "qxT"].forEach(function (id) { $(id).onchange = draw; });
+      ["qxFrom", "qxTo", "qxB", "qxI", "qxT", "qxAll"].forEach(function (id) { $(id).onchange = draw; });
       $("qxRef").onclick = function () { cache = null; renderDashboard(el); };
       draw();
     });
