@@ -159,6 +159,7 @@ input[readonly]{background:var(--panel-2);color:var(--muted);}
   </span>
 </div>
 <script src="js/master-order.js"></script>
+<script src="js/report-sync.js"></script>
 <script>
 window.TC_IS_GUEST = false;
 (function(){
@@ -389,7 +390,8 @@ const QA_API_URL = "https://script.google.com/macros/s/AKfycbzZ2Kn-5XlYWyJL2x9eY
 // non-JSON response. A cold start can take several seconds, so retry a few
 // times with a growing delay before giving up, and log the real response
 // body to the console so a persistent failure can actually be diagnosed.
-async function qaApi(payload){
+function qaApi(payload){ return window.ReportSync ? ReportSync.wrap(payload, qaApiRaw) : qaApiRaw(payload); }
+async function qaApiRaw(payload){
   // Master Order lookups come from data/masterOrders.json (fast, static). Falls back to the backend below if unavailable.
   if (window.MasterOrder && payload && MasterOrder.handles(payload.action)) {
     const local = await MasterOrder.handle(payload, "qa");
@@ -2647,6 +2649,9 @@ async function saveCurrentReport_(isFinal){
 })();
 
 loadReports().then(() => {
+  // Opened from QA Inspection / Style Tracking "PDF" link: load that report and download its PDF
+  const pdfId = new URLSearchParams(window.location.search).get('pdf');
+  if (pdfId && state.reports.some(x => x.id === pdfId)) { loadReportIntoForm_(pdfId, true); return; }
   const h = state.header;
   if (h.sbu) loadBuyerOptions(h.sbu).then(() => {
     if (h.buyer) loadIrOptions(h.sbu, h.buyer).then(() => {

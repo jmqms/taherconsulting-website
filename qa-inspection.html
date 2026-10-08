@@ -199,7 +199,7 @@ sideEl.addEventListener("click", (e) => {
 });
 
 function loadTab(id) {
-  if (id === "styletracking" || id === "dashboard") return QAInsights.render(id, document.getElementById("tabContent"));
+  if (id === "styletracking" || id === "dashboard" || id === "search") return QAInsights.render(id, document.getElementById("tabContent"));
   if (id === "search") return renderSearch();
   const type = INSPECTION_TYPES.find(t => t.id === id);
   if (type) return renderInspectionForm(type);
@@ -443,7 +443,7 @@ async function runSearch() {
 
 // Default landing tab (all 6 inspection types are now standalone pages, so land on Search)
 searchBtn.classList.add("active");
-renderSearch();
+QAInsights.render("search", document.getElementById("tabContent"));
 </script>
 
 <script src="js/module-auth.js"></script>

@@ -70,6 +70,7 @@ table.rep-table{width:100%;border-collapse:collapse;}
 <div class="guard-bar"><span>J.M. FABRICS LIMITED &middot; QA Inspection &middot; Sewing Inline Inspection</span><a href="qa-inspection.html">&larr; Back to QA Inspection</a></div>
 <div id="app"></div>
 <script src="js/master-order.js"></script>
+<script src="js/report-sync.js"></script>
 <script>
 /* ============================= REFERENCE DATA (ANSI-ASQ Z1.4 / ISO 2859-1, normal, single) ============================= */
 const AQL_COLS = [0.010,0.015,0.025,0.040,0.065,0.10,0.15,0.25,0.40,0.65,1.0,1.5,2.5,4.0,6.5,10];
@@ -203,7 +204,8 @@ let state = Object.assign({
 
 /* ============================= BACKEND ============================= */
 const QA_API_URL = "https://script.google.com/macros/s/AKfycbzZ2Kn-5XlYWyJL2x9eYwtuQwm9dWNX8okS47B4Bjh8OcMQkMhwuZEJapfPaW68ZVIZ/exec";
-async function qaApi(payload){
+function qaApi(payload){ return window.ReportSync ? ReportSync.wrap(payload, qaApiRaw) : qaApiRaw(payload); }
+async function qaApiRaw(payload){
   // Master Order lookups come from data/masterOrders.json (fast, static). Falls back to the backend below if unavailable.
   if (window.MasterOrder && payload && MasterOrder.handles(payload.action)) {
     const local = await MasterOrder.handle(payload, "qa");
