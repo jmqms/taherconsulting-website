@@ -160,6 +160,7 @@ input[readonly]{background:var(--panel-2);color:var(--muted);}
 </div>
 <script src="js/master-order.js"></script>
 <script src="js/report-sync.js"></script>
+<script src="js/psi-team.js"></script>
 <script>
 window.TC_IS_GUEST = false;
 (function(){
@@ -1778,7 +1779,7 @@ function renderSection01(h, aql){
     <div class="pair-grid">
       ${pair('Date', `<input type="date" data-h="date" value="${esc(h.date)}">`)}
       ${pair('Inspection Start Time', `<input type="time" data-h="startTime" value="${esc(h.startTime)}">`)}
-      ${pair('Inspector Name', `<input type="text" data-h="inspectorName" value="${esc(h.inspectorName)}">`)}
+      ${pair('Inspector Name', `<input type="text" list="psiList" autocomplete="off" data-h="inspectorName" value="${esc(h.inspectorName)}">`)}
       ${pair('Factory Name', `<input type="text" data-h="factoryName" value="${esc(h.factoryName)}">`)}
       ${pair('Inspection Type', `<select data-h="inspectionType">${INSPECTION_TYPES.map(o=>`<option ${h.inspectionType===o?'selected':''}>${o}</option>`).join('')}</select>`)}
       ${pair('Actual Order Qty', `<input type="text" value="${actual ? actual.toLocaleString() : ''}" readonly>`, 'as per Order Information')}
