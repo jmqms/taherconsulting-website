@@ -166,8 +166,21 @@
       ".st-Done{background:var(--pass-dim);color:var(--pass)}.st-Issue{background:var(--reject-dim);color:var(--reject)}.st-InProgress{background:#f5e9c8;color:#7a5a00}.st-Pending,.st-NA{background:var(--line);color:var(--ink-soft)}" +
       ".qx-bar{height:8px;background:var(--line);border-radius:4px;overflow:hidden;margin-top:8px}.qx-bar i{display:block;height:100%;background:var(--pass)}" +
       ".qx-wrap{overflow-x:auto}.qx-filters{display:grid;gap:12px;grid-template-columns:repeat(auto-fit,minmax(150px,1fr))}.qx-chart{position:relative;height:260px}" +
+      ".qx-sd{display:grid;grid-template-columns:repeat(auto-fit,minmax(220px,1fr));gap:8px 24px}.qx-sd div{display:flex;justify-content:space-between;gap:12px;border-bottom:1px solid var(--line);padding:5px 0;font-size:13px}.qx-sd span{color:var(--ink-soft)}.qx-sd b{text-align:right}" +
+      ".qx-sdt{font:14px var(--display);margin:14px 0 4px}.qx-total{display:flex;justify-content:space-between;margin-top:8px;padding-top:8px;border-top:1.5px solid var(--ink);font-size:14px}" +
+      ".qx-empty{padding:28px;text-align:center;color:var(--ink-soft);font:12.5px var(--mono)}.qx-legend{display:flex;flex-wrap:wrap;gap:12px;margin:8px 0;font:11px var(--mono);color:var(--ink-soft)}.qx-legend i{display:inline-block;width:10px;height:10px;border-radius:2px;margin-right:5px;vertical-align:-1px}" +
       ".qx-warn{font:12.5px var(--mono);background:var(--reject-dim);color:var(--reject);border:1px solid var(--reject);padding:9px 12px;border-radius:2px;margin-bottom:14px}";
     document.head.appendChild(s);
+  }
+  function orderInfoHTML(d) {
+    if (!d) return '<div class="qx-card"><b>Order Information</b><div class="qx-empty">No matching row found in Master Order Information for this SBU / Buyer / IR.</div></div>';
+    var rows = [["Style Name", d.styleName], ["Style Description", d.styleDescription], ["Item / Product Dept", [d.item, d.productDept].filter(Boolean).join(" / ")],
+      ["Season", d.season], ["Embellishment Category", d.embellishmentCategory], ["Ship Date", d.shipDate]];
+    return '<div class="qx-card"><b>Order Information</b><div class="qx-sd" style="margin-top:8px">' +
+      rows.map(function (r) { return "<div><span>" + esc(r[0]) + "</span><b>" + esc(r[1] || "—") + "</b></div>"; }).join("") + "</div>" +
+      '<div class="qx-sdt">Color-wise Order Qty</div><div class="qx-sd">' +
+      (d.colors || []).map(function (c) { return "<div><span>" + esc(c.color) + "</span><b>" + esc(String(c.qty)) + "</b></div>"; }).join("") + "</div>" +
+      '<div class="qx-total"><span>Total Style Order Qty</span><b>' + esc(String(d.totalQty || 0)) + "</b></div></div>";
   }
   function pdfLink(rec) {
     return rec && rec.id && rec.page ? '<a href="' + rec.page + "?pdf=" + encodeURIComponent(rec.id) + '" target="_blank" rel="noopener">PDF ↓</a>' : "—";
@@ -195,13 +208,18 @@
         if (!ir.value) { out.innerHTML = ""; return; }
         var rows = tracking(data, ir.value), done = rows.filter(function (r) { return r.status === "Done"; }).length;
         var named = data.recs.filter(function (x) { return x.ir === norm(ir.value); })[0];
-        out.innerHTML = '<div class="qx-card"><b>' + esc(ir.value) + "</b>" + (named && named.style ? " — " + esc(named.style) : "") +
+        out.innerHTML = '<div id="qxOrder"></div><div class="qx-card"><b>' + esc(ir.value) + "</b>" + (named && named.style ? " — " + esc(named.style) : "") +
           '<div style="font:12px var(--mono);color:var(--ink-soft);margin-top:4px">' + done + " of " + rows.length + ' stages complete</div><div class="qx-bar"><i style="width:' + Math.round(done / rows.length * 100) + '%"></i></div></div>' +
           '<div class="qx-card qx-wrap"><table><thead><tr><th>#</th><th>Stage</th><th>Status</th><th>Date</th><th>Inspector / Party</th><th>Details</th><th>Report</th></tr></thead><tbody>' +
           rows.map(function (r, i) {
             return "<tr><td>" + (i + 1) + "</td><td><b>" + esc(r.s.label) + '</b></td><td><span class="qx-chip st-' + r.status.replace(/[^A-Za-z]/g, "") + '">' + esc(r.status) + "</span></td><td>" +
               esc(r.date || "—") + "</td><td>" + esc(r.inspector || "—") + "</td><td>" + esc(r.note || "") + "</td><td>" + pdfLink(r.rec) + "</td></tr>";
           }).join("") + "</tbody></table></div>";
+        var want = sbu.value + "|" + buyer.value + "|" + ir.value;
+        lookup({ action: "getOrderDetail", sbu: sbu.value, buyer: buyer.value, ir: ir.value }).then(function (r) {
+          var slot = box.querySelector("#qxOrder");
+          if (slot && want === sbu.value + "|" + buyer.value + "|" + ir.value) slot.innerHTML = orderInfoHTML(r ? r.detail : null);
+        });
       }
       function fillIr(list) { ir.innerHTML = opts(list, "", "Select IR"); show(); }
       function fromData(f) { // fallback if Master Order lookup is unavailable: use IRs seen in reports
@@ -228,14 +246,51 @@
     });
   }
 
-  function destroyCharts() { charts.forEach(function (c) { try { c.destroy(); } catch (e) {} }); charts = []; }
-  function mk(id, cfg) {
-    var c = document.getElementById(id);
-    if (!c || typeof Chart === "undefined") return;
-    cfg.options = Object.assign({ responsive: true, maintainAspectRatio: false }, cfg.options || {});
-    charts.push(new Chart(c, cfg));
-  }
+  function destroyCharts() {}
   var PALETTE = ["#2f6e52", "#b8893a", "#3b6ea5", "#a5483b", "#6d5a9c", "#4d8f8f"];
+
+  // Self-contained SVG charts (no Chart.js, so nothing external can fail to load).
+  function niceMax(v) {
+    var m = Math.max(1, v), p = Math.pow(10, Math.floor(Math.log(m) / Math.LN10)), n = m / p;
+    return (n <= 1 ? 1 : n <= 2 ? 2 : n <= 5 ? 5 : 10) * p;
+  }
+  function chartSvg(kind, labels, series, stacked) {
+    var n = labels.length;
+    if (!n) return '<div class="qx-empty">No data in this date range.</div>';
+    var W = 720, H = 280, L = 42, T = 12, R = 12, B = 58, iw = W - L - R, ih = H - T - B, step = iw / n;
+    var tops = labels.map(function (_, i) {
+      var vals = series.map(function (x) { return x.data[i] || 0; });
+      return stacked ? vals.reduce(function (a, b) { return a + b; }, 0) : Math.max.apply(null, vals);
+    });
+    var max = niceMax(Math.max.apply(null, tops)), g = "", t, every = Math.ceil(n / 12);
+    for (t = 0; t <= 4; t++) {
+      var y = T + ih - ih * t / 4;
+      g += '<line x1="' + L + '" x2="' + (W - R) + '" y1="' + y + '" y2="' + y + '" style="stroke:var(--line)"/><text x="' + (L - 6) + '" y="' + (y + 3) + '" text-anchor="end">' + (Math.round(max * t / 4 * 10) / 10) + "</text>";
+    }
+    labels.forEach(function (lb, i) {
+      if (i % every) return;
+      var x = L + step * i + step / 2, yy = T + ih + 14;
+      g += '<text x="' + x + '" y="' + yy + '" text-anchor="end" transform="rotate(-35 ' + x + " " + yy + ')">' + esc(lb.length > 14 ? lb.slice(0, 13) + "…" : lb) + "</text>";
+    });
+    if (kind === "line") {
+      var pts = series[0].data.map(function (v, i) { return [L + step * i + step / 2, T + ih - ih * v / max]; });
+      g += '<polyline fill="none" stroke-width="2" style="stroke:' + series[0].color + '" points="' + pts.map(function (p) { return p[0] + "," + p[1]; }).join(" ") + '"/>' +
+        pts.map(function (p, i) { return '<circle cx="' + p[0] + '" cy="' + p[1] + '" r="3.5" fill="' + series[0].color + '"><title>' + esc(labels[i]) + ": " + series[0].data[i] + "</title></circle>"; }).join("");
+    } else {
+      var bw = Math.max(4, Math.min(44, step * 0.7 / (stacked ? 1 : series.length)));
+      labels.forEach(function (lb, i) {
+        var cx = L + step * i + step / 2, off = 0;
+        series.forEach(function (sr, k) {
+          var v = sr.data[i] || 0; if (!v) return;
+          var h = ih * v / max, x = stacked ? cx - bw / 2 : cx - bw * series.length / 2 + k * bw, yy = stacked ? T + ih - off - h : T + ih - h;
+          if (stacked) off += h;
+          g += '<rect x="' + x + '" y="' + yy + '" width="' + bw + '" height="' + h + '" fill="' + sr.color + '"><title>' + esc(lb) + " — " + esc(sr.name) + ": " + v + "</title></rect>";
+        });
+      });
+    }
+    var legend = series.length > 1 ? '<div class="qx-legend">' + series.map(function (sr) { return '<span><i style="background:' + sr.color + '"></i>' + esc(sr.name) + "</span>"; }).join("") + "</div>" : "";
+    return legend + '<svg viewBox="0 0 ' + W + " " + H + '" style="width:100%;height:auto;display:block;font:10px var(--mono);fill:var(--ink-soft)">' + g + "</svg>";
+  }
 
   function renderDashboard(el) {
     destroyCharts();
@@ -268,9 +323,9 @@
         $("qxBody").innerHTML =
           '<div class="qx-grid">' + kpi(a.rows.length, "Inspections") + kpi(Object.keys(a.styles).length, "Styles checked") + kpi(inspKeys.length, "Inspectors") +
           kpi(judged ? Math.round(pass / judged * 100) + "%" : "—", "Pass rate") + "</div>" +
-          '<div class="qx-card"><b>Date-wise inspections</b><div class="qx-chart"><canvas id="cDay"></canvas></div></div>' +
-          '<div class="qx-card"><b>Monthly — styles checked per inspection type</b><div class="qx-chart"><canvas id="cMon"></canvas></div></div>' +
-          '<div class="qx-card"><b>Buyer-wise inspections</b><div class="qx-chart"><canvas id="cBuy"></canvas></div></div>' +
+          '<div class="qx-card"><b>Date-wise inspections</b><div id="cDay"></div></div>' +
+          '<div class="qx-card"><b>Monthly — styles checked per inspection type</b><div id="cMon"></div></div>' +
+          '<div class="qx-card"><b>Buyer-wise inspections</b><div id="cBuy"></div></div>' +
           '<div class="qx-card qx-wrap"><b>Inspector-wise performance</b><table><thead><tr><th>Inspector</th>' + shownTypes.map(function (k) { return "<th>" + esc(k) + "</th>"; }).join("") +
           "<th>Total</th><th>Styles</th><th>Pass rate</th></tr></thead><tbody>" +
           (inspKeys.map(function (k) {
@@ -283,10 +338,11 @@
             return "<tr><td><b>" + esc(b) + "</b></td>" + inspKeys.map(function (k) { return "<td>" + (a.matrix[b][k] || "") + "</td>"; }).join("") + "<td>" + a.byBuyer[b].n + "</td></tr>";
           }).join("") || '<tr><td colspan="3">No data.</td></tr>') + "</tbody></table></div>";
 
-        mk("cDay", { type: "line", data: { labels: days, datasets: [{ label: "Inspections", data: days.map(function (d) { return a.byDay[d]; }), borderColor: PALETTE[0], backgroundColor: PALETTE[0], tension: .2 }] }, options: { scales: { y: { beginAtZero: true, ticks: { precision: 0 } } } } });
-        mk("cMon", { type: "bar", data: { labels: months, datasets: shownTypes.map(function (t, i) { return { label: t, backgroundColor: PALETTE[i % PALETTE.length], data: months.map(function (m) { return Object.keys((a.byMonth[m] || {})[t] || {}).length; }) }; }) },
-          options: { scales: { x: { stacked: true }, y: { stacked: true, beginAtZero: true, ticks: { precision: 0 } } } } });
-        mk("cBuy", { type: "bar", data: { labels: buyKeys, datasets: [{ label: "Inspections", backgroundColor: PALETTE[1], data: buyKeys.map(function (b) { return a.byBuyer[b].n; }) }] }, options: { scales: { y: { beginAtZero: true, ticks: { precision: 0 } } } } });
+        $("cDay").innerHTML = chartSvg("line", days, [{ name: "Inspections", color: PALETTE[0], data: days.map(function (d) { return a.byDay[d]; }) }], false);
+        $("cMon").innerHTML = chartSvg("bar", months, shownTypes.map(function (t, i) {
+          return { name: t, color: PALETTE[i % PALETTE.length], data: months.map(function (m) { return Object.keys((a.byMonth[m] || {})[t] || {}).length; }) };
+        }), true);
+        $("cBuy").innerHTML = chartSvg("bar", buyKeys, [{ name: "Inspections", color: PALETTE[1], data: buyKeys.map(function (b) { return a.byBuyer[b].n; }) }], false);
       }
       ["qxFrom", "qxTo", "qxB", "qxI", "qxT"].forEach(function (id) { $(id).onchange = draw; });
       $("qxRef").onclick = function () { cache = null; renderDashboard(el); };
