@@ -728,6 +728,7 @@ const STAGE_DETAIL_SOURCES = {
   wash: { action: "listAqlProcess", params: { process: "wash" } },
   heatseal: { action: "listAqlProcess", params: { process: "heatseal" } },
   ra: { action: "listQualityRA" },
+  testing: { action: "listTestRequests" },
   // Inspection pages: full saved reports, shown the same way as the AQL process stages
   bundle1: { action: "list1stBundle", kind: "report", page: "1st-bundle-inspection.html" },
   sewinginline: { action: "listSewingInline", kind: "report", page: "sewing-inline-inspection.html" },
@@ -1941,10 +1942,18 @@ async function loadAqlProcessEntries() {
 }
 
 // ---------------------------------------------------------------
-// Testing tab — 6 sub-tabs (custom, matches Data_Entry_Sheet.xlsx)
+// Testing — matches Testing.xlsx. Two sub-tabs:
+//   1) New Test Request: filled when garments / panels are SENT for testing
+//      (saved as "Open").
+//   2) Testing Tracking: every Open request; when the report/result comes
+//      back, enter Report Date, TRP No, Result, Comments and Submit -> Closed.
 // ---------------------------------------------------------------
-const TESTING_SUBTABS = ["Print", "Embroidery", "Heat Seal", "Home Laundry", "Print & Embroidery", "Physical Testing"];
-let activeTestingSubtab = TESTING_SUBTABS[0];
+const TS_SECTIONS = ["RMG", "Printing Section", "Embroidery Section", "Washing Plant", "Raw Materials Part"];
+const TS_TEST_ON = ["Printed Panel", "Embroidery Panel", "Heat-Seal Panel", "Complete Garments Home Laundry"];
+const TS_OPTIONS = ["Solid", "with Print (AOP)", "with Print", "with Embroidery", "with Print & Embroidery", "with Heat-Seal", "with Wash", "with Wash and Print", "with Wash and Embroidery", "Wash with Print & Embroidery"];
+const TS_REQUIREMENTS = ["Dimensional Stability to Washing", "Spirality / Skewness", "Appearance After Wash", "Colorfastness to Washing", "Colorfastness to Water", "Colorfastness to Perspiration", "Colorfastness to Rubbing/Crocking", "Colorfastness to Chlorine Bleach", "Colorfastness to Non-Chlorine Bleach", "Colorfastness to Saliva", "Phenolic Yellowing", "C/F to Actual Laundering", "Fabric Weight", "Thread Count", "ICI Pilling (10800/14400 cy)", "Random Tumble Pilling", "Bursting Strength", "PH Test", "Fabric Width", "Stretch Properties"];
+let activeTestingSubtab = "new";
+let tsSelCtrl = null, tsList = [], tsSection = TS_SECTIONS[0];
 
 function renderTesting() {
   const el = document.getElementById("tabContent");
@@ -1953,110 +1962,203 @@ function renderTesting() {
       <div class="eyebrow">Quality Process</div>
       <h1>Testing</h1>
     </div>
-    <div style="display:flex;gap:8px;flex-wrap:wrap;margin-bottom:20px" id="testingSubtabBar"></div>
-    <div id="testingSubtabContent"></div>
-  `;
-  document.getElementById("testingSubtabBar").innerHTML = TESTING_SUBTABS.map(t => `
-    <button class="btn ${t === activeTestingSubtab ? 'btn-primary' : 'btn-ghost'}" style="font-size:11.5px;padding:8px 14px" onclick="switchTestingSubtab('${t.replace(/'/g,"\\'")}')">${esc(t)}</button>
-  `).join("");
-  renderTestingSubtabForm();
+    <div style="display:flex;gap:8px;flex-wrap:wrap;margin-bottom:20px">
+      <button class="btn ${activeTestingSubtab === "new" ? "btn-primary" : "btn-ghost"}" style="font-size:11.5px;padding:8px 14px" onclick="switchTestingSubtab('new')">New Test Request</button>
+      <button class="btn ${activeTestingSubtab === "track" ? "btn-primary" : "btn-ghost"}" style="font-size:11.5px;padding:8px 14px" onclick="switchTestingSubtab('track')">Testing Tracking</button>
+    </div>
+    <div id="testingSubtabContent"></div>`;
+  if (activeTestingSubtab === "new") renderTestingNew(); else renderTestingTracking();
+}
+function switchTestingSubtab(t) { activeTestingSubtab = t; renderTesting(); }
+
+function refreshTsColor(detail) {
+  colorDetail.ts = detail || null;
+  const sel = document.getElementById("tsColor"), custom = document.getElementById("tsColorCustom");
+  if (!sel) return;
+  const was = sel.value === "__custom__";
+  sel.innerHTML = colorOptionsHTML(colorDetail.ts, sel.value);
+  if (custom) custom.style.display = was ? "" : "none";
+}
+function tsPickSection(name) {
+  tsSection = name;
+  document.querySelectorAll(".ts-sec").forEach(b => { b.className = "btn ts-sec " + (b.dataset.sec === name ? "btn-primary" : "btn-ghost"); });
 }
 
-function switchTestingSubtab(t) {
-  activeTestingSubtab = t;
-  renderTesting();
-}
-
-function renderTestingSubtabForm() {
-  const el = document.getElementById("testingSubtabContent");
-  el.innerHTML = `
+function renderTestingNew() {
+  colorDetail.ts = null;
+  const box = document.getElementById("testingSubtabContent");
+  box.innerHTML = `
     <div class="panel" style="margin-bottom:24px">
-      <h3>New Entry — ${esc(activeTestingSubtab)}</h3>
-      <div class="form-grid">
-        <div class="field"><label>SBU</label>
-          <select id="tsSbu"><option>SBU-01</option><option>SBU-02</option><option>SBU-03</option><option>SBU-04</option><option>SBU-05</option></select>
-        </div>
-        <div class="field"><label>Buyer</label>
-        <select id="tsBuyer"><option>GS</option><option>AEO</option><option>AERIE</option><option>AEOW</option><option>Adanola</option><option>Women's Best</option><option>Next</option><option>Zalando</option><option>Lounge</option><option>Tchibo</option><option>Myprotein</option><option>IHL</option><option>Oner Active</option></select>
-        </div>
-        <div class="field"><label>Style</label><input id="tsStyle"></div>
-        <div class="field"><label>IR</label><input id="tsIr"></div>
-        <div class="field"><label>Season</label><input id="tsSeason"></div>
-        <div class="field"><label>Color</label><input id="tsColor"></div>
-        <div class="field"><label>Item Description</label><input id="tsItemDesc"></div>
-        <div class="field"><label>Embellishment Type</label><input id="tsEmb"></div>
-        <div class="field"><label>Additional Trims Type</label><input id="tsTrims"></div>
-        <div class="field"><label>Log In Date</label><input id="tsLogIn" type="date"></div>
-        <div class="field"><label>Tested Party</label>
-          <select id="tsParty"><option>In-house Tested</option><option>3rd Party</option></select>
-        </div>
-        <div class="field"><label>TRF No</label><input id="tsTrf"></div>
-        <div class="field"><label>Result</label>
-          <select id="tsResult"><option>Pass</option><option>Fail</option><option>Pending</option></select>
-        </div>
-        <div class="field"><label>Log Out Date</label><input id="tsLogOut" type="date"></div>
+      <h3>Select Section</h3>
+      <div style="display:flex;gap:8px;flex-wrap:wrap">
+        ${TS_SECTIONS.map(x => `<button type="button" class="btn ts-sec ${x === tsSection ? "btn-primary" : "btn-ghost"}" data-sec="${esc(x)}" style="font-size:12px;padding:8px 14px" onclick="tsPickSection(this.dataset.sec)">${esc(x)}</button>`).join("")}
       </div>
-      <div class="field"><label>Remarks</label><textarea id="tsRemarks" rows="3"></textarea></div>
-      <button class="btn btn-primary" onclick="saveTesting()">Save Entry →</button>
-      <div id="tsMsg" class="form-msg"></div>
     </div>
-    <div class="panel">
-      <h3>Recent Entries — ${esc(activeTestingSubtab)}</h3>
-      <table class="qa-table" id="tsTable">
-        <thead><tr><th>Log In</th><th>SBU</th><th>Style</th><th>Party</th><th>TRF No</th><th>Result</th><th>Log Out</th></tr></thead>
-        <tbody><tr><td colspan="7" style="text-align:center;color:var(--ink-soft)">Loading…</td></tr></tbody>
+    ${styleSelectorHTML("ts")}
+    <div class="panel" style="margin-bottom:24px">
+      <h3>Sample Information</h3>
+      <div class="form-grid">
+        <div class="field"><label>Login Date</label><input id="tsLogIn" type="date"></div>
+        <div class="field"><label>Line</label><input id="tsLine"></div>
+        <div class="field"><label>Color</label>
+          <select id="tsColor">${colorOptionsHTML(null, "")}</select>
+          <input id="tsColorCustom" placeholder="Type color name" style="display:none;margin-top:6px">
+        </div>
+        <div class="field"><label>Size</label><input id="tsSize"></div>
+        <div class="field"><label>Fiber / Fabric Composition</label><input id="tsFiber" placeholder="e.g. 92% Cotton 8% Elastane"></div>
+        <div class="field"><label>Fabric Type</label><input id="tsFabric" placeholder="e.g. Single Jersey"></div>
+        <div class="field"><label>Test on</label><select id="tsTestOn">${TS_TEST_ON.map(o => `<option>${esc(o)}</option>`).join("")}</select></div>
+        <div class="field"><label>Options</label><select id="tsOption">${TS_OPTIONS.map(o => `<option>${esc(o)}</option>`).join("")}</select></div>
+      </div>
+    </div>
+    <div class="panel" style="margin-bottom:24px">
+      <h3>Test Requirement <span style="font-weight:400;font-size:12px;color:var(--ink-soft)">— tick Applicable</span></h3>
+      <div style="margin-bottom:10px"><label style="display:flex;gap:6px;align-items:center;font-weight:400;font-size:12.5px;cursor:pointer"><input type="checkbox" id="tsAll" style="width:auto"> Select all</label></div>
+      <table class="qa-table">
+        <thead><tr><th>Test Requirement</th><th style="width:100px">Applicable</th></tr></thead>
+        <tbody>
+          ${TS_REQUIREMENTS.map((r, i) => `<tr><td>${esc(r)}</td><td><input type="checkbox" class="ts-req" value="${esc(r)}" style="width:auto"></td></tr>`).join("")}
+          <tr><td>Other Tests <input id="tsOther" placeholder="Please specify" style="margin-left:10px;width:60%"></td><td><input type="checkbox" id="tsOtherChk" style="width:auto"></td></tr>
+        </tbody>
       </table>
-    </div>
-  `;
-  loadTestingEntries();
+      <div class="form-grid" style="margin-top:16px">
+        <div class="field"><label>Submitted by</label><input id="tsBy"></div>
+      </div>
+      <button class="btn btn-primary" onclick="saveTestRequest()">Submit →</button>
+      <div id="tsMsg" class="form-msg"></div>
+    </div>`;
+  tsSelCtrl = wireStyleSelector("ts", (sel) => refreshTsColor(sel.detail));
+  document.getElementById("tsColor").addEventListener("change", () => {
+    document.getElementById("tsColorCustom").style.display = document.getElementById("tsColor").value === "__custom__" ? "" : "none";
+  });
+  document.getElementById("tsAll").addEventListener("change", (e) => {
+    document.querySelectorAll(".ts-req").forEach(c => c.checked = e.target.checked);
+  });
 }
 
-async function saveTesting() {
-  if (typeof tcBlockIfGuest === 'function' && tcBlockIfGuest('Saving a testing entry')) return;
+async function saveTestRequest() {
+  if (typeof tcBlockIfGuest === 'function' && tcBlockIfGuest('Submitting a test request')) return;
   const msg = document.getElementById("tsMsg");
+  const sel = tsSelCtrl ? tsSelCtrl.getSel() : { ir: "", detail: null };
+  const fail = (t) => { msg.textContent = t; msg.className = "form-msg err show"; };
+  if (!sel.ir) return fail("Select SBU, Buyer and IR first (or use Manual Entry).");
+  const reqs = Array.from(document.querySelectorAll(".ts-req:checked")).map(c => c.value);
+  const other = document.getElementById("tsOther").value.trim();
+  if (document.getElementById("tsOtherChk").checked || other) reqs.push("Other: " + (other || "—"));
+  if (!reqs.length) return fail("Tick at least one Test Requirement.");
+  const d = sel.detail || {};
+  const cs = document.getElementById("tsColor");
+  const color = cs.value === "__custom__" ? document.getElementById("tsColorCustom").value.trim() : cs.value;
   const entry = {
-    testType: activeTestingSubtab,
-    sbu: document.getElementById("tsSbu").value,
-    buyer: document.getElementById("tsBuyer").value,
-    styleNo: document.getElementById("tsStyle").value,
-    ir: document.getElementById("tsIr").value,
-    season: document.getElementById("tsSeason").value,
-    color: document.getElementById("tsColor").value,
-    itemDescription: document.getElementById("tsItemDesc").value,
-    embellishmentType: document.getElementById("tsEmb").value,
-    additionalTrims: document.getElementById("tsTrims").value,
-    logInDate: document.getElementById("tsLogIn").value,
-    testedParty: document.getElementById("tsParty").value,
-    trfNo: document.getElementById("tsTrf").value,
-    result: document.getElementById("tsResult").value,
-    logOutDate: document.getElementById("tsLogOut").value,
-    remarks: document.getElementById("tsRemarks").value,
+    section: tsSection, sbu: sel.sbu, buyer: sel.buyer, ir: sel.ir,
+    styleNo: d.styleName || "", season: d.season || "", item: d.item || "",
+    logInDate: document.getElementById("tsLogIn").value || ovYmd(new Date()),
+    color: color, line: document.getElementById("tsLine").value, size: document.getElementById("tsSize").value,
+    fiber: document.getElementById("tsFiber").value, fabricType: document.getElementById("tsFabric").value,
+    testOn: document.getElementById("tsTestOn").value, testOption: document.getElementById("tsOption").value,
+    requirements: reqs, submittedBy: document.getElementById("tsBy").value
   };
-  if (!entry.styleNo) { msg.textContent = "Style is required."; msg.className = "form-msg err show"; return; }
   try {
-    const res = await qaApi({ action: "saveTesting", entry: entry });
+    const res = await qaApi({ action: "saveTestRequest", entry: entry });
     if (!res.ok) throw new Error(res.error || "Save failed");
-    msg.textContent = "Entry saved.";
+    msg.textContent = "Submitted. It is now Open in Testing Tracking.";
     msg.className = "form-msg ok show";
-    loadTestingEntries();
+  } catch (err) { fail(err.message); }
+}
+
+async function renderTestingTracking() {
+  const box = document.getElementById("testingSubtabContent");
+  box.innerHTML = `
+    <div class="panel" style="margin-bottom:20px">
+      <div style="display:flex;gap:14px;align-items:end;flex-wrap:wrap">
+        <div class="field" style="margin:0"><label>Status</label>
+          <select id="ttStatus"><option>Open</option><option>Closed</option><option>All</option></select></div>
+        <div class="field" style="margin:0"><label>Section</label>
+          <select id="ttSection"><option value="">All</option>${TS_SECTIONS.map(x => `<option>${esc(x)}</option>`).join("")}</select></div>
+        <div class="field" style="margin:0;min-width:220px;flex:1"><label>Search Buyer / IR / Style</label><input id="ttSearch"></div>
+        <button class="btn btn-ghost" id="ttRefresh">↻ Refresh</button>
+      </div>
+    </div>
+    <div class="stat-grid" id="ttStats"></div>
+    <div id="ttClosePanel"></div>
+    <div class="panel"><div style="overflow-x:auto"><table class="qa-table">
+      <thead><tr><th>Login</th><th>Section</th><th>Buyer</th><th>IR</th><th>Style</th><th>Color</th><th>Test on</th><th>Tests</th><th>Submitted by</th><th>Status</th><th></th></tr></thead>
+      <tbody id="ttBody"><tr><td colspan="11" style="text-align:center;color:var(--ink-soft)">Loading…</td></tr></tbody>
+    </table></div></div>`;
+  ["ttStatus", "ttSection"].forEach(id => document.getElementById(id).addEventListener("change", ttDraw));
+  document.getElementById("ttSearch").addEventListener("input", ttDraw);
+  document.getElementById("ttRefresh").addEventListener("click", renderTestingTracking);
+  try {
+    const res = await qaApi({ action: "listTestRequests" });
+    if (!res.ok) throw new Error(res.error || "Failed to load");
+    tsList = res.entries || [];
+    ttDraw();
   } catch (err) {
-    msg.textContent = err.message;
-    msg.className = "form-msg err show";
+    document.getElementById("ttBody").innerHTML = `<tr><td colspan="11" style="text-align:center;color:var(--reject)">${esc(err.message)}</td></tr>`;
   }
 }
 
-async function loadTestingEntries() {
-  const tbody = document.querySelector("#tsTable tbody");
+function ttDraw() {
+  const st = document.getElementById("ttStatus").value, sec = document.getElementById("ttSection").value;
+  const q = document.getElementById("ttSearch").value.trim().toLowerCase();
+  const nOpen = tsList.filter(r => r.status !== "Closed").length;
+  document.getElementById("ttStats").innerHTML = `
+    <div class="stat-card"><span>Open</span><b>${nOpen}</b></div>
+    <div class="stat-card"><span>Closed</span><b>${tsList.length - nOpen}</b></div>
+    <div class="stat-card"><span>Pass</span><b>${tsList.filter(r => r.result === "Pass").length}</b></div>
+    <div class="stat-card"><span>Fail</span><b>${tsList.filter(r => r.result === "Fail").length}</b></div>`;
+  const rows = tsList.filter(r => {
+    if (st === "Open" && r.status === "Closed") return false;
+    if (st === "Closed" && r.status !== "Closed") return false;
+    if (sec && r.section !== sec) return false;
+    if (q && ![r.buyer, r.ir, r.styleNo].some(v => String(v || "").toLowerCase().indexOf(q) >= 0)) return false;
+    return true;
+  });
+  document.getElementById("ttBody").innerHTML = rows.map(r => {
+    const closed = r.status === "Closed";
+    return `<tr>
+      <td>${esc(String(r.logInDate || "").slice(0, 10))}</td><td>${esc(r.section)}</td><td>${esc(r.buyer)}</td><td>${esc(r.ir)}</td><td>${esc(r.styleNo)}</td>
+      <td>${esc(r.color)}</td><td>${esc(r.testOn)}<div style="font-size:11px;color:var(--ink-soft)">${esc(r.testOption)}</div></td>
+      <td title="${esc((r.requirements || []).join(", "))}">${(r.requirements || []).length}</td><td>${esc(r.submittedBy)}</td>
+      <td><span class="status-pill ${closed ? (r.result === "Fail" ? "Open" : "Done") : "In-Progress"}">${closed ? "Closed · " + esc(r.result) : "Open"}</span></td>
+      <td><button class="btn ${closed ? "btn-ghost" : "btn-primary"}" style="padding:4px 10px;font-size:11.5px" onclick="ttOpenClose('${esc(r.id)}')">${closed ? "View" : "Enter Result"}</button></td></tr>`;
+  }).join("") || `<tr><td colspan="11" style="text-align:center;color:var(--ink-soft)">No requests match.</td></tr>`;
+}
+
+function ttOpenClose(id) {
+  const r = tsList.find(x => x.id === id);
+  if (!r) return;
+  const closed = r.status === "Closed", p = document.getElementById("ttClosePanel");
+  p.innerHTML = `
+    <div class="panel" style="margin-bottom:20px;border-color:var(--gold)">
+      <h3 style="display:flex;justify-content:space-between;align-items:center"><span>${closed ? "Test Result" : "Close Test"} — ${esc(r.ir)} · ${esc(r.styleNo)} · ${esc(r.section)}</span>
+        <button class="btn btn-ghost" style="padding:4px 10px;font-size:11.5px" onclick="document.getElementById('ttClosePanel').innerHTML=''">✕</button></h3>
+      <div style="font-size:13px;color:var(--ink-soft);margin-bottom:12px"><b>Tests:</b> ${esc((r.requirements || []).join(", ") || "—")}<br>
+        <b>Sample:</b> ${esc(r.testOn)} · ${esc(r.testOption)} · ${esc(r.color)} · ${esc(r.size)} · ${esc(r.fiber)} · ${esc(r.fabricType)}</div>
+      <div class="form-grid">
+        <div class="field"><label>Report / Log Out Date</label><input type="date" id="tcDate" value="${esc(String(r.reportDate || "").slice(0, 10))}" ${closed ? "disabled" : ""}></div>
+        <div class="field"><label>TRP No</label><input id="tcTrp" value="${esc(r.trpNo)}" ${closed ? "disabled" : ""}></div>
+        <div class="field"><label>Result</label><select id="tcResult" ${closed ? "disabled" : ""}><option${r.result === "Pass" ? " selected" : ""}>Pass</option><option${r.result === "Fail" ? " selected" : ""}>Fail</option></select></div>
+      </div>
+      <div class="field"><label>Comments</label><textarea id="tcComments" rows="3" ${closed ? "disabled" : ""}>${esc(r.comments)}</textarea></div>
+      ${closed ? "" : `<button class="btn btn-primary" onclick="ttSubmitClose('${esc(r.id)}')">Submit &amp; Close →</button>`}
+      <div id="tcMsg" class="form-msg"></div>
+    </div>`;
+  p.scrollIntoView({ behavior: "smooth", block: "nearest" });
+}
+
+async function ttSubmitClose(id) {
+  if (typeof tcBlockIfGuest === 'function' && tcBlockIfGuest('Closing a test')) return;
+  const msg = document.getElementById("tcMsg");
+  const date = document.getElementById("tcDate").value, trp = document.getElementById("tcTrp").value.trim();
+  if (!date || !trp) { msg.textContent = "Report date and TRP No are required."; msg.className = "form-msg err show"; return; }
   try {
-    const res = await qaApi({ action: "listTesting", testType: activeTestingSubtab });
-    if (!res.ok) throw new Error(res.error || "Failed to load");
-    if (!res.entries.length) { tbody.innerHTML = `<tr><td colspan="7" style="text-align:center;color:var(--ink-soft)">No entries yet for this test type.</td></tr>`; return; }
-    tbody.innerHTML = res.entries.map(e => `
-      <tr><td>${esc(e.logInDate)}</td><td>${esc(e.sbu)}</td><td>${esc(e.styleNo)}</td><td>${esc(e.testedParty)}</td><td>${esc(e.trfNo)}</td><td>${esc(e.result)}</td><td>${esc(e.logOutDate)}</td></tr>
-    `).join("");
-  } catch (err) {
-    tbody.innerHTML = `<tr><td colspan="7" style="text-align:center;color:var(--reject)">${esc(err.message)}</td></tr>`;
-  }
+    const res = await qaApi({ action: "closeTestRequest", id: id, reportDate: date, trpNo: trp,
+      result: document.getElementById("tcResult").value, comments: document.getElementById("tcComments").value });
+    if (!res.ok) throw new Error(res.error || "Failed");
+    document.getElementById("ttClosePanel").innerHTML = "";
+    renderTestingTracking();
+  } catch (err) { msg.textContent = err.message; msg.className = "form-msg err show"; }
 }
 
 // ---------------------------------------------------------------
