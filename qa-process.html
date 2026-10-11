@@ -1965,9 +1965,10 @@ function renderTesting() {
     <div style="display:flex;gap:8px;flex-wrap:wrap;margin-bottom:20px">
       <button class="btn ${activeTestingSubtab === "new" ? "btn-primary" : "btn-ghost"}" style="font-size:11.5px;padding:8px 14px" onclick="switchTestingSubtab('new')">New Test Request</button>
       <button class="btn ${activeTestingSubtab === "track" ? "btn-primary" : "btn-ghost"}" style="font-size:11.5px;padding:8px 14px" onclick="switchTestingSubtab('track')">Testing Tracking</button>
+      <button class="btn ${activeTestingSubtab === "log" ? "btn-primary" : "btn-ghost"}" style="font-size:11.5px;padding:8px 14px" onclick="switchTestingSubtab('log')">Report Log</button>
     </div>
     <div id="testingSubtabContent"></div>`;
-  if (activeTestingSubtab === "new") renderTestingNew(); else renderTestingTracking();
+  if (activeTestingSubtab === "new") renderTestingNew(); else if (activeTestingSubtab === "log") renderReportLog(); else renderTestingTracking();
 }
 function switchTestingSubtab(t) { activeTestingSubtab = t; renderTesting(); }
 
@@ -2024,7 +2025,7 @@ function renderTestingNew() {
       <div class="form-grid" style="margin-top:16px">
         <div class="field"><label>Submitted by</label><input id="tsBy"></div>
       </div>
-      <button class="btn btn-primary" onclick="saveTestRequest()">Submit →</button>
+      <button class="btn btn-primary" id="tsSubmitBtn" onclick="saveTestRequest()">Submit →</button>
       <div id="tsMsg" class="form-msg"></div>
     </div>`;
   tsSelCtrl = wireStyleSelector("ts", (sel) => refreshTsColor(sel.detail));
@@ -2036,7 +2037,9 @@ function renderTestingNew() {
   });
 }
 
+let tsSubmitting = false;
 async function saveTestRequest() {
+  if (tsSubmitting) return;
   if (typeof tcBlockIfGuest === 'function' && tcBlockIfGuest('Submitting a test request')) return;
   const msg = document.getElementById("tsMsg");
   const sel = tsSelCtrl ? tsSelCtrl.getSel() : { ir: "", detail: null };
@@ -2058,12 +2061,21 @@ async function saveTestRequest() {
     testOn: document.getElementById("tsTestOn").value, testOption: document.getElementById("tsOption").value,
     requirements: reqs, submittedBy: document.getElementById("tsBy").value
   };
+  tsSubmitting = true;
+  const btn = document.getElementById("tsSubmitBtn");
+  if (btn) { btn.disabled = true; btn.textContent = "Submitting…"; }
   try {
     const res = await qaApi({ action: "saveTestRequest", entry: entry });
     if (!res.ok) throw new Error(res.error || "Save failed");
-    msg.textContent = "Submitted. It is now Open in Testing Tracking.";
-    msg.className = "form-msg ok show";
-  } catch (err) { fail(err.message); }
+    // clear the whole form so the same data cannot be submitted twice
+    renderTestingNew();
+    const m2 = document.getElementById("tsMsg");
+    m2.textContent = "Submitted (" + entry.ir + " · " + entry.section + "). The form is cleared; the request is Open in Testing Tracking.";
+    m2.className = "form-msg ok show";
+  } catch (err) {
+    fail(err.message);
+    if (btn) { btn.disabled = false; btn.textContent = "Submit →"; }
+  } finally { tsSubmitting = false; }
 }
 
 async function renderTestingTracking() {
@@ -2075,6 +2087,8 @@ async function renderTestingTracking() {
           <select id="ttStatus"><option>Open</option><option>Closed</option><option>All</option></select></div>
         <div class="field" style="margin:0"><label>Section</label>
           <select id="ttSection"><option value="">All</option>${TS_SECTIONS.map(x => `<option>${esc(x)}</option>`).join("")}</select></div>
+        <div class="field" style="margin:0"><label>SBU</label>
+          <select id="ttSbu"><option value="">All</option></select></div>
         <div class="field" style="margin:0;min-width:220px;flex:1"><label>Search Buyer / IR / Style</label><input id="ttSearch"></div>
         <button class="btn btn-ghost" id="ttRefresh">↻ Refresh</button>
       </div>
@@ -2082,24 +2096,26 @@ async function renderTestingTracking() {
     <div class="stat-grid" id="ttStats"></div>
     <div id="ttClosePanel"></div>
     <div class="panel"><div style="overflow-x:auto"><table class="qa-table">
-      <thead><tr><th>Login</th><th>Section</th><th>Buyer</th><th>IR</th><th>Style</th><th>Color</th><th>Test on</th><th>Tests</th><th>Submitted by</th><th>Status</th><th></th></tr></thead>
-      <tbody id="ttBody"><tr><td colspan="11" style="text-align:center;color:var(--ink-soft)">Loading…</td></tr></tbody>
+      <thead><tr><th>Login</th><th>Section</th><th>SBU</th><th>Buyer</th><th>IR</th><th>Style</th><th>Color</th><th>Test on</th><th>Tests</th><th>Submitted by</th><th>Status</th><th></th></tr></thead>
+      <tbody id="ttBody"><tr><td colspan="12" style="text-align:center;color:var(--ink-soft)">Loading…</td></tr></tbody>
     </table></div></div>`;
-  ["ttStatus", "ttSection"].forEach(id => document.getElementById(id).addEventListener("change", ttDraw));
+  ["ttStatus", "ttSection", "ttSbu"].forEach(id => document.getElementById(id).addEventListener("change", ttDraw));
   document.getElementById("ttSearch").addEventListener("input", ttDraw);
   document.getElementById("ttRefresh").addEventListener("click", renderTestingTracking);
   try {
     const res = await qaApi({ action: "listTestRequests" });
     if (!res.ok) throw new Error(res.error || "Failed to load");
     tsList = res.entries || [];
+    const sbus = Array.from(new Set(tsList.map(r => r.sbu).filter(Boolean))).sort();
+    document.getElementById("ttSbu").innerHTML = `<option value="">All</option>` + sbus.map(x => `<option>${esc(x)}</option>`).join("");
     ttDraw();
   } catch (err) {
-    document.getElementById("ttBody").innerHTML = `<tr><td colspan="11" style="text-align:center;color:var(--reject)">${esc(err.message)}</td></tr>`;
+    document.getElementById("ttBody").innerHTML = `<tr><td colspan="12" style="text-align:center;color:var(--reject)">${esc(err.message)}</td></tr>`;
   }
 }
 
 function ttDraw() {
-  const st = document.getElementById("ttStatus").value, sec = document.getElementById("ttSection").value;
+  const st = document.getElementById("ttStatus").value, sec = document.getElementById("ttSection").value, sbuF = document.getElementById("ttSbu").value;
   const q = document.getElementById("ttSearch").value.trim().toLowerCase();
   const nOpen = tsList.filter(r => r.status !== "Closed").length;
   document.getElementById("ttStats").innerHTML = `
@@ -2111,18 +2127,119 @@ function ttDraw() {
     if (st === "Open" && r.status === "Closed") return false;
     if (st === "Closed" && r.status !== "Closed") return false;
     if (sec && r.section !== sec) return false;
+    if (sbuF && r.sbu !== sbuF) return false;
     if (q && ![r.buyer, r.ir, r.styleNo].some(v => String(v || "").toLowerCase().indexOf(q) >= 0)) return false;
     return true;
   });
   document.getElementById("ttBody").innerHTML = rows.map(r => {
     const closed = r.status === "Closed";
     return `<tr>
-      <td>${esc(String(r.logInDate || "").slice(0, 10))}</td><td>${esc(r.section)}</td><td>${esc(r.buyer)}</td><td>${esc(r.ir)}</td><td>${esc(r.styleNo)}</td>
+      <td>${esc(String(r.logInDate || "").slice(0, 10))}</td><td>${esc(r.section)}</td><td>${esc(r.sbu)}</td><td>${esc(r.buyer)}</td><td>${esc(r.ir)}</td><td>${esc(r.styleNo)}</td>
       <td>${esc(r.color)}</td><td>${esc(r.testOn)}<div style="font-size:11px;color:var(--ink-soft)">${esc(r.testOption)}</div></td>
       <td title="${esc((r.requirements || []).join(", "))}">${(r.requirements || []).length}</td><td>${esc(r.submittedBy)}</td>
       <td><span class="status-pill ${closed ? (r.result === "Fail" ? "Open" : "Done") : "In-Progress"}">${closed ? "Closed · " + esc(r.result) : "Open"}</span></td>
       <td><button class="btn ${closed ? "btn-ghost" : "btn-primary"}" style="padding:4px 10px;font-size:11.5px" onclick="ttOpenClose('${esc(r.id)}')">${closed ? "View" : "Enter Result"}</button></td></tr>`;
-  }).join("") || `<tr><td colspan="11" style="text-align:center;color:var(--ink-soft)">No requests match.</td></tr>`;
+  }).join("") || `<tr><td colspan="12" style="text-align:center;color:var(--ink-soft)">No requests match.</td></tr>`;
+}
+
+// ---------- Report Log: section-wise log of every test entry + search + details ----------
+let rlSection = "All";
+
+function rlDetailsHTML(r) {
+  const closed = r.status === "Closed";
+  const rows = [["SBU", r.sbu], ["Buyer", r.buyer], ["IR No", r.ir], ["Style", r.styleNo], ["Season", r.season], ["Item", r.item], ["Color", r.color],
+    ["Section", r.section], ["Login Date", String(r.logInDate || "").slice(0, 10)], ["Line", r.line], ["Size", r.size], ["Fiber / Fabric Composition", r.fiber],
+    ["Fabric Type", r.fabricType], ["Test on", r.testOn], ["Options", r.testOption], ["Submitted by", r.submittedBy]];
+  return `<div class="panel" style="margin:12px 0;border-color:var(--gold)">
+    <h3 style="display:flex;justify-content:space-between;align-items:center"><span>Details — ${esc(r.ir)} · ${esc(r.styleNo)}</span>
+      <button class="btn btn-ghost" style="padding:4px 10px;font-size:11.5px" onclick="document.getElementById('rlDetails').innerHTML=''">✕ Close</button></h3>
+    <div class="sd-grid">${rows.map(([k, v]) => `<div class="sd-row"><span>${esc(k)}</span><b>${esc(v || "—")}</b></div>`).join("")}</div>
+    <div style="margin-top:14px"><b>Test Requirements (${(r.requirements || []).length})</b>
+      <div style="margin-top:6px;font-size:13px">${(r.requirements || []).map(x => `<span class="status-pill In-Progress" style="display:inline-block;margin:0 6px 6px 0">${esc(x)}</span>`).join("") || "—"}</div></div>
+    <div style="margin-top:10px"><b>Result</b>
+      ${closed ? `<div class="sd-grid" style="margin-top:6px">
+        <div class="sd-row"><span>Status</span><b>Closed</b></div><div class="sd-row"><span>Result</span><b>${esc(r.result || "—")}</b></div>
+        <div class="sd-row"><span>Report / Log Out Date</span><b>${esc(String(r.reportDate || "").slice(0, 10) || "—")}</b></div><div class="sd-row"><span>TRP No</span><b>${esc(r.trpNo || "—")}</b></div>
+      </div><div style="margin-top:8px;font-size:13px"><b>Comments:</b> ${esc(r.comments || "—")}</div>`
+      : `<div style="margin-top:6px;color:var(--ink-soft)">Open — report not received yet.</div>`}</div>
+  </div>`;
+}
+
+async function renderReportLog() {
+  const box = document.getElementById("testingSubtabContent");
+  box.innerHTML = `
+    <div class="panel" style="margin-bottom:20px">
+      <h3>Select Section</h3>
+      <div style="display:flex;gap:8px;flex-wrap:wrap" id="rlSections">
+        ${["All"].concat(TS_SECTIONS).map(x => `<button type="button" class="btn rl-sec ${x === rlSection ? "btn-primary" : "btn-ghost"}" data-sec="${esc(x)}" style="font-size:12px;padding:8px 14px">${esc(x)}</button>`).join("")}
+      </div>
+    </div>
+    <div class="panel" style="margin-bottom:20px">
+      <h3>Report Search</h3>
+      <div class="form-grid" style="grid-template-columns:repeat(auto-fit,minmax(170px,1fr))">
+        <div class="field"><label>Status</label><select id="rlStatus"><option value="">All</option><option>Open</option><option>Closed</option></select></div>
+        <div class="field"><label>SBU</label><select id="rlSbu"><option value="">All</option></select></div>
+        <div class="field"><label>Buyer</label><select id="rlBuyer"><option value="">All</option></select></div>
+        <div class="field"><label>IR</label><input id="rlIr" placeholder="IR No"></div>
+      </div>
+      <div style="display:flex;gap:10px;margin-top:4px">
+        <button class="btn btn-primary" id="rlSearch">Search →</button>
+        <button class="btn btn-ghost" id="rlReset">Reset</button>
+        <span id="rlCount" style="font:11px var(--mono);color:var(--ink-soft);align-self:center"></span>
+      </div>
+    </div>
+    <div id="rlDetails"></div>
+    <div class="panel"><div style="overflow-x:auto"><table class="qa-table">
+      <thead><tr><th>Login</th><th>Section</th><th>SBU</th><th>Buyer</th><th>IR</th><th>Style</th><th>Color</th><th>Status</th><th>Result</th><th></th></tr></thead>
+      <tbody id="rlBody"><tr><td colspan="10" style="text-align:center;color:var(--ink-soft)">Loading…</td></tr></tbody>
+    </table></div></div>`;
+  document.getElementById("rlSections").addEventListener("click", (e) => {
+    const b = e.target.closest(".rl-sec"); if (!b) return;
+    rlSection = b.dataset.sec;
+    document.querySelectorAll(".rl-sec").forEach(x => x.className = "btn rl-sec " + (x.dataset.sec === rlSection ? "btn-primary" : "btn-ghost"));
+    rlDraw();
+  });
+  document.getElementById("rlSearch").addEventListener("click", rlDraw);
+  document.getElementById("rlIr").addEventListener("keydown", (e) => { if (e.key === "Enter") rlDraw(); });
+  document.getElementById("rlReset").addEventListener("click", () => {
+    ["rlStatus", "rlSbu", "rlBuyer", "rlIr"].forEach(id => document.getElementById(id).value = "");
+    rlDraw();
+  });
+  try {
+    const res = await qaApi({ action: "listTestRequests" });
+    if (!res.ok) throw new Error(res.error || "Failed to load");
+    tsList = res.entries || [];
+    const opt = (k) => Array.from(new Set(tsList.map(r => r[k]).filter(Boolean))).sort().map(x => `<option>${esc(x)}</option>`).join("");
+    document.getElementById("rlSbu").innerHTML = `<option value="">All</option>` + opt("sbu");
+    document.getElementById("rlBuyer").innerHTML = `<option value="">All</option>` + opt("buyer");
+    rlDraw();
+  } catch (err) {
+    document.getElementById("rlBody").innerHTML = `<tr><td colspan="10" style="text-align:center;color:var(--reject)">${esc(err.message)}</td></tr>`;
+  }
+}
+
+function rlDraw() {
+  const st = document.getElementById("rlStatus").value, sbu = document.getElementById("rlSbu").value, buyer = document.getElementById("rlBuyer").value;
+  const ir = document.getElementById("rlIr").value.trim().toLowerCase();
+  const rows = tsList.filter(r =>
+    (rlSection === "All" || r.section === rlSection) &&
+    (!st || (st === "Closed") === (r.status === "Closed")) &&
+    (!sbu || r.sbu === sbu) && (!buyer || r.buyer === buyer) &&
+    (!ir || String(r.ir || "").toLowerCase().indexOf(ir) >= 0));
+  document.getElementById("rlCount").textContent = rows.length + " report(s)" + (rlSection !== "All" ? " in " + rlSection : "");
+  document.getElementById("rlBody").innerHTML = rows.map(r => `<tr>
+    <td>${esc(String(r.logInDate || "").slice(0, 10))}</td><td>${esc(r.section)}</td><td>${esc(r.sbu)}</td><td>${esc(r.buyer)}</td><td>${esc(r.ir)}</td><td>${esc(r.styleNo)}</td><td>${esc(r.color)}</td>
+    <td><span class="status-pill ${r.status === "Closed" ? "Done" : "In-Progress"}">${esc(r.status)}</span></td>
+    <td>${esc(r.result || "—")}</td>
+    <td><button class="btn btn-ghost" style="padding:4px 10px;font-size:11.5px" onclick="rlSee('${esc(r.id)}')">See Details</button></td></tr>`).join("") ||
+    `<tr><td colspan="10" style="text-align:center;color:var(--ink-soft)">No reports match.</td></tr>`;
+}
+
+function rlSee(id) {
+  const r = tsList.find(x => x.id === id); if (!r) return;
+  const p = document.getElementById("rlDetails");
+  p.innerHTML = rlDetailsHTML(r);
+  p.scrollIntoView({ behavior: "smooth", block: "nearest" });
 }
 
 function ttOpenClose(id) {
@@ -2133,6 +2250,12 @@ function ttOpenClose(id) {
     <div class="panel" style="margin-bottom:20px;border-color:var(--gold)">
       <h3 style="display:flex;justify-content:space-between;align-items:center"><span>${closed ? "Test Result" : "Close Test"} — ${esc(r.ir)} · ${esc(r.styleNo)} · ${esc(r.section)}</span>
         <button class="btn btn-ghost" style="padding:4px 10px;font-size:11.5px" onclick="document.getElementById('ttClosePanel').innerHTML=''">✕</button></h3>
+      <div class="sd-grid" style="margin-bottom:12px">
+        <div class="sd-row"><span>SBU</span><b>${esc(r.sbu || "—")}</b></div>
+        <div class="sd-row"><span>Buyer</span><b>${esc(r.buyer || "—")}</b></div>
+        <div class="sd-row"><span>IR No</span><b>${esc(r.ir || "—")}</b></div>
+        <div class="sd-row"><span>Style</span><b>${esc(r.styleNo || "—")}</b></div>
+      </div>
       <div style="font-size:13px;color:var(--ink-soft);margin-bottom:12px"><b>Tests:</b> ${esc((r.requirements || []).join(", ") || "—")}<br>
         <b>Sample:</b> ${esc(r.testOn)} · ${esc(r.testOption)} · ${esc(r.color)} · ${esc(r.size)} · ${esc(r.fiber)} · ${esc(r.fabricType)}</div>
       <div class="form-grid">
