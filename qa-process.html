@@ -434,20 +434,203 @@ function wireStyleSelector(prefix, onChange) {
 // ---------------------------------------------------------------
 // Tab router
 // ---------------------------------------------------------------
+function tcEl() { return document.getElementById("hubBody") || document.getElementById("tabContent"); }
+
+// One save at a time; after a successful save the whole form is re-rendered (cleared)
+// so a second click / double click can never submit the same entry twice.
+let saveBusy = false;
+async function runSave(msg, call, rerender, okText) {
+  if (saveBusy) return;
+  saveBusy = true;
+  const id = msg.id;
+  const btns = Array.from(document.querySelectorAll("#tabContent .btn-primary")).filter(b => /Save|Submit/.test(b.textContent));
+  btns.forEach(b => { b.disabled = true; });
+  try {
+    const res = await call();
+    if (!res.ok) throw new Error(res.error || "Save failed");
+    rerender();
+    const m = document.getElementById(id);
+    if (m) { m.textContent = okText; m.className = "form-msg ok show"; }
+  } catch (err) {
+    msg.textContent = err.message;
+    msg.className = "form-msg err show";
+    btns.forEach(b => { b.disabled = false; });
+  } finally { saveBusy = false; }
+}
+
 function loadTab(id) {
   if (id === "overview") return renderOverview();
   if (id === "styletracking") return renderStyleTracking();
-  if (id === "sizeset") return renderSizeSet();
-  if (id === "ppmeeting") return renderPPMeeting();
-  if (id === "physicalfunctional") return renderPhysicalFunctional();
-  if (id === "testing") return renderTesting();
-  if (id === "print" || id === "embroidery" || id === "wash" || id === "heatseal") {
-    const st = ALL_STAGES.find(s => s.id === id);
-    return renderAqlProcessStage(id, st.label);
+  if (id === "testing") { activeTestingSubtab = "new"; return renderTesting(); }
+  return renderHub(id, "new");
+}
+
+// ---------------------------------------------------------------
+// Process hub: every process/QA stage gets the same three tabs
+//   New <X> Entry  |  <X> Tracking  |  Report Log
+// ---------------------------------------------------------------
+const HUB_SECTIONS = { print: ["RMG", "FPU"], embroidery: ["RMG", "FPU"], wash: ["RMG", "FPU"], heatseal: ["RMG", "FPU"] };
+let hubRows = [], hubStage = "", hubSection = "All";
+
+function renderHub(stageId, tab, presel) {
+  const stage = ALL_STAGES.find(s => s.id === stageId);
+  if (!stage) return;
+  hubStage = stageId;
+  const el = document.getElementById("tabContent");
+  const isQa = QA_STAGES.some(x => x.id === stageId);
+  const btn = (t, label) => `<button class="btn ${tab === t ? "btn-primary" : "btn-ghost"}" style="font-size:11.5px;padding:8px 14px" onclick="renderHub('${stageId}','${t}')">${esc(label)}</button>`;
+  el.innerHTML = `
+    <div class="qa-head">
+      <div class="eyebrow">${isQa ? "QA Inspection" : "Quality Process"}</div>
+      <h1>${esc(stage.label)}</h1>
+    </div>
+    <div style="display:flex;gap:8px;flex-wrap:wrap;margin-bottom:20px">
+      ${btn("new", "New " + stage.label + " Entry")}${btn("track", stage.label + " Tracking")}${btn("log", "Report Log")}
+    </div>
+    <div id="hubBody"></div>`;
+  if (tab === "new") {
+    if (stageId === "sizeset") renderSizeSet();
+    else if (stageId === "ppmeeting") renderPPMeeting();
+    else if (stageId === "physicalfunctional") renderPhysicalFunctional();
+    else if (HUB_SECTIONS[stageId]) renderAqlProcessStage(stageId, stage.label);
+    else if (stageId === "ra") renderRiskAssessment();
+    else renderStage(stage, presel);
+    const h = document.querySelector("#hubBody .qa-head"); if (h) h.remove();
+    if (presel) {
+      const c = { sizeset: ssSelCtrl, ppmeeting: ppSelCtrl, physicalfunctional: pfSelCtrl, ra: raSelCtrl }[stageId] || (HUB_SECTIONS[stageId] ? aqlSelCtrl : null);
+      if (c && presel.sbu) c.setSel(presel);
+    }
+  } else {
+    hubSection = "All";
+    renderHubList(stageId, tab);
   }
-  if (id === "ra") return renderRiskAssessment();
-  const stage = ALL_STAGES.find(s => s.id === id);
-  if (stage) return renderStage(stage);
+}
+
+function hubDate(v) {
+  if (!v) return "";
+  const d = new Date(v);
+  return isNaN(d) ? String(v).slice(0, 10) : ovYmd(d);
+}
+
+async function hubLoad(stageId) {
+  const map = await ovLoadIrMap();
+  let res, list, out;
+  const base = (r, ir, style) => { const m = map[String(ir || "").trim()] || {}; return { sbu: r.sbu || m.sbu || "", buyer: r.buyer || m.buyer || "", ir: String(ir || ""), style: style || m.style || "" }; };
+  if (stageId === "sizeset") {
+    res = await qaApi({ action: "listSizeSet" });
+    list = res.ok ? res.entries : [];
+    out = list.map(r => Object.assign(base(r, r.ir, r.styleNo), { date: hubDate(r.date || r.createdAt), color: r.colorCount || "", status: r.status || "—", by: "", section: "", raw: r }));
+  } else if (stageId === "ppmeeting") {
+    res = await qaApi({ action: "listPPMeeting" });
+    list = res.ok ? res.entries : [];
+    out = list.map(r => Object.assign(base(r, r.ir, r.styleNo), { date: hubDate(r.date || r.createdAt), color: (r.colors || []).map(c => c.color).filter(Boolean).join(", "), status: r.requirementsReview ? "Review: " + r.requirementsReview : "—", by: r.ppBy, section: "", raw: r }));
+  } else if (stageId === "physicalfunctional") {
+    res = await qaApi({ action: "listPhysicalFunctional" });
+    list = res.ok ? res.entries : [];
+    out = list.map(r => Object.assign(base(r, r.ir, r.styleNo), { date: hubDate(r.date || r.createdAt), color: r.color, status: Number(r.failQty) > 0 ? "Fail" : "Pass", by: r.auditBy, section: "", raw: r }));
+  } else if (HUB_SECTIONS[stageId]) {
+    res = await qaApi({ action: "listAqlProcess", process: stageId });
+    list = res.ok ? res.entries : [];
+    out = list.map(r => Object.assign(base(r, r.ir, r.styleNo), { date: hubDate(r.date || r.createdAt), color: r.color, status: r.result || "—", by: r.inspectedBy, section: r.mode || "", raw: r }));
+  } else if (stageId === "ra") {
+    res = await qaApi({ action: "listQualityRA" });
+    list = res.ok ? res.entries : [];
+    out = list.map(r => Object.assign(base(r, r.ir, r.styleNo), { date: hubDate(r.raDate || r.timestamp), color: "", status: r.riskDecision || "—", by: r.raBy, section: "", raw: r }));
+  } else {
+    res = await qaApi({ action: "listEntries", stage: stageId });
+    list = res.ok ? res.entries : [];
+    out = list.map(r => Object.assign(base({}, r.irNo, r.styleNo), { date: hubDate(r.timestamp), color: "", status: r.status || "Open", by: r.inspector, section: "", raw: r }));
+  }
+  if (!res.ok) throw new Error(res.error || "Failed to load");
+  return out.sort((a, b) => (a.date < b.date ? 1 : -1));
+}
+
+async function renderHubList(stageId, mode) {
+  const box = document.getElementById("hubBody");
+  const sections = HUB_SECTIONS[stageId];
+  const isLog = mode === "log";
+  box.innerHTML = `
+    ${isLog && sections ? `<div class="panel" style="margin-bottom:20px"><h3>Select Section</h3><div style="display:flex;gap:8px;flex-wrap:wrap" id="hbSections">
+      ${["All"].concat(sections).map(x => `<button type="button" class="btn hb-sec ${x === "All" ? "btn-primary" : "btn-ghost"}" data-sec="${esc(x)}" style="font-size:12px;padding:8px 14px">${esc(x)}</button>`).join("")}</div></div>` : ""}
+    ${isLog ? "" : `<div class="stat-grid" id="hbStats"></div>`}
+    <div class="panel" style="margin-bottom:20px">
+      <h3>${isLog ? "Report Search" : "Filter"}</h3>
+      <div class="form-grid" style="grid-template-columns:repeat(auto-fit,minmax(160px,1fr))">
+        <div class="field"><label>Status</label><select id="hbStatus"><option value="">All</option></select></div>
+        <div class="field"><label>SBU</label><select id="hbSbu"><option value="">All</option></select></div>
+        <div class="field"><label>Buyer</label><select id="hbBuyer"><option value="">All</option></select></div>
+        <div class="field"><label>IR</label><input id="hbIr" placeholder="IR No"></div>
+      </div>
+      <div style="display:flex;gap:10px;margin-top:4px;align-items:center">
+        <button class="btn btn-primary" id="hbSearch">Search →</button>
+        <button class="btn btn-ghost" id="hbReset">Reset</button>
+        <button class="btn btn-ghost" id="hbRefresh">↻ Refresh</button>
+        <span id="hbCount" style="font:11px var(--mono);color:var(--ink-soft)"></span>
+      </div>
+    </div>
+    <div id="hbDetails"></div>
+    <div class="panel"><div style="overflow-x:auto"><table class="qa-table">
+      <thead><tr><th>Date</th>${sections ? "<th>Section</th>" : ""}<th>SBU</th><th>Buyer</th><th>IR</th><th>Style</th><th>Color</th><th>By</th><th>Status</th><th></th></tr></thead>
+      <tbody id="hbBody"><tr><td colspan="10" style="text-align:center;color:var(--ink-soft)">Loading…</td></tr></tbody>
+    </table></div></div>`;
+  const sec = document.getElementById("hbSections");
+  if (sec) sec.addEventListener("click", (e) => {
+    const b = e.target.closest(".hb-sec"); if (!b) return;
+    hubSection = b.dataset.sec;
+    document.querySelectorAll(".hb-sec").forEach(x => x.className = "btn hb-sec " + (x.dataset.sec === hubSection ? "btn-primary" : "btn-ghost"));
+    hubDraw();
+  });
+  document.getElementById("hbSearch").addEventListener("click", hubDraw);
+  document.getElementById("hbIr").addEventListener("keydown", (e) => { if (e.key === "Enter") hubDraw(); });
+  ["hbStatus", "hbSbu", "hbBuyer"].forEach(id => document.getElementById(id).addEventListener("change", () => { if (!isLog) hubDraw(); }));
+  if (!isLog) document.getElementById("hbIr").addEventListener("input", hubDraw);
+  document.getElementById("hbReset").addEventListener("click", () => { ["hbStatus", "hbSbu", "hbBuyer", "hbIr"].forEach(id => document.getElementById(id).value = ""); hubDraw(); });
+  document.getElementById("hbRefresh").addEventListener("click", () => renderHubList(stageId, mode));
+  try {
+    hubRows = await hubLoad(stageId);
+    const opt = (k) => Array.from(new Set(hubRows.map(r => r[k]).filter(Boolean))).sort().map(x => `<option>${esc(x)}</option>`).join("");
+    document.getElementById("hbStatus").innerHTML = `<option value="">All</option>` + opt("status");
+    document.getElementById("hbSbu").innerHTML = `<option value="">All</option>` + opt("sbu");
+    document.getElementById("hbBuyer").innerHTML = `<option value="">All</option>` + opt("buyer");
+    hubDraw();
+  } catch (err) {
+    document.getElementById("hbBody").innerHTML = `<tr><td colspan="10" style="text-align:center;color:var(--reject)">${esc(err.message)}</td></tr>`;
+  }
+}
+
+let hubShown = [];
+function hubDraw() {
+  const g = (id) => document.getElementById(id) ? document.getElementById(id).value : "";
+  const st = g("hbStatus"), sbu = g("hbSbu"), buyer = g("hbBuyer"), ir = g("hbIr").trim().toLowerCase();
+  hubShown = hubRows.filter(r =>
+    (hubSection === "All" || r.section === hubSection) && (!st || r.status === st) && (!sbu || r.sbu === sbu) &&
+    (!buyer || r.buyer === buyer) && (!ir || String(r.ir).toLowerCase().indexOf(ir) >= 0));
+  const stats = document.getElementById("hbStats");
+  if (stats) {
+    const c = {}; hubRows.forEach(r => c[r.status] = (c[r.status] || 0) + 1);
+    stats.innerHTML = `<div class="stat-card"><span>Total</span><b>${hubRows.length}</b></div>` +
+      Object.keys(c).sort((a, b) => c[b] - c[a]).slice(0, 3).map(k => `<div class="stat-card"><span>${esc(k)}</span><b>${c[k]}</b></div>`).join("");
+  }
+  document.getElementById("hbCount").textContent = hubShown.length + " record(s)" + (hubShown.length > 300 ? " — latest 300 shown" : "");
+  const sections = HUB_SECTIONS[hubStage];
+  document.getElementById("hbBody").innerHTML = hubShown.slice(0, 300).map((r, i) => `<tr>
+    <td>${esc(r.date || "—")}</td>${sections ? `<td>${esc(r.section)}</td>` : ""}<td>${esc(r.sbu)}</td><td>${esc(r.buyer)}</td><td>${esc(r.ir)}</td><td>${esc(r.style)}</td><td>${esc(r.color)}</td><td>${esc(r.by)}</td>
+    <td><span class="status-pill ${/fail|reject|open/i.test(r.status) ? "Open" : /pass|done|accept|yes/i.test(r.status) ? "Done" : "In-Progress"}">${esc(r.status)}</span></td>
+    <td><button class="btn btn-ghost" style="padding:4px 10px;font-size:11.5px" onclick="hubSee(${i})">See Details</button></td></tr>`).join("") ||
+    `<tr><td colspan="10" style="text-align:center;color:var(--ink-soft)">No records match.</td></tr>`;
+}
+
+function hubSee(i) {
+  const r = hubShown[i]; if (!r) return;
+  const p = document.getElementById("hbDetails");
+  const head = [["SBU", r.sbu], ["Buyer", r.buyer], ["IR No", r.ir], ["Style", r.style], ["Date", r.date], ["Status", r.status], ["By", r.by], ["Color", r.color]];
+  p.innerHTML = `<div class="panel" style="margin-bottom:20px;border-color:var(--gold)">
+    <h3 style="display:flex;justify-content:space-between;align-items:center"><span>Details — ${esc(r.ir)} · ${esc(r.style)}</span>
+      <button class="btn btn-ghost" style="padding:4px 10px;font-size:11.5px" onclick="document.getElementById('hbDetails').innerHTML=''">✕ Close</button></h3>
+    <div class="sd-grid" style="margin-bottom:14px">${head.map(([k, v]) => `<div class="sd-row"><span>${esc(k)}</span><b>${esc(v || "—")}</b></div>`).join("")}</div>
+    ${hubStage === "ra" ? raEntryDetailHTML(r.raw) : renderEntryDetailsTable(r.raw)}
+  </div>`;
+  p.scrollIntoView({ behavior: "smooth", block: "nearest" });
 }
 
 // ---------------------------------------------------------------
@@ -658,6 +841,15 @@ async function loadStyleTrackingResults() {
       String(e.sbu).trim() === stSelected.sbu && String(e.buyer).trim() === stSelected.buyer && String(e.ir).trim() === stSelected.ir
     );
     const byStage = statusRes.ok ? statusRes.byStage : {};
+    // Size-Set entries used to be saved without a summary row in Entries, so the
+    // stage showed "Missing" even though the data existed. Rebuild from the Size-Set list.
+    try {
+      const ssRes = await qaApi({ action: "listSizeSet" });
+      const own = (ssRes.ok ? ssRes.entries : []).filter(e => String(e.ir || "").trim() === stSelected.ir);
+      if (own.length > (byStage.sizeset || []).length) {
+        byStage.sizeset = own.map(e => ({ timestamp: e.date || e.createdAt, status: "Done", score: "", inspector: "", notes: "Size-Set — " + (e.status || "") }));
+      }
+    } catch (e) {}
     lastByStage = byStage;
 
     // Process-wise summary counts
@@ -891,8 +1083,8 @@ function goToStageForTracking(stageId) {
   const detail = document.querySelector(`.qa-side button[data-tab="${stageId}"]`);
   if (detail) detail.classList.add("active");
   const presel = { sbu: stSelected.sbu, buyer: stSelected.buyer, ir: stSelected.ir };
-  if (stageId === "ppmeeting") { renderPPMeeting(); ppSelCtrl.setSel(presel); return; }
-  renderStage(stage, presel);
+  if (stageId === "testing") { activeTestingSubtab = "new"; renderTesting(); if (tsSelCtrl && presel.sbu) tsSelCtrl.setSel(presel); return; }
+  renderHub(stageId, "new", presel);
 }
 
 // ---------------------------------------------------------------
@@ -907,7 +1099,7 @@ const RA_CHANGE_ROWS = ["Fabric", "Pattern (Measurements)", "Construction", "Pri
 let raSelCtrl = null;
 
 function renderRiskAssessment() {
-  const el = document.getElementById("tabContent");
+  const el = tcEl();
   el.innerHTML = `
     <div class="qa-head">
       <div class="eyebrow">Quality Process</div>
@@ -986,16 +1178,7 @@ async function saveQualityRAEntry() {
     riskDecision: document.getElementById("raDecision").value,
     actionComments: document.getElementById("raComments").value,
   };
-  try {
-    const res = await qaApi({ action: "saveQualityRA", entry: entry });
-    if (!res.ok) throw new Error(res.error || "Save failed");
-    msg.textContent = "RA entry saved.";
-    msg.className = "form-msg ok show";
-    loadQualityRAEntries();
-  } catch (err) {
-    msg.textContent = err.message;
-    msg.className = "form-msg err show";
-  }
+  await runSave(msg, () => qaApi({ action: "saveQualityRA", entry: entry }), () => renderRiskAssessment(), "RA entry saved. Form cleared for the next entry.");
 }
 
 async function loadQualityRAEntries() {
@@ -1103,7 +1286,7 @@ let ssSelCtrl = null;
 
 function renderSizeSet() {
   colorDetail.ss = null;
-  const el = document.getElementById("tabContent");
+  const el = tcEl();
   el.innerHTML = `
     <div class="qa-head">
       <div class="eyebrow">Quality Process</div>
@@ -1182,16 +1365,7 @@ async function saveSizeSet() {
     comments: comments,
     remarks: comments,
   };
-  try {
-    const res = await qaApi({ action: "saveSizeSet", entry: entry });
-    if (!res.ok) throw new Error(res.error || "Save failed");
-    msg.textContent = "Entry saved.";
-    msg.className = "form-msg ok show";
-    loadSizeSetEntries();
-  } catch (err) {
-    msg.textContent = err.message;
-    msg.className = "form-msg err show";
-  }
+  await runSave(msg, () => qaApi({ action: "saveSizeSet", entry: entry }), () => renderSizeSet(), "Size-Set entry saved. Form cleared for the next entry.");
 }
 
 async function loadSizeSetEntries() {
@@ -1220,7 +1394,7 @@ let ppSelCtrl = null;
 
 function renderPPMeeting() {
   colorDetail.pp = null;
-  const el = document.getElementById("tabContent");
+  const el = tcEl();
   el.innerHTML = `
     <div class="qa-head">
       <div class="eyebrow">Quality Process</div>
@@ -1308,16 +1482,7 @@ async function savePPMeeting() {
     requirementsReview: document.getElementById("ppReview").value,
     comments: comments,
   };
-  try {
-    const res = await qaApi({ action: "savePPMeeting", entry: entry });
-    if (!res.ok) throw new Error(res.error || "Save failed");
-    msg.textContent = "PP Meeting entry saved.";
-    msg.className = "form-msg ok show";
-    loadPPMeetingEntries();
-  } catch (err) {
-    msg.textContent = err.message;
-    msg.className = "form-msg err show";
-  }
+  await runSave(msg, () => qaApi({ action: "savePPMeeting", entry: entry }), () => renderPPMeeting(), "PP Meeting entry saved. Form cleared for the next entry.");
 }
 
 async function loadPPMeetingEntries() {
@@ -1394,7 +1559,7 @@ function updatePfDefectPct() {
 
 function renderPhysicalFunctional() {
   colorDetail.pf = null;
-  const el = document.getElementById("tabContent");
+  const el = tcEl();
   el.innerHTML = `
     <div class="qa-head">
       <div class="eyebrow">Quality Process</div>
@@ -1501,16 +1666,7 @@ async function savePhysicalFunctional() {
     comments: document.getElementById("pfComments").value,
     correctiveAction: document.getElementById("pfCorrectiveAction").value,
   };
-  try {
-    const res = await qaApi({ action: "savePhysicalFunctional", entry: entry });
-    if (!res.ok) throw new Error(res.error || "Save failed");
-    msg.textContent = "Entry saved.";
-    msg.className = "form-msg ok show";
-    loadPhysicalFunctionalEntries();
-  } catch (err) {
-    msg.textContent = err.message;
-    msg.className = "form-msg err show";
-  }
+  await runSave(msg, () => qaApi({ action: "savePhysicalFunctional", entry: entry }), () => renderPhysicalFunctional(), "Entry saved. Form cleared for the next entry.");
 }
 
 async function loadPhysicalFunctionalEntries() {
@@ -1711,7 +1867,7 @@ function refreshAqlColor(detail) {
 function renderAqlProcessStage(stageId, label) {
   currentAqlStage = stageId;
   colorDetail.aql = null;
-  const el = document.getElementById("tabContent");
+  const el = tcEl();
   el.innerHTML = `
     <div class="qa-head">
       <div class="eyebrow">Quality Process</div>
@@ -1914,16 +2070,7 @@ async function saveAqlProcessStage() {
     comments: document.getElementById("aqlComments").value,
     result: mode === "RMG" ? ({ PASS: "Pass", FAIL: "Fail" }[aqlComputedResult] || "") : document.getElementById("aqlResult").value,
   };
-  try {
-    const res = await qaApi({ action: "saveAqlProcess", entry: entry });
-    if (!res.ok) throw new Error(res.error || "Save failed");
-    msg.textContent = "Entry saved.";
-    msg.className = "form-msg ok show";
-    loadAqlProcessEntries();
-  } catch (err) {
-    msg.textContent = err.message;
-    msg.className = "form-msg err show";
-  }
+  await runSave(msg, () => qaApi({ action: "saveAqlProcess", entry: entry }), () => renderAqlProcessStage(currentAqlStage, (ALL_STAGES.find(x => x.id === currentAqlStage) || {}).label || ""), "Entry saved. Form cleared for the next entry.");
 }
 
 async function loadAqlProcessEntries() {
@@ -2290,7 +2437,7 @@ async function ttSubmitClose(id) {
 let stageSelCtrl = null;
 
 function renderStage(stage, prefill) {
-  const el = document.getElementById("tabContent");
+  const el = tcEl();
   el.innerHTML = `
     <div class="qa-head">
       <div class="eyebrow">Quality Process</div>
@@ -2342,16 +2489,7 @@ async function saveStageEntry(stageId) {
     score: document.getElementById("stScore").value,
     notes: document.getElementById("stNotes").value,
   };
-  try {
-    const res = await qaApi({ action: "saveEntry", entry: entry });
-    if (!res.ok) throw new Error(res.error || "Save failed");
-    msg.textContent = "Entry saved.";
-    msg.className = "form-msg ok show";
-    loadStageEntries(stageId);
-  } catch (err) {
-    msg.textContent = err.message;
-    msg.className = "form-msg err show";
-  }
+  await runSave(msg, () => qaApi({ action: "saveEntry", entry: entry }), () => renderStage(ALL_STAGES.find(x => x.id === stageId)), "Entry saved. Form cleared for the next entry.");
 }
 
 async function loadStageEntries(stageId) {
