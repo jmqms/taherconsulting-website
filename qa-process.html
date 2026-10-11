@@ -453,20 +453,53 @@ function loadTab(id) {
 // ---------------------------------------------------------------
 // Overview tab
 // ---------------------------------------------------------------
+let ovChart = null, ovData = null, ovIrMap = null;
+
+async function ovLoadIrMap() {
+  if (ovIrMap) return ovIrMap;
+  ovIrMap = {};
+  try {
+    const j = await fetch("data/masterOrders.json").then(r => r.json());
+    (j.data || []).forEach(r => {
+      const k = String(r["IR No"] || "").trim();
+      if (k && !ovIrMap[k]) ovIrMap[k] = { buyer: r["Buyer"] || "", sbu: r["SBU"] || "", style: r["Style Name"] || "" };
+    });
+  } catch (e) {}
+  return ovIrMap;
+}
+function ovYmd(d) { return d.getFullYear() + "-" + ("0" + (d.getMonth() + 1)).slice(-2) + "-" + ("0" + d.getDate()).slice(-2); }
+function ovSetRange(kind) {
+  const t = new Date(), s = document.getElementById("ovStart"), e = document.getElementById("ovEnd");
+  if (kind === "all") { s.value = ""; e.value = ""; }
+  else if (kind === "today") { s.value = e.value = ovYmd(t); }
+  else if (kind === "week") { const d = new Date(t); d.setDate(d.getDate() - 6); s.value = ovYmd(d); e.value = ovYmd(t); }
+  else if (kind === "month") { s.value = ovYmd(new Date(t.getFullYear(), t.getMonth(), 1)); e.value = ovYmd(t); }
+  else if (kind === "year") { s.value = ovYmd(new Date(t.getFullYear(), 0, 1)); e.value = ovYmd(t); }
+  ovDraw();
+}
+
 async function renderOverview() {
   const el = document.getElementById("tabContent");
-  const prevStart = document.getElementById("ovStart") ? document.getElementById("ovStart").value : "";
-  const prevEnd = document.getElementById("ovEnd") ? document.getElementById("ovEnd").value : "";
   el.innerHTML = `
     <div class="qa-head">
       <div class="eyebrow">Quality Assurance</div>
       <h1>Overview</h1>
     </div>
-    <div class="panel" style="margin-bottom:20px;display:flex;gap:14px;align-items:end;flex-wrap:wrap">
-      <div class="field" style="margin:0"><label>Start Date</label><input type="date" id="ovStart" value="${prevStart}"></div>
-      <div class="field" style="margin:0"><label>End Date</label><input type="date" id="ovEnd" value="${prevEnd}"></div>
-      <button class="btn btn-primary" onclick="renderOverview()">Apply Filter →</button>
-      <button class="btn btn-ghost" onclick="document.getElementById('ovStart').value='';document.getElementById('ovEnd').value='';renderOverview();">Clear</button>
+    <div class="panel" style="margin-bottom:20px">
+      <div style="display:flex;gap:14px;align-items:end;flex-wrap:wrap">
+        <div class="field" style="margin:0"><label>Start Date</label><input type="date" id="ovStart"></div>
+        <div class="field" style="margin:0"><label>End Date</label><input type="date" id="ovEnd"></div>
+        <div class="field" style="margin:0;min-width:240px;flex:1"><label>Search Buyer / IR / Style</label><input id="ovSearch" placeholder="e.g. Adanola, 577/0015, LS000178"></div>
+        <button class="btn btn-ghost" id="ovRefresh">↻ Refresh</button>
+      </div>
+      <div style="display:flex;gap:8px;flex-wrap:wrap;margin-top:12px">
+        <button class="btn btn-primary" style="padding:6px 12px;font-size:11.5px" onclick="ovSetRange('all')">All Time</button>
+        <button class="btn btn-ghost" style="padding:6px 12px;font-size:11.5px" onclick="ovSetRange('today')">Today</button>
+        <button class="btn btn-ghost" style="padding:6px 12px;font-size:11.5px" onclick="ovSetRange('week')">Last 7 Days</button>
+        <button class="btn btn-ghost" style="padding:6px 12px;font-size:11.5px" onclick="ovSetRange('month')">This Month</button>
+        <button class="btn btn-ghost" style="padding:6px 12px;font-size:11.5px" onclick="ovSetRange('year')">This Year</button>
+        <span id="ovRangeLabel" style="font:11px var(--mono);color:var(--ink-soft);align-self:center;margin-left:6px"></span>
+      </div>
     </div>
     <div class="stat-grid" id="qaStatGrid">
       <div class="stat-card"><span>Total QA Entries</span><b>—</b></div>
@@ -474,13 +507,13 @@ async function renderOverview() {
       <div class="stat-card"><span>In Progress</span><b>—</b></div>
       <div class="stat-card"><span>Done</span><b>—</b></div>
     </div>
-    <div class="panel" style="margin-bottom:28px"><h3>Entries by Stage</h3><canvas id="stageChart"></canvas></div>
+    <div class="panel" style="margin-bottom:28px"><h3>Inspections / Entries by Stage</h3><canvas id="stageChart"></canvas></div>
     <div class="panel-grid" style="grid-template-columns:1.4fr 1fr">
       <div class="panel">
         <h3>Stage-wise Status Summary</h3>
         <table class="qa-table" id="stageTable">
-          <thead><tr><th>Stage</th><th>Total</th><th>Open</th><th>In Progress</th><th>Done</th></tr></thead>
-          <tbody><tr><td colspan="5" style="text-align:center;color:var(--ink-soft)">Loading…</td></tr></tbody>
+          <thead><tr><th>Stage</th><th>Total</th><th>Open</th><th>In Progress</th><th>Done</th><th>Styles</th></tr></thead>
+          <tbody><tr><td colspan="6" style="text-align:center;color:var(--ink-soft)">Loading…</td></tr></tbody>
         </table>
       </div>
       <div class="panel">
@@ -488,50 +521,83 @@ async function renderOverview() {
         <div id="qaInsights"><div class="insight-item">Loading insights…</div></div>
       </div>
     </div>
+    <div class="panel" style="margin-top:20px" id="ovListPanel">
+      <h3>Matching Entries <span id="ovListCount" style="font:11px var(--mono);color:var(--ink-soft);font-weight:400"></span></h3>
+      <div style="overflow-x:auto"><table class="qa-table">
+        <thead><tr><th>Date</th><th>Stage</th><th>Buyer</th><th>IR</th><th>Style</th><th>Inspector</th><th>Status</th></tr></thead>
+        <tbody id="ovListBody"></tbody>
+      </table></div>
+    </div>
   `;
-
+  ["ovStart", "ovEnd"].forEach(id => document.getElementById(id).addEventListener("change", ovDraw));
+  document.getElementById("ovSearch").addEventListener("input", ovDraw);
+  document.getElementById("ovRefresh").addEventListener("click", () => { ovData = null; renderOverview(); });
   try {
-    const res = await qaApi({ action: "overview", start: prevStart || null, end: prevEnd || null });
-    if (!res.ok) throw new Error(res.error || "Failed to load overview");
-    const s = res.summary;
-
-    let openN = 0, progN = 0, doneN = 0;
-    Object.keys(s.byStage || {}).forEach(k => {
-      const d = s.byStage[k];
-      openN += d.open || 0; progN += d.inProgress || 0; doneN += d.done || 0;
-    });
-
-    const grid = document.getElementById("qaStatGrid");
-    grid.innerHTML = `
-      <div class="stat-card"><span>Total QA Entries</span><b>${s.totalEntries}</b></div>
-      <div class="stat-card"><span>Open</span><b>${openN}</b></div>
-      <div class="stat-card"><span>In Progress</span><b>${progN}</b></div>
-      <div class="stat-card"><span>Done</span><b>${doneN}</b></div>
-    `;
-
-    const stageLabels = ALL_STAGES.map(x => x.label);
-    const stageCounts = ALL_STAGES.map(x => (s.byStage[x.id] || {}).total || 0);
-    new Chart(document.getElementById("stageChart"), {
-      type: "bar",
-      data: { labels: stageLabels, datasets: [{ label: "Entries", data: stageCounts, backgroundColor: "#2F6E52" }] },
-      options: { aspectRatio: 3, plugins: { legend: { display: false } }, scales: { x: { ticks: { font: { size: 9 } } } } }
-    });
-
-    const tbody = document.querySelector("#stageTable tbody");
-    tbody.innerHTML = ALL_STAGES.map(x => {
-      const d = s.byStage[x.id] || { total: 0, open: 0, inProgress: 0, done: 0 };
-      return `<tr><td>${esc(x.label)}</td><td>${d.total}</td><td>${d.open}</td><td>${d.inProgress}</td><td>${d.done}</td></tr>`;
-    }).join("");
-
-    const busiest = ALL_STAGES.map(x => ({ label: x.label, total: (s.byStage[x.id] || {}).total || 0 })).sort((a, b) => b.total - a.total)[0];
-    document.getElementById("qaInsights").innerHTML = `
-      <div class="insight-item">📋 <span><b>${s.totalEntries}</b> QA entries logged across all stages.</span></div>
-      <div class="insight-item">🎯 <span>Most active stage: <b>${busiest ? esc(busiest.label) : "—"}</b> (${busiest ? busiest.total : 0} entries).</span></div>
-      <div class="insight-item">⏳ <span><b>${openN + progN}</b> entries are still Open or In Progress — follow these up first.</span></div>
-    `;
+    if (!ovData) {
+      const [res, map] = await Promise.all([qaApi({ action: "listEntries" }), ovLoadIrMap()]);
+      if (!res.ok) throw new Error(res.error || "Failed to load entries");
+      ovData = (res.entries || []).map(e => {
+        const m = map[String(e.irNo || "").trim()] || {};
+        const d = new Date(e.timestamp);
+        return Object.assign({}, e, { _date: isNaN(d) ? "" : ovYmd(d), _buyer: m.buyer || "", _style: e.styleNo || m.style || "" });
+      });
+    }
+    ovDraw();
   } catch (err) {
     document.getElementById("qaStatGrid").innerHTML = `<div class="stat-card" style="grid-column:1/-1"><span style="color:var(--reject)">${esc(err.message)}</span></div>`;
   }
+}
+
+function ovDraw() {
+  if (!ovData || !document.getElementById("ovStart")) return;
+  const from = document.getElementById("ovStart").value, to = document.getElementById("ovEnd").value;
+  const q = document.getElementById("ovSearch").value.trim().toLowerCase();
+  document.getElementById("ovRangeLabel").textContent = (from || to) ? ("Range: " + (from || "start") + " → " + (to || "today")) : "Showing: All time";
+  const rows = ovData.filter(e => {
+    if (from && (!e._date || e._date < from)) return false;
+    if (to && (!e._date || e._date > to)) return false;
+    if (q && ![e._buyer, e.irNo, e._style, e.inspector].some(v => String(v || "").toLowerCase().indexOf(q) >= 0)) return false;
+    return true;
+  });
+  const by = {};
+  rows.forEach(e => {
+    const d = by[e.stage] = by[e.stage] || { total: 0, open: 0, inProgress: 0, done: 0, ir: {} };
+    d.total++; if (e.irNo) d.ir[e.irNo] = 1;
+    if (e.status === "Done") d.done++; else if (e.status === "In Progress") d.inProgress++; else d.open++;
+  });
+  let openN = 0, progN = 0, doneN = 0;
+  Object.keys(by).forEach(k => { openN += by[k].open; progN += by[k].inProgress; doneN += by[k].done; });
+  document.getElementById("qaStatGrid").innerHTML = `
+    <div class="stat-card"><span>Total QA Entries</span><b>${rows.length}</b></div>
+    <div class="stat-card"><span>Open</span><b>${openN}</b></div>
+    <div class="stat-card"><span>In Progress</span><b>${progN}</b></div>
+    <div class="stat-card"><span>Done</span><b>${doneN}</b></div>`;
+  const zero = { total: 0, open: 0, inProgress: 0, done: 0, ir: {} };
+  if (ovChart) { try { ovChart.destroy(); } catch (e) {} ovChart = null; }
+  if (typeof Chart !== "undefined") {
+    ovChart = new Chart(document.getElementById("stageChart"), {
+      type: "bar",
+      data: { labels: ALL_STAGES.map(x => x.label), datasets: [{ label: "Entries", data: ALL_STAGES.map(x => (by[x.id] || zero).total), backgroundColor: "#2F6E52" }] },
+      options: { aspectRatio: 3, plugins: { legend: { display: false } }, scales: { x: { ticks: { font: { size: 9 } } }, y: { beginAtZero: true, ticks: { precision: 0 } } } }
+    });
+  }
+  document.querySelector("#stageTable tbody").innerHTML = ALL_STAGES.map(x => {
+    const d = by[x.id] || zero;
+    return `<tr><td>${esc(x.label)}</td><td><b>${d.total}</b></td><td>${d.open}</td><td>${d.inProgress}</td><td>${d.done}</td><td>${Object.keys(d.ir).length}</td></tr>`;
+  }).join("");
+  const busiest = ALL_STAGES.map(x => ({ label: x.label, total: (by[x.id] || zero).total })).sort((a, b) => b.total - a.total)[0];
+  const styles = {}; rows.forEach(e => { if (e.irNo) styles[e.irNo] = 1; });
+  document.getElementById("qaInsights").innerHTML = `
+    <div class="insight-item">📋 <span><b>${rows.length}</b> entries across <b>${Object.keys(styles).length}</b> styles.</span></div>
+    <div class="insight-item">🎯 <span>Most active stage: <b>${busiest && busiest.total ? esc(busiest.label) : "—"}</b> (${busiest ? busiest.total : 0} entries).</span></div>
+    <div class="insight-item">⏳ <span><b>${openN + progN}</b> entries are still Open or In Progress.</span></div>`;
+  const label = {}; ALL_STAGES.forEach(x => label[x.id] = x.label);
+  const sorted = rows.slice().sort((a, b) => (a._date < b._date ? 1 : -1)).slice(0, 200);
+  document.getElementById("ovListCount").textContent = "(" + rows.length + (rows.length > 200 ? ", latest 200 shown" : "") + ")";
+  document.getElementById("ovListBody").innerHTML = sorted.map(e => `
+    <tr><td>${esc(e._date || "—")}</td><td>${esc(label[e.stage] || e.stage)}</td><td>${esc(e._buyer || "—")}</td><td>${esc(e.irNo)}</td><td>${esc(e._style)}</td><td>${esc(e.inspector)}</td>
+    <td><span class="status-pill ${esc((e.status || "Open").replace(" ", "-"))}">${esc(e.status)}</span></td></tr>`).join("") ||
+    `<tr><td colspan="7" style="text-align:center;color:var(--ink-soft)">No entries match.</td></tr>`;
 }
 
 // ---------------------------------------------------------------
