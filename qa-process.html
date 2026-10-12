@@ -508,8 +508,7 @@ function renderHub(stageId, tab, presel) {
 
 function hubDate(v) {
   if (!v) return "";
-  const d = new Date(v);
-  return isNaN(d) ? String(v).slice(0, 10) : ovYmd(d);
+  return bdDate(v);
 }
 
 async function hubLoad(stageId) {
@@ -650,7 +649,8 @@ async function ovLoadIrMap() {
   } catch (e) {}
   return ovIrMap;
 }
-function ovYmd(d) { return d.getFullYear() + "-" + ("0" + (d.getMonth() + 1)).slice(-2) + "-" + ("0" + d.getDate()).slice(-2); }
+function ovYmd(d) { return d.toLocaleDateString("en-CA", { timeZone: "Asia/Dhaka" }); } // always Bangladesh date
+function bdDate(v) { if (!v) return ""; const m = String(v).match(/^(\d{4}-\d{2}-\d{2})[ T]\d{2}:\d{2}/); if (m && !/[Zz]|[+-]\d{2}:?\d{2}$/.test(String(v))) return m[1]; const d = new Date(v); return isNaN(d) ? String(v).slice(0, 10) : ovYmd(d); }
 function ovSetRange(kind) {
   const t = new Date(), s = document.getElementById("ovStart"), e = document.getElementById("ovEnd");
   if (kind === "all") { s.value = ""; e.value = ""; }
@@ -721,8 +721,7 @@ async function renderOverview() {
       if (!res.ok) throw new Error(res.error || "Failed to load entries");
       ovData = (res.entries || []).map(e => {
         const m = map[String(e.irNo || "").trim()] || {};
-        const d = new Date(e.timestamp);
-        return Object.assign({}, e, { _date: isNaN(d) ? "" : ovYmd(d), _buyer: m.buyer || "", _style: e.styleNo || m.style || "" });
+        return Object.assign({}, e, { _date: bdDate(e.timestamp), _buyer: m.buyer || "", _style: e.styleNo || m.style || "" });
       });
     }
     ovDraw();
@@ -2093,11 +2092,15 @@ async function loadAqlProcessEntries() {
 //   1) New Test Request: filled when garments / panels are SENT for testing
 //      (saved as "Open").
 //   2) Testing Tracking: every Open request; when the report/result comes
-//      back, enter Report Date, TRP No, Result, Comments and Submit -> Closed.
+//      back, enter Report Date, TRF No, Result, Comments and Submit -> Closed.
 // ---------------------------------------------------------------
 const TS_SECTIONS = ["RMG", "Printing Section", "Embroidery Section", "Washing Plant", "Raw Materials Part"];
 const TS_TEST_ON = ["Printed Panel", "Embroidery Panel", "Heat-Seal Panel", "Complete Garments Home Laundry"];
-const TS_OPTIONS = ["Solid", "with Print (AOP)", "with Print", "with Embroidery", "with Print & Embroidery", "with Heat-Seal", "with Wash", "with Wash and Print", "with Wash and Embroidery", "Wash with Print & Embroidery"];
+const TS_OPTIONS = ["Solid", "with Print (AOP)", "with Print", "with Embroidery", "with Print & Embroidery", "with Heat-Seal", "with Wash", "with Wash and Print", "with Wash and Embroidery", "Wash with Print & Embroidery", "Heat-Seal with Print", "Heat-Seal with Embroidery", "Heat-Seal with Print & Embroidery", "Heat-Seal with Wash & Print", "Others"];
+const TS_PE = ["Printing Section", "Embroidery Section"];
+function tsIsPE() { return TS_PE.indexOf(tsSection) >= 0; }
+function tsOptionChange() { const o = document.getElementById("tsOption"), x = document.getElementById("tsOptionOther"); if (o && x) x.style.display = o.value === "Others" ? "" : "none"; }
+function tsOptionHTML() { return `<div class="field"><label>Options</label><select id="tsOption" onchange="tsOptionChange()">${TS_OPTIONS.map(o => `<option>${esc(o)}</option>`).join("")}</select><input id="tsOptionOther" placeholder="Specify other option" style="display:none;margin-top:6px"></div>`; }
 const TS_REQUIREMENTS = ["Dimensional Stability to Washing", "Spirality / Skewness", "Appearance After Wash", "Colorfastness to Washing", "Colorfastness to Water", "Colorfastness to Perspiration", "Colorfastness to Rubbing/Crocking", "Colorfastness to Chlorine Bleach", "Colorfastness to Non-Chlorine Bleach", "Colorfastness to Saliva", "Phenolic Yellowing", "C/F to Actual Laundering", "Fabric Weight", "Thread Count", "ICI Pilling (10800/14400 cy)", "Random Tumble Pilling", "Bursting Strength", "PH Test", "Fabric Width", "Stretch Properties"];
 let activeTestingSubtab = "new";
 let tsSelCtrl = null, tsList = [], tsSection = TS_SECTIONS[0];
@@ -2129,7 +2132,42 @@ function refreshTsColor(detail) {
 }
 function tsPickSection(name) {
   tsSection = name;
-  document.querySelectorAll(".ts-sec").forEach(b => { b.className = "btn ts-sec " + (b.dataset.sec === name ? "btn-primary" : "btn-ghost"); });
+  renderTestingNew(); // Printing / Embroidery use a different form
+}
+
+// Printing / Embroidery: no SBU — just Buyer + IR (SBU is looked up from the IR)
+function tsPeSelectorHTML() {
+  return `<div class="panel" style="margin-bottom:24px">
+      <h3>Select Style</h3>
+      <div class="form-grid">
+        <div class="field"><label>Buyer</label><select id="tsPeBuyer"><option value="">Loading…</option></select></div>
+        <div class="field"><label>IR No</label><select id="tsPeIr"><option value="">Select Buyer first</option></select></div>
+      </div>
+      <div id="tsPeDetails" style="color:var(--ink-soft);margin-top:8px">Select Buyer → IR to see style details.</div>
+    </div>`;
+}
+function tsWirePE() {
+  const bEl = document.getElementById("tsPeBuyer"), iEl = document.getElementById("tsPeIr"), dEl = document.getElementById("tsPeDetails");
+  const sel = { sbu: "", buyer: "", ir: "", detail: null, manual: false };
+  fetchBuyers("").then(b => { bEl.innerHTML = `<option value="">Select Buyer…</option>` + b.map(x => `<option value="${esc(x)}">${esc(x)}</option>`).join(""); });
+  bEl.addEventListener("change", async () => {
+    sel.buyer = bEl.value; sel.ir = ""; sel.sbu = ""; sel.detail = null; refreshTsColor(null);
+    dEl.textContent = "Select IR to see style details.";
+    iEl.innerHTML = `<option value="">Loading…</option>`;
+    const irs = sel.buyer ? await fetchIrs("", sel.buyer) : [];
+    iEl.innerHTML = `<option value="">Select IR…</option>` + irs.map(x => `<option value="${esc(x)}">${esc(x)}</option>`).join("");
+  });
+  iEl.addEventListener("change", async () => {
+    sel.ir = iEl.value; sel.detail = null; refreshTsColor(null);
+    if (!sel.ir) { dEl.textContent = "Select IR to see style details."; return; }
+    dEl.textContent = "Loading…";
+    const map = await ovLoadIrMap();
+    sel.sbu = (map[sel.ir] || {}).sbu || "";
+    sel.detail = await fetchOrderDetail(sel.sbu, sel.buyer, sel.ir);
+    dEl.innerHTML = styleDetailsHTML(sel.detail);
+    refreshTsColor(sel.detail);
+  });
+  return { getSel: () => sel };
 }
 
 function renderTestingNew() {
@@ -2142,21 +2180,21 @@ function renderTestingNew() {
         ${TS_SECTIONS.map(x => `<button type="button" class="btn ts-sec ${x === tsSection ? "btn-primary" : "btn-ghost"}" data-sec="${esc(x)}" style="font-size:12px;padding:8px 14px" onclick="tsPickSection(this.dataset.sec)">${esc(x)}</button>`).join("")}
       </div>
     </div>
-    ${styleSelectorHTML("ts")}
+    ${tsIsPE() ? tsPeSelectorHTML() : styleSelectorHTML("ts")}
     <div class="panel" style="margin-bottom:24px">
       <h3>Sample Information</h3>
       <div class="form-grid">
         <div class="field"><label>Login Date</label><input id="tsLogIn" type="date"></div>
-        <div class="field"><label>Line</label><input id="tsLine"></div>
+        ${tsIsPE() ? `<div class="field"><label>${tsSection === "Printing Section" ? "Print Type" : "Embroidery Type"}</label><input id="tsPrintType" placeholder="${tsSection === "Printing Section" ? "e.g. Rubber / Pigment / Foil" : "e.g. Flat / 3D / Applique"}"></div>` : `<div class="field"><label>Line</label><input id="tsLine"></div>`}
         <div class="field"><label>Color</label>
           <select id="tsColor">${colorOptionsHTML(null, "")}</select>
           <input id="tsColorCustom" placeholder="Type color name" style="display:none;margin-top:6px">
         </div>
-        <div class="field"><label>Size</label><input id="tsSize"></div>
+        ${tsIsPE() ? `<div class="field"><label>GSM</label><input id="tsGsm" type="number" min="0" step="any"></div>` : `<div class="field"><label>Size</label><input id="tsSize"></div>`}
         <div class="field"><label>Fiber / Fabric Composition</label><input id="tsFiber" placeholder="e.g. 92% Cotton 8% Elastane"></div>
         <div class="field"><label>Fabric Type</label><input id="tsFabric" placeholder="e.g. Single Jersey"></div>
         <div class="field"><label>Test on</label><select id="tsTestOn">${TS_TEST_ON.map(o => `<option>${esc(o)}</option>`).join("")}</select></div>
-        <div class="field"><label>Options</label><select id="tsOption">${TS_OPTIONS.map(o => `<option>${esc(o)}</option>`).join("")}</select></div>
+        ${tsOptionHTML()}
       </div>
     </div>
     <div class="panel" style="margin-bottom:24px">
@@ -2170,12 +2208,13 @@ function renderTestingNew() {
         </tbody>
       </table>
       <div class="form-grid" style="margin-top:16px">
+        <div class="field"><label>Test Cycle <span style="font-weight:400;color:var(--ink-soft)">(how many times to wash)</span></label><input id="tsCycle" type="number" min="0" step="1" placeholder="e.g. 1, 3, 5"></div>
         <div class="field"><label>Submitted by</label><input id="tsBy"></div>
       </div>
       <button class="btn btn-primary" id="tsSubmitBtn" onclick="saveTestRequest()">Submit →</button>
       <div id="tsMsg" class="form-msg"></div>
     </div>`;
-  tsSelCtrl = wireStyleSelector("ts", (sel) => refreshTsColor(sel.detail));
+  tsSelCtrl = tsIsPE() ? tsWirePE() : wireStyleSelector("ts", (sel) => refreshTsColor(sel.detail));
   document.getElementById("tsColor").addEventListener("change", () => {
     document.getElementById("tsColorCustom").style.display = document.getElementById("tsColor").value === "__custom__" ? "" : "none";
   });
@@ -2191,7 +2230,8 @@ async function saveTestRequest() {
   const msg = document.getElementById("tsMsg");
   const sel = tsSelCtrl ? tsSelCtrl.getSel() : { ir: "", detail: null };
   const fail = (t) => { msg.textContent = t; msg.className = "form-msg err show"; };
-  if (!sel.ir) return fail("Select SBU, Buyer and IR first (or use Manual Entry).");
+  if (!sel.ir) return fail(tsIsPE() ? "Select Buyer and IR first." : "Select SBU, Buyer and IR first (or use Manual Entry).");
+  if (document.getElementById("tsCycle").value === "") return fail("Enter the Test Cycle (number of washes).");
   const reqs = Array.from(document.querySelectorAll(".ts-req:checked")).map(c => c.value);
   const other = document.getElementById("tsOther").value.trim();
   if (document.getElementById("tsOtherChk").checked || other) reqs.push("Other: " + (other || "—"));
@@ -2203,9 +2243,13 @@ async function saveTestRequest() {
     section: tsSection, sbu: sel.sbu, buyer: sel.buyer, ir: sel.ir,
     styleNo: d.styleName || "", season: d.season || "", item: d.item || "",
     logInDate: document.getElementById("tsLogIn").value || ovYmd(new Date()),
-    color: color, line: document.getElementById("tsLine").value, size: document.getElementById("tsSize").value,
+    color: color,
+    line: tsIsPE() ? "" : document.getElementById("tsLine").value, size: tsIsPE() ? "" : document.getElementById("tsSize").value,
+    printType: tsIsPE() ? document.getElementById("tsPrintType").value : "", gsm: tsIsPE() ? document.getElementById("tsGsm").value : "",
+    testCycle: document.getElementById("tsCycle").value,
     fiber: document.getElementById("tsFiber").value, fabricType: document.getElementById("tsFabric").value,
-    testOn: document.getElementById("tsTestOn").value, testOption: document.getElementById("tsOption").value,
+    testOn: document.getElementById("tsTestOn").value,
+    testOption: document.getElementById("tsOption").value === "Others" ? "Others: " + (document.getElementById("tsOptionOther").value.trim() || "—") : document.getElementById("tsOption").value,
     requirements: reqs, submittedBy: document.getElementById("tsBy").value
   };
   tsSubmitting = true;
@@ -2236,7 +2280,9 @@ async function renderTestingTracking() {
           <select id="ttSection"><option value="">All</option>${TS_SECTIONS.map(x => `<option>${esc(x)}</option>`).join("")}</select></div>
         <div class="field" style="margin:0"><label>SBU</label>
           <select id="ttSbu"><option value="">All</option></select></div>
-        <div class="field" style="margin:0;min-width:220px;flex:1"><label>Search Buyer / IR / Style</label><input id="ttSearch"></div>
+        <div class="field" style="margin:0"><label>Buyer</label><input id="ttBuyer" placeholder="Buyer"></div>
+        <div class="field" style="margin:0"><label>IR No</label><input id="ttIr" placeholder="IR No"></div>
+        <div class="field" style="margin:0"><label>Style</label><input id="ttStyle" placeholder="Style No"></div>
         <button class="btn btn-ghost" id="ttRefresh">↻ Refresh</button>
       </div>
     </div>
@@ -2247,7 +2293,7 @@ async function renderTestingTracking() {
       <tbody id="ttBody"><tr><td colspan="12" style="text-align:center;color:var(--ink-soft)">Loading…</td></tr></tbody>
     </table></div></div>`;
   ["ttStatus", "ttSection", "ttSbu"].forEach(id => document.getElementById(id).addEventListener("change", ttDraw));
-  document.getElementById("ttSearch").addEventListener("input", ttDraw);
+  ["ttBuyer", "ttIr", "ttStyle"].forEach(id => document.getElementById(id).addEventListener("input", ttDraw));
   document.getElementById("ttRefresh").addEventListener("click", renderTestingTracking);
   try {
     const res = await qaApi({ action: "listTestRequests" });
@@ -2263,7 +2309,8 @@ async function renderTestingTracking() {
 
 function ttDraw() {
   const st = document.getElementById("ttStatus").value, sec = document.getElementById("ttSection").value, sbuF = document.getElementById("ttSbu").value;
-  const q = document.getElementById("ttSearch").value.trim().toLowerCase();
+  const qb = document.getElementById("ttBuyer").value.trim().toLowerCase(), qi = document.getElementById("ttIr").value.trim().toLowerCase(), qs = document.getElementById("ttStyle").value.trim().toLowerCase();
+  const has = (v, q) => !q || String(v || "").toLowerCase().indexOf(q) >= 0;
   const nOpen = tsList.filter(r => r.status !== "Closed").length;
   document.getElementById("ttStats").innerHTML = `
     <div class="stat-card"><span>Open</span><b>${nOpen}</b></div>
@@ -2275,7 +2322,7 @@ function ttDraw() {
     if (st === "Closed" && r.status !== "Closed") return false;
     if (sec && r.section !== sec) return false;
     if (sbuF && r.sbu !== sbuF) return false;
-    if (q && ![r.buyer, r.ir, r.styleNo].some(v => String(v || "").toLowerCase().indexOf(q) >= 0)) return false;
+    if (!has(r.buyer, qb) || !has(r.ir, qi) || !has(r.styleNo, qs)) return false;
     return true;
   });
   document.getElementById("ttBody").innerHTML = rows.map(r => {
@@ -2296,7 +2343,9 @@ function rlDetailsHTML(r) {
   const closed = r.status === "Closed";
   const rows = [["SBU", r.sbu], ["Buyer", r.buyer], ["IR No", r.ir], ["Style", r.styleNo], ["Season", r.season], ["Item", r.item], ["Color", r.color],
     ["Section", r.section], ["Login Date", String(r.logInDate || "").slice(0, 10)], ["Line", r.line], ["Size", r.size], ["Fiber / Fabric Composition", r.fiber],
-    ["Fabric Type", r.fabricType], ["Test on", r.testOn], ["Options", r.testOption], ["Submitted by", r.submittedBy]];
+    ["Fabric Type", r.fabricType], ["Test on", r.testOn], ["Options", r.testOption], ["Test Cycle (washes)", r.testCycle], ["Submitted by", r.submittedBy]];
+  if (r.printType) rows.splice(8, 0, [r.section === "Embroidery Section" ? "Embroidery Type" : "Print Type", r.printType]);
+  if (r.gsm) rows.splice(9, 0, ["GSM", r.gsm]);
   return `<div class="panel" style="margin:12px 0;border-color:var(--gold)">
     <h3 style="display:flex;justify-content:space-between;align-items:center"><span>Details — ${esc(r.ir)} · ${esc(r.styleNo)}</span>
       <button class="btn btn-ghost" style="padding:4px 10px;font-size:11.5px" onclick="document.getElementById('rlDetails').innerHTML=''">✕ Close</button></h3>
@@ -2306,7 +2355,7 @@ function rlDetailsHTML(r) {
     <div style="margin-top:10px"><b>Result</b>
       ${closed ? `<div class="sd-grid" style="margin-top:6px">
         <div class="sd-row"><span>Status</span><b>Closed</b></div><div class="sd-row"><span>Result</span><b>${esc(r.result || "—")}</b></div>
-        <div class="sd-row"><span>Report / Log Out Date</span><b>${esc(String(r.reportDate || "").slice(0, 10) || "—")}</b></div><div class="sd-row"><span>TRP No</span><b>${esc(r.trpNo || "—")}</b></div>
+        <div class="sd-row"><span>Report / Log Out Date</span><b>${esc(String(r.reportDate || "").slice(0, 10) || "—")}</b></div><div class="sd-row"><span>TRF No</span><b>${esc(r.trpNo || "—")}</b></div>
       </div><div style="margin-top:8px;font-size:13px"><b>Comments:</b> ${esc(r.comments || "—")}</div>`
       : `<div style="margin-top:6px;color:var(--ink-soft)">Open — report not received yet.</div>`}</div>
   </div>`;
@@ -2404,10 +2453,10 @@ function ttOpenClose(id) {
         <div class="sd-row"><span>Style</span><b>${esc(r.styleNo || "—")}</b></div>
       </div>
       <div style="font-size:13px;color:var(--ink-soft);margin-bottom:12px"><b>Tests:</b> ${esc((r.requirements || []).join(", ") || "—")}<br>
-        <b>Sample:</b> ${esc(r.testOn)} · ${esc(r.testOption)} · ${esc(r.color)} · ${esc(r.size)} · ${esc(r.fiber)} · ${esc(r.fabricType)}</div>
+        <b>Sample:</b> ${esc(r.testOn)} · ${esc(r.testOption)} · ${esc(r.color)} · ${esc(r.printType || r.size)}${r.gsm ? " · " + esc(r.gsm) + " GSM" : ""} · ${esc(r.fiber)} · ${esc(r.fabricType)}${r.testCycle !== "" && r.testCycle != null ? " · Cycle: " + esc(r.testCycle) + " wash" : ""}</div>
       <div class="form-grid">
         <div class="field"><label>Report / Log Out Date</label><input type="date" id="tcDate" value="${esc(String(r.reportDate || "").slice(0, 10))}" ${closed ? "disabled" : ""}></div>
-        <div class="field"><label>TRP No</label><input id="tcTrp" value="${esc(r.trpNo)}" ${closed ? "disabled" : ""}></div>
+        <div class="field"><label>TRF No</label><input id="tcTrp" value="${esc(r.trpNo)}" ${closed ? "disabled" : ""}></div>
         <div class="field"><label>Result</label><select id="tcResult" ${closed ? "disabled" : ""}><option${r.result === "Pass" ? " selected" : ""}>Pass</option><option${r.result === "Fail" ? " selected" : ""}>Fail</option></select></div>
       </div>
       <div class="field"><label>Comments</label><textarea id="tcComments" rows="3" ${closed ? "disabled" : ""}>${esc(r.comments)}</textarea></div>
@@ -2421,7 +2470,7 @@ async function ttSubmitClose(id) {
   if (typeof tcBlockIfGuest === 'function' && tcBlockIfGuest('Closing a test')) return;
   const msg = document.getElementById("tcMsg");
   const date = document.getElementById("tcDate").value, trp = document.getElementById("tcTrp").value.trim();
-  if (!date || !trp) { msg.textContent = "Report date and TRP No are required."; msg.className = "form-msg err show"; return; }
+  if (!date || !trp) { msg.textContent = "Report date and TRF No are required."; msg.className = "form-msg err show"; return; }
   try {
     const res = await qaApi({ action: "closeTestRequest", id: id, reportDate: date, trpNo: trp,
       result: document.getElementById("tcResult").value, comments: document.getElementById("tcComments").value });
