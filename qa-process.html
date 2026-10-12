@@ -559,6 +559,8 @@ async function renderHubList(stageId, mode) {
         <div class="field"><label>SBU</label><select id="hbSbu"><option value="">All</option></select></div>
         <div class="field"><label>Buyer</label><select id="hbBuyer"><option value="">All</option></select></div>
         <div class="field"><label>IR</label><input id="hbIr" placeholder="IR No"></div>
+        <div class="field"><label>From Date</label><input type="date" id="hbFrom"></div>
+        <div class="field"><label>To Date</label><input type="date" id="hbTo"></div>
       </div>
       <div style="display:flex;gap:10px;margin-top:4px;align-items:center">
         <button class="btn btn-primary" id="hbSearch">Search →</button>
@@ -582,8 +584,9 @@ async function renderHubList(stageId, mode) {
   document.getElementById("hbSearch").addEventListener("click", hubDraw);
   document.getElementById("hbIr").addEventListener("keydown", (e) => { if (e.key === "Enter") hubDraw(); });
   ["hbStatus", "hbSbu", "hbBuyer"].forEach(id => document.getElementById(id).addEventListener("change", () => { if (!isLog) hubDraw(); }));
+  ["hbFrom", "hbTo"].forEach(id => document.getElementById(id).addEventListener("change", hubDraw));
   if (!isLog) document.getElementById("hbIr").addEventListener("input", hubDraw);
-  document.getElementById("hbReset").addEventListener("click", () => { ["hbStatus", "hbSbu", "hbBuyer", "hbIr"].forEach(id => document.getElementById(id).value = ""); hubDraw(); });
+  document.getElementById("hbReset").addEventListener("click", () => { ["hbStatus", "hbSbu", "hbBuyer", "hbIr", "hbFrom", "hbTo"].forEach(id => document.getElementById(id).value = ""); hubDraw(); });
   document.getElementById("hbRefresh").addEventListener("click", () => renderHubList(stageId, mode));
   try {
     hubRows = await hubLoad(stageId);
@@ -600,8 +603,9 @@ async function renderHubList(stageId, mode) {
 let hubShown = [];
 function hubDraw() {
   const g = (id) => document.getElementById(id) ? document.getElementById(id).value : "";
-  const st = g("hbStatus"), sbu = g("hbSbu"), buyer = g("hbBuyer"), ir = g("hbIr").trim().toLowerCase();
+  const st = g("hbStatus"), sbu = g("hbSbu"), buyer = g("hbBuyer"), ir = g("hbIr").trim().toLowerCase(), df = g("hbFrom"), dt = g("hbTo");
   hubShown = hubRows.filter(r =>
+    (!df || (r.date && String(r.date).slice(0, 10) >= df)) && (!dt || (r.date && String(r.date).slice(0, 10) <= dt)) &&
     (hubSection === "All" || r.section === hubSection) && (!st || r.status === st) && (!sbu || r.sbu === sbu) &&
     (!buyer || r.buyer === buyer) && (!ir || String(r.ir).toLowerCase().indexOf(ir) >= 0));
   const stats = document.getElementById("hbStats");
@@ -2549,6 +2553,8 @@ async function renderTestingTracking() {
         <div class="field" style="margin:0"><label>Buyer</label><input id="ttBuyer" placeholder="Buyer"></div>
         <div class="field" style="margin:0"><label>IR No</label><input id="ttIr" placeholder="IR No"></div>
         <div class="field" style="margin:0"><label>Style</label><input id="ttStyle" placeholder="Style No"></div>
+        <div class="field" style="margin:0"><label>From Date</label><input type="date" id="ttFrom"></div>
+        <div class="field" style="margin:0"><label>To Date</label><input type="date" id="ttTo"></div>
         <button class="btn btn-ghost" id="ttRefresh">↻ Refresh</button>
       </div>
     </div>
@@ -2558,7 +2564,7 @@ async function renderTestingTracking() {
       <thead><tr><th>Login</th><th>Section</th><th>SBU</th><th>Buyer</th><th>IR</th><th>Style</th><th>Color</th><th>Test on</th><th>Tests</th><th>Submitted by</th><th>Status</th><th></th></tr></thead>
       <tbody id="ttBody"><tr><td colspan="12" style="text-align:center;color:var(--ink-soft)">Loading…</td></tr></tbody>
     </table></div></div>`;
-  ["ttStatus", "ttSection", "ttSbu"].forEach(id => document.getElementById(id).addEventListener("change", ttDraw));
+  ["ttStatus", "ttSection", "ttSbu", "ttFrom", "ttTo"].forEach(id => document.getElementById(id).addEventListener("change", ttDraw));
   ["ttBuyer", "ttIr", "ttStyle"].forEach(id => document.getElementById(id).addEventListener("input", ttDraw));
   document.getElementById("ttRefresh").addEventListener("click", renderTestingTracking);
   try {
@@ -2589,6 +2595,9 @@ function ttDraw() {
     if (sec && r.section !== sec) return false;
     if (sbuF && r.sbu !== sbuF) return false;
     if (!has(r.buyer, qb) || !has(r.ir, qi) || !has(r.styleNo, qs)) return false;
+    const ld = String(r.logInDate || "").slice(0, 10), tf = document.getElementById("ttFrom").value, tt = document.getElementById("ttTo").value;
+    if (tf && (!ld || ld < tf)) return false;
+    if (tt && (!ld || ld > tt)) return false;
     return true;
   });
   document.getElementById("ttBody").innerHTML = rows.map(r => {
@@ -2643,6 +2652,8 @@ async function renderReportLog() {
         <div class="field"><label>SBU</label><select id="rlSbu"><option value="">All</option></select></div>
         <div class="field"><label>Buyer</label><select id="rlBuyer"><option value="">All</option></select></div>
         <div class="field"><label>IR</label><input id="rlIr" placeholder="IR No"></div>
+        <div class="field"><label>From Date</label><input type="date" id="rlFrom"></div>
+        <div class="field"><label>To Date</label><input type="date" id="rlTo"></div>
       </div>
       <div style="display:flex;gap:10px;margin-top:4px">
         <button class="btn btn-primary" id="rlSearch">Search →</button>
@@ -2662,9 +2673,10 @@ async function renderReportLog() {
     rlDraw();
   });
   document.getElementById("rlSearch").addEventListener("click", rlDraw);
+  ["rlFrom", "rlTo"].forEach(id => document.getElementById(id).addEventListener("change", rlDraw));
   document.getElementById("rlIr").addEventListener("keydown", (e) => { if (e.key === "Enter") rlDraw(); });
   document.getElementById("rlReset").addEventListener("click", () => {
-    ["rlStatus", "rlSbu", "rlBuyer", "rlIr"].forEach(id => document.getElementById(id).value = "");
+    ["rlStatus", "rlSbu", "rlBuyer", "rlIr", "rlFrom", "rlTo"].forEach(id => document.getElementById(id).value = "");
     rlDraw();
   });
   try {
@@ -2683,7 +2695,9 @@ async function renderReportLog() {
 function rlDraw() {
   const st = document.getElementById("rlStatus").value, sbu = document.getElementById("rlSbu").value, buyer = document.getElementById("rlBuyer").value;
   const ir = document.getElementById("rlIr").value.trim().toLowerCase();
+  const rf = document.getElementById("rlFrom").value, rt = document.getElementById("rlTo").value;
   const rows = tsList.filter(r =>
+    (!rf || (String(r.logInDate || "").slice(0, 10) >= rf && r.logInDate)) && (!rt || (String(r.logInDate || "").slice(0, 10) <= rt && r.logInDate)) &&
     (rlSection === "All" || r.section === rlSection) &&
     (!st || (st === "Closed") === (r.status === "Closed")) &&
     (!sbu || r.sbu === sbu) && (!buyer || r.buyer === buyer) &&
