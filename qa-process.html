@@ -645,7 +645,10 @@ async function ovLoadIrMap() {
   if (ovIrMap) return ovIrMap;
   ovIrMap = {};
   try {
-    const j = await fetch("data/masterOrders.json").then(r => r.json());
+    // file 1 first; file 2 only supplies IRs that file 1 does not have
+    const [j1, j2] = await Promise.all(["data/masterOrders.json", "data/masterOrders2.json"].map(u => fetch(u).then(r => r.ok ? r.json() : { data: [] }).catch(() => ({ data: [] }))));
+    const have = {}; (j1.data || []).forEach(r => { have[String(r["IR No"] || "").trim()] = 1; });
+    const j = { data: (j1.data || []).concat((j2.data || []).filter(r => !have[String(r["IR No"] || "").trim()])) };
     (j.data || []).forEach(r => {
       const k = String(r["IR No"] || "").trim();
       if (!k) return;
