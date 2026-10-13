@@ -1,164 +1,113 @@
-/* ===========================================================
-   TAHER CONSULTING — Per-Module Login Gate
-   -----------------------------------------------------------
-   Adds a SECOND, independent login screen on top of a module
-   page (Audit / QC Inspection / Training), separate from the
-   main site login. Each module checks credentials against its
-   own tab in the same Google Sheet (see users-backend.gs — the
-   "sheet" field in the request picks which tab to check).
+/*
+ * master-order.js — serves the Master Order lookups from data/masterOrders.json
+ * (static file on GitHub Pages) instead of a slow Apps Script + Google Sheet call.
+ *
+ * Handles the same four actions the modules already send to their backend:
+ *   listSbus, listBuyers, listIrs, getOrderDetail
+ * and returns the same response shapes. If the JSON cannot be loaded, handle()
+ * returns null and the module falls back to its normal Apps Script call.
+ *
+ * To update the data: replace data/masterOrders.json (primary) and/or data/masterOrders2.json
+ * (fallback for styles that are not in the primary file) in the repo.
+ */
+(function () {
+  var URL = "data/masterOrders.json";
+  var URL2 = "data/masterOrders2.json"; // fallback: used only for IRs missing from file 1
+  var ACTIONS = { listSbus: 1, listBuyers: 1, listIrs: 1, getOrderDetail: 1 };
+  var loading = null;
 
-   Usage (place near the top of the module's <body>, after the
-   existing site-wide guard-bar script):
+  function norm(v) { return v === null || v === undefined ? "" : String(v).trim(); }
 
-     <script src="js/module-auth.js"></script>
-     <script>
-       tcInitModuleAuth({
-         moduleKey: "audit",           // used for the session storage key
-         sheetName: "AuditUsers",      // tab name in the Google Sheet
-         displayLabel: "Daily QMS Floor Audit"
-       });
-     </script>
-
-   Session is stored in sessionStorage (clears when the tab is
-   closed, same as the site-wide session), under the key
-   "tc_module_<moduleKey>", separately from the main site login.
-
-   After a successful login (or Guest), window.TC_IS_GUEST and
-   window.TC_MODULE_SESSION are set, and a small "MODULE LOGOUT"
-   control is added into the existing #tc-guard-bar if present.
-   =========================================================== */
-
-const MODULE_AUTH_API_URL = "https://script.google.com/macros/s/AKfycbx7Cwnp8hoKuxcQ57TlllwBaA7zr9S2bcFVi9-mzyyY8RhRL3YiUpbJMFohLmQZkf1a/exec";
-
-function tcInitModuleAuth(opts) {
-  const sessionKey = "tc_module_" + opts.moduleKey;
-  window.TC_IS_GUEST = false;
-  window.TC_MODULE_SESSION = null;
-
-  function getModuleSession() {
-    const raw = sessionStorage.getItem(sessionKey);
-    return raw ? JSON.parse(raw) : null;
+  function getJson(u) {
+    return fetch(u, { cache: "no-cache" })
+      .then(function (r) { if (!r.ok) throw new Error("HTTP " + r.status); return r.json(); });
   }
 
-  function injectStyles() {
-    if (document.getElementById("tc-module-auth-style")) return;
-    const style = document.createElement("style");
-    style.id = "tc-module-auth-style";
-    style.textContent = `
-      #tc-module-overlay{position:fixed;inset:0;z-index:99999;display:flex;align-items:center;justify-content:center;font-family:'IBM Plex Mono',monospace,'Courier New',monospace;}
-      #tc-module-overlay .tc-card{background:#FBFAF6;border:1.5px solid #1B211D;border-radius:5px;padding:34px 34px 30px;width:100%;max-width:380px;box-sizing:border-box;position:relative;}
-      #tc-module-overlay .tc-icon{width:52px;height:52px;border-radius:50%;display:flex;align-items:center;justify-content:center;font-size:24px;margin-bottom:16px;border:1.5px solid #1B211D;}
-      #tc-module-overlay h1{font-family:Georgia,'Times New Roman',serif;font-size:22px;font-weight:700;color:#1B211D;margin:0 0 6px;}
-      #tc-module-overlay p.sub{font-size:12.5px;color:#4B5650;margin:0 0 22px;line-height:1.5;}
-      #tc-module-overlay label{display:block;font-size:10.5px;letter-spacing:.06em;text-transform:uppercase;color:#4B5650;margin-bottom:6px;}
-      #tc-module-overlay input{width:100%;padding:11px 13px;border:1.5px solid #BFBBA8;border-radius:2px;background:#F1F0EA;font-size:14px;color:#1B211D;box-sizing:border-box;margin-bottom:16px;font-family:inherit;}
-      #tc-module-overlay input:focus{outline:none;border-color:var(--tc-accent, #2F6E52);}
-      #tc-module-overlay .tc-err{display:none;background:#F4E4DE;color:#B84226;border:1px solid #B84226;padding:10px 12px;border-radius:2px;font-size:12px;margin-bottom:16px;}
-      #tc-module-overlay button{width:100%;padding:13px;border:none;border-radius:2px;font-size:12.5px;letter-spacing:.04em;text-transform:uppercase;cursor:pointer;font-family:inherit;}
-      #tc-module-overlay .tc-signin{background:var(--tc-accent, #1B211D);color:#F1F0EA;margin-bottom:10px;}
-      #tc-module-overlay .tc-signin:disabled{opacity:.6;cursor:default;}
-      #tc-module-overlay .tc-guest{background:transparent;border:1.5px solid #1B211D;color:#1B211D;}
-      #tc-module-overlay .tc-tag{position:absolute;top:14px;right:16px;font-size:10px;letter-spacing:.08em;color:#8b8974;text-transform:uppercase;}
-    `;
-    document.head.appendChild(style);
+  // File 1 (masterOrders.json) is the primary source. File 2 (masterOrders2.json) is only
+  // used for IRs that file 1 does not have at all, so file 1 always wins when both have an IR.
+  function load() {
+    if (loading) return loading;
+    // cache:"no-cache" = browser asks GitHub "changed?" and gets a tiny 304 when not,
+    // so data is always fresh but repeat visits cost almost nothing.
+    loading = Promise.all([getJson(URL).catch(function () { return null; }), getJson(URL2).catch(function () { return null; })])
+      .then(function (res) {
+        var a = res[0], b = res[1];
+        if (!a && !b) throw new Error("no local master order data");
+        var rows1 = (a && a.data) || [], rows2 = (b && b.data) || [];
+        var have = {};
+        rows1.forEach(function (r) { have[norm(r["IR No"])] = 1; });
+        var extra = rows2.filter(function (r) { return !have[norm(r["IR No"])]; });
+        var rows = rows1.concat(extra);
+        var groups = {};
+        rows.forEach(function (r) {
+          var k = norm(r["SBU"]) + "\u0001" + norm(r["Buyer"]) + "\u0001" + norm(r["IR No"]);
+          (groups[k] = groups[k] || []).push(r);
+        });
+        return { rows: rows.filter(function (r) { return norm(r["SBU"]); }), groups: groups, updated: (a || b).updated, fromFile2: extra.length };
+      })
+      .catch(function (e) { loading = null; console.warn("[MasterOrder] local data unavailable, using backend:", e); return null; });
+    return loading;
   }
 
-  function showOverlay() {
-    injectStyles();
-    const allowGuest = opts.allowGuest !== false;
-    const theme = opts.theme || { icon: "🔒", accent: "#1B211D", iconBg: "#F1F0EA", bg: "#1B211D" };
-    const el = document.createElement("div");
-    el.id = "tc-module-overlay";
-    el.style.background = theme.bg;
-    el.innerHTML = `
-      <div class="tc-card" style="--tc-accent:${theme.accent}">
-        <span class="tc-tag">Taher Consulting</span>
-        <div class="tc-icon" style="background:${theme.iconBg};border-color:${theme.accent};color:${theme.accent}">${theme.icon}</div>
-        <h1>${opts.displayLabel}</h1>
-        <p class="sub">This module has its own sign-in, separate from your main site login. Enter the User ID and password issued for ${opts.displayLabel}.</p>
-        <div class="tc-err" id="tc-module-err"></div>
-        <label>User ID</label>
-        <input type="text" id="tc-module-userid" autocomplete="off">
-        <label>Password</label>
-        <input type="password" id="tc-module-password" autocomplete="off">
-        <button class="tc-signin" id="tc-module-signin">Sign In →</button>
-        ${allowGuest ? '<button class="tc-guest" id="tc-module-guest">Continue as Guest (View Only)</button>' : ''}
-      </div>
-    `;
-    document.body.appendChild(el);
-
-    document.getElementById("tc-module-signin").addEventListener("click", doLogin);
-    document.getElementById("tc-module-password").addEventListener("keydown", e => { if (e.key === "Enter") doLogin(); });
-    if (allowGuest) {
-      document.getElementById("tc-module-guest").addEventListener("click", () => {
-        applySession({ name: "Guest", role: "guest" });
-      });
-    }
-  }
-
-  function hideOverlay() {
-    const el = document.getElementById("tc-module-overlay");
-    if (el) el.remove();
-  }
-
-  async function doLogin() {
-    const userId = document.getElementById("tc-module-userid").value;
-    const password = document.getElementById("tc-module-password").value;
-    const errBox = document.getElementById("tc-module-err");
-    const btn = document.getElementById("tc-module-signin");
-
-    errBox.style.display = "none";
-    btn.disabled = true;
-    btn.textContent = "Checking…";
-
-    try {
-      const res = await fetch(MODULE_AUTH_API_URL, {
-        method: "POST",
-        headers: { "Content-Type": "text/plain;charset=utf-8" },
-        body: JSON.stringify({ action: "login", userId, password, sheet: opts.sheetName }),
-      });
-      const data = await res.json();
-      if (!data.ok) {
-        errBox.textContent = data.error || "Incorrect User ID or password.";
-        errBox.style.display = "block";
-        btn.disabled = false;
-        btn.textContent = "Sign In →";
-        return;
+  function distinct(rows, col, filters) {
+    var set = {};
+    rows.forEach(function (r) {
+      for (var f in filters) {
+        var want = norm(filters[f]);
+        if (want && norm(r[f]) !== want) return;
       }
-      applySession({ name: data.name, role: data.role });
-    } catch (err) {
-      errBox.textContent = "Could not reach the login server. Check your connection and try again.";
-      errBox.style.display = "block";
-      btn.disabled = false;
-      btn.textContent = "Sign In →";
-    }
-  }
-
-  function applySession(session) {
-    sessionStorage.setItem(sessionKey, JSON.stringify(session));
-    window.TC_MODULE_SESSION = session;
-    window.TC_IS_GUEST = window.TC_IS_GUEST || /guest|visitor/i.test(session.role || "");
-    hideOverlay();
-    addLogoutControl(session);
-  }
-
-  function addLogoutControl(session) {
-    const bar = document.getElementById("tc-guard-bar");
-    if (!bar || document.getElementById("tc-module-logout")) return;
-    const wrap = document.createElement("span");
-    wrap.style.marginLeft = "14px";
-    wrap.innerHTML = `<span style="color:#A9832F">${session.name}</span> <button id="tc-module-logout" style="font-family:inherit;font-size:11px;background:none;border:1px solid #F1F0EA;color:#F1F0EA;padding:4px 10px;border-radius:2px;margin-left:8px;cursor:pointer;">MODULE LOGOUT</button>`;
-    bar.appendChild(wrap);
-    document.getElementById("tc-module-logout").addEventListener("click", () => {
-      sessionStorage.removeItem(sessionKey);
-      window.location.reload();
+      var v = norm(r[col]);
+      if (v) set[v] = true;
     });
+    return Object.keys(set).sort();
   }
 
-  const existing = getModuleSession();
-  if (existing) {
-    applySession(existing);
-  } else {
-    showOverlay();
+  // flavor "ra" keeps Risk Assessment's detail shape (embCat filter + embCats list);
+  // anything else returns the QA / inspection shape.
+  function detail(db, p, flavor) {
+    var sbu = norm(p.sbu), buyer = norm(p.buyer), ir = norm(p.ir), emb = norm(p.embCat);
+    var rows = db.groups[sbu + "\u0001" + buyer + "\u0001" + ir] || [];
+    if (flavor === "ra" && emb) rows = rows.filter(function (r) { return norm(r["Embellishment Category"]) === emb; });
+    if (!rows.length) return null;
+    var first = rows[0], colorMap = {}, order = [], total = 0, embSet = {};
+    rows.forEach(function (r) {
+      var c = norm(r["Color"]) || "\u2014", q = Number(r["Total"]) || 0;
+      if (!(c in colorMap)) { colorMap[c] = 0; order.push(c); }
+      colorMap[c] += q; total += q;
+      var e = norm(r["Embellishment Category"]); if (e) embSet[e] = true;
+    });
+    var colors = order.map(function (c) { return { color: c, qty: colorMap[c] }; });
+    var base = {
+      styleName: first["Style Name"], styleDescription: first["Style Description"], season: first["Season"],
+      item: first["Item"], productDept: first["Product Dept"], colors: colors, totalQty: total
+    };
+    if (flavor === "ra") {
+      var embCats = Object.keys(embSet).sort();
+      base.embellishmentCategory = emb || embCats.join(", ");
+      base.embCats = embCats;
+    } else {
+      base.sbu = norm(first["SBU"]); base.buyer = norm(first["Buyer"]); base.ir = norm(first["IR No"]);
+      base.embellishmentCategory = first["Embellishment Category"];
+      base.shipDate = norm(first["Ship Date"]); base.lineCount = rows.length;
+    }
+    return base;
   }
-}
+
+  window.MasterOrder = {
+    handles: function (action) { return !!ACTIONS[action]; },
+    preload: load,
+    handle: function (p, flavor) {
+      return load().then(function (db) {
+        if (!db) return null;
+        switch (p.action) {
+          case "listSbus":   return { ok: true, sbus: distinct(db.rows, "SBU", {}) };
+          case "listBuyers": return { ok: true, buyers: distinct(db.rows, "Buyer", { SBU: p.sbu }) };
+          case "listIrs":    return { ok: true, irs: distinct(db.rows, "IR No", { SBU: p.sbu, Buyer: p.buyer }) };
+          case "getOrderDetail": return { ok: true, detail: detail(db, p, flavor) };
+        }
+        return null;
+      });
+    }
+  };
+  load(); // start downloading as soon as the page opens
+})();
