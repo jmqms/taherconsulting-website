@@ -90,7 +90,7 @@
     <span id="tc-guest-badge" style="display:none;background:#B84226;color:#F1F0EA;padding:3px 9px;border-radius:2px;margin-left:10px;font-size:10.5px;letter-spacing:.06em">VIEW ONLY &middot; GUEST</span>
   </span>
 </div>
-<script src="js/master-order.js"></script>
+<script src="js/master-order.js?v=20261014"></script>
 <script>
 window.TC_IS_GUEST = false;
 (function(){
@@ -241,11 +241,22 @@ async function fetchIrs(sbu, buyer) {
 }
 async function fetchOrderDetail(sbu, buyer, ir) {
   const res = await qaApi({ action: "getOrderDetail", sbu, buyer, ir });
-  return res.ok ? res.detail : null;
+  const d = res.ok ? res.detail : null;
+  if (d || !sbu || !buyer || !ir) return d;
+  // IR is allocated to another SBU (\"Different Production SBU\"): look it up under its own SBU and keep the chosen SBU as production SBU
+  try {
+    const m = (await ovLoadIrMap())[String(ir).trim()] || {};
+    for (const alt of [m.allocatedSbu, m.sbu]) {
+      if (!alt || alt === sbu) continue;
+      const r2 = await qaApi({ action: "getOrderDetail", sbu: alt, buyer, ir });
+      if (r2.ok && r2.detail) return Object.assign({}, r2.detail, { sbu: sbu, allocatedSbu: alt });
+    }
+  } catch (e) {}
+  return null;
 }
 
 function styleDetailsHTML(detail) {
-  if (!detail) return `<div style="color:var(--ink-soft)">No matching row found in OrderInfo for this SBU/Buyer/IR.</div>`;
+  if (!detail) return `<div style="color:var(--ink-soft)">No matching row found in OrderInfo for this SBU/Buyer/IR. (If you just updated the site, press Ctrl+F5 once and select again.)</div>`;
   const rows = [
     ["Style Name", detail.styleName],
     ["Style Description", detail.styleDescription],
