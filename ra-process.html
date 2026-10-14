@@ -529,7 +529,7 @@ async function onSbuChange() {
       buyerSel.innerHTML = `<option value="">No buyers found for this SBU in OrderInfo</option>`;
       return;
     }
-    buyerSel.innerHTML = `<option value="">Select Buyer…</option>` + res.buyers.map(b => `<option>${esc(b)}</option>`).join("") + raOtherGroup(otherB, "Other SBUs (allocated elsewhere)");
+    buyerSel.innerHTML = `<option value="">Select Buyer…${otherB.length ? " (+" + otherB.length + " from other SBUs, see bottom of list)" : ""}</option>` + res.buyers.map(b => `<option>${esc(b)}</option>`).join("") + raOtherGroup(otherB, "Other SBUs (allocated elsewhere)");
   } catch (err) {
     buyerSel.innerHTML = `<option value="">${esc(err.message)}</option>`;
   }
@@ -551,7 +551,7 @@ async function onBuyerChange() {
       irSel.innerHTML = `<option value="">No IR found for this Buyer in OrderInfo</option>`;
       return;
     }
-    irSel.innerHTML = `<option value="">Select IR…</option>` + res.irs.map(i => `<option>${esc(i)}</option>`).join("") + raOtherGroup(otherI, "Allocated to another SBU (assessing in " + sbu + ")");
+    irSel.innerHTML = `<option value="">Select IR…${otherI.length ? " (+" + otherI.length + " from other SBUs, see bottom of list)" : ""}</option>` + res.irs.map(i => `<option>${esc(i)}</option>`).join("") + raOtherGroup(otherI, "Allocated to another SBU (assessing in " + sbu + ")");
   } catch (err) {
     irSel.innerHTML = `<option value="">${esc(err.message)}</option>`;
   }

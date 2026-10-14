@@ -347,12 +347,12 @@ function wireStyleSelector(prefix, onChange) {
     buyerEl.innerHTML = `<option value="">Loading…</option>`;
     irEl.innerHTML = `<option value="">Select Buyer first</option>`;
     const [buyers, otherB] = await Promise.all([fetchBuyers(sel.sbu), fetchOther("listBuyersOther", sel.sbu, "")]);
-    buyerEl.innerHTML = `<option value="">Select Buyer…</option>` + buyers.map(b => `<option value="${esc(b)}">${esc(b)}</option>`).join("") + otherGroupHTML(otherB, "Other SBUs (allocated elsewhere)");
+    buyerEl.innerHTML = `<option value="">Select Buyer…${otherB.length ? " (+" + otherB.length + " from other SBUs, see bottom of list)" : ""}</option>` + buyers.map(b => `<option value="${esc(b)}">${esc(b)}</option>`).join("") + otherGroupHTML(otherB, "Other SBUs (allocated elsewhere)");
   }
   async function refreshIrs() {
     irEl.innerHTML = `<option value="">Loading…</option>`;
     const [irs, otherI] = await Promise.all([fetchIrs(sel.sbu, sel.buyer), fetchOther("listIrsOther", sel.sbu, sel.buyer)]);
-    irEl.innerHTML = `<option value="">Select IR…</option>` + irs.map(i => `<option value="${esc(i)}">${esc(i)}</option>`).join("") + otherGroupHTML(otherI, "Allocated to another SBU (entering in " + sel.sbu + ")");
+    irEl.innerHTML = `<option value="">Select IR…${otherI.length ? " (+" + otherI.length + " from other SBUs, see bottom of list)" : ""}</option>` + irs.map(i => `<option value="${esc(i)}">${esc(i)}</option>`).join("") + otherGroupHTML(otherI, "Allocated to another SBU (entering in " + sel.sbu + ")");
   }
   async function refreshDetail() {
     detailsEl.textContent = "Loading…";

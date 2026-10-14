@@ -487,14 +487,14 @@ function renderOrderInfoPanel(h){
       </div>
       <div class="f"><span class="field-label">Buyer</span>
         <select data-hf-sel="buyer" ${!h.sbu?'disabled':''}>
-          <option value="">${state.buyerLoading?'Loading...':'-- select Buyer --'}</option>
+          <option value="">${state.buyerLoading?'Loading...':'-- select Buyer --'+((state.buyerOther||[]).length?' (+'+state.buyerOther.length+' from other SBUs, see bottom of list)':'')}</option>
           ${state.buyerOptions.map(s=>`<option value="${esc(s)}" ${h.buyer===s?'selected':''}>${esc(s)}</option>`).join('')}
           ${otherOpts_(state.buyerOther, h.buyer, 'Other SBUs (allocated elsewhere)')}
         </select>
       </div>
       <div class="f"><span class="field-label">IR</span>
         <select data-hf-sel="ir" ${!h.buyer?'disabled':''}>
-          <option value="">${state.irLoading?'Loading...':'-- select IR --'}</option>
+          <option value="">${state.irLoading?'Loading...':'-- select IR --'+((state.irOther||[]).length?' (+'+state.irOther.length+' from other SBUs, see bottom of list)':'')}</option>
           ${state.irOptions.map(s=>`<option value="${esc(s)}" ${h.ir===s?'selected':''}>${esc(s)}</option>`).join('')}
           ${otherOpts_(state.irOther, h.ir, 'Allocated to another SBU (inspecting in '+esc(h.sbu)+')')}
         </select>

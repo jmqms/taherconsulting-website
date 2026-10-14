@@ -1656,7 +1656,7 @@ function renderEntry(){
       </div>
       <div class="f"><span class="field-label">Buyer</span>
         <select data-h="buyer" ${(!h.sbu || state.buyerLoading) ? 'disabled' : ''}>
-          <option value="">${!h.sbu ? 'Select SBU first' : (state.buyerLoading ? 'Loading…' : ((state.buyerOptions.length || (state.buyerOther||[]).length) ? 'Select Buyer…' : 'Could not load Buyers'))}</option>
+          <option value="">${!h.sbu ? 'Select SBU first' : (state.buyerLoading ? 'Loading…' : ((state.buyerOptions.length || (state.buyerOther||[]).length) ? 'Select Buyer…'+((state.buyerOther||[]).length?' (+'+state.buyerOther.length+' from other SBUs, see bottom of list)':'') : 'Could not load Buyers'))}</option>
           ${state.buyerOptions.map(b => `<option value="${esc(b)}" ${h.buyer===b?'selected':''}>${esc(b)}</option>`).join('')}
           ${otherOpts_(state.buyerOther, h.buyer, 'Other SBUs (allocated elsewhere)')}
         </select>
@@ -1664,7 +1664,7 @@ function renderEntry(){
       </div>
       <div class="f"><span class="field-label">IR No</span>
         <select data-h="ir" ${(!h.buyer || state.irLoading) ? 'disabled' : ''}>
-          <option value="">${!h.buyer ? 'Select Buyer first' : (state.irLoading ? 'Loading…' : ((state.irOptions.length || (state.irOther||[]).length) ? 'Select IR…' : 'Could not load IRs'))}</option>
+          <option value="">${!h.buyer ? 'Select Buyer first' : (state.irLoading ? 'Loading…' : ((state.irOptions.length || (state.irOther||[]).length) ? 'Select IR…'+((state.irOther||[]).length?' (+'+state.irOther.length+' from other SBUs, see bottom of list)':'') : 'Could not load IRs'))}</option>
           ${state.irOptions.map(i => `<option value="${esc(i)}" ${h.ir===i?'selected':''}>${esc(i)}</option>`).join('')}
           ${otherOpts_(state.irOther, h.ir, 'Allocated to another SBU (inspecting in '+esc(h.sbu)+')')}
         </select>
