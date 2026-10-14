@@ -432,15 +432,14 @@ async function qaApiRaw(payload){
 
 // A report belongs to this module only if its inspection type is one this
 // module issues. Stops Pre-Final and Final ever showing each other's data.
-/* ---- Buyer / IR allocated to ANOTHER SBU: shown in a separate group so the inspector can still inspect it.
-        The entry keeps the SBU the inspector selected (= production SBU). ---- */
-async function loadOther_(kind, sbu, buyer){
-  try{ const r = await qaApi({ action:kind, sbu:sbu, buyer:buyer }); const a = r && r.ok ? (r.buyers||r.irs) : null; return Array.isArray(a) ? a.filter(o=>o && typeof o==='object' && o.value) : []; }
-  catch(e){ return []; }
-}
-function otherOpts_(arr, selected, title){
-  return (arr && arr.length) ? `<optgroup label="${title}">${arr.map(o=>`<option value="${esc(o.value)}" ${selected===o.value?'selected':''}>${esc(o.label)}</option>`).join('')}</optgroup>` : '';
-}
+/* ---- "Different Production SBU" checkbox: list ALL Buyers / IRs (any SBU); the entry keeps the SBU selected ---- */
+state.anySbu = state.anySbu || false;
+document.addEventListener('change', function(e){
+  const t = e.target; if (!t || !t.matches || !t.matches('[data-anysbu]')) return;
+  state.anySbu = !!t.checked;
+  state.header.prodSbuDiffers = state.anySbu;
+  if (state.header.sbu){ state.header.buyer=''; state.header.ir=''; loadBuyerOptions(state.header.sbu); } else render();
+});
 function isOwnReport_(r){
   const t = (r && r.header && r.header.inspectionType) || '';
   return !t || INSPECTION_TYPES.indexOf(t) !== -1;
@@ -494,30 +493,28 @@ async function loadSbuOptions(){
 }
 
 async function loadBuyerOptions(sbu){
-  state.buyerOptions = []; state.irOptions = []; state.buyerOther = []; state.irOther = []; state.styleDetail = null;
+  state.buyerOptions = []; state.irOptions = []; state.styleDetail = null;
   state.buyerLoading = true; state.buyerLoadFailed = false;
   render();
   try{
-    const res = await qaApi({ action: "listBuyers", sbu: sbu });
+    const res = await qaApi({ action: "listBuyers", sbu: (state.anySbu ? "" : sbu) });
     if (!res.ok) throw new Error(res.error || 'listBuyers failed');
     state.buyerOptions = Array.isArray(res.buyers) ? res.buyers : [];
-    state.buyerOther = await loadOther_('listBuyersOther', sbu, '');
-    state.buyerLoadFailed = state.buyerOptions.length === 0 && !state.buyerOther.length;
+    state.buyerLoadFailed = state.buyerOptions.length === 0;
   }catch(e){ state.buyerOptions = []; state.buyerLoadFailed = true; }
   state.buyerLoading = false;
   render();
 }
 
 async function loadIrOptions(sbu, buyer){
-  state.irOptions = []; state.irOther = []; state.styleDetail = null;
+  state.irOptions = []; state.styleDetail = null;
   state.irLoading = true; state.irLoadFailed = false;
   render();
   try{
-    const res = await qaApi({ action: "listIrs", sbu: sbu, buyer: buyer });
+    const res = await qaApi({ action: "listIrs", sbu: (state.anySbu ? "" : sbu), buyer: buyer });
     if (!res.ok) throw new Error(res.error || 'listIrs failed');
     state.irOptions = Array.isArray(res.irs) ? res.irs : [];
-    state.irOther = await loadOther_('listIrsOther', sbu, buyer);
-    state.irLoadFailed = state.irOptions.length === 0 && !state.irOther.length;
+    state.irLoadFailed = state.irOptions.length === 0;
   }catch(e){ state.irOptions = []; state.irLoadFailed = true; }
   state.irLoading = false;
   render();
@@ -533,6 +530,7 @@ async function loadStyleDetail(sbu, buyer, ir){
   if (state.styleDetail){
     const d = state.styleDetail;
     state.header.styleId = ir || '';
+    state.header.prodSbuDiffers = !!state.anySbu;
     state.header.styleName = d.styleName || '';
     state.header.styleDescription = d.styleDescription || '';
     state.header.item = d.item || '';
@@ -1646,6 +1644,11 @@ function renderEntry(){
   ${h.dataMode === 'manual' ? renderManualOrderInfoPanel(h) : `
   <div class="panel panel-pad section-block">
     <h2 class="section-title">Select Style <span class="tag">SBU &rarr; Buyer &rarr; IR</span></h2>
+    <label style="display:flex;align-items:center;gap:8px;margin:0 0 12px;font-size:13px;cursor:pointer;">
+      <input type="checkbox" data-anysbu ${state.anySbu?'checked':''} style="width:auto;margin:0;">
+      <span><b>Different Production SBU</b> &mdash; Buyer / IR not found under this SBU</span>
+    </label>
+    ${state.anySbu?'<div class="subtle-note" style="margin:-6px 0 12px;">Showing every Buyer and IR from all SBUs. The entry is saved under the SBU selected below (production SBU).</div>':''}
     <div class="header-grid">
       <div class="f"><span class="field-label">SBU</span>
         <select data-h="sbu" ${state.sbuLoading ? 'disabled' : ''}>
@@ -1656,17 +1659,15 @@ function renderEntry(){
       </div>
       <div class="f"><span class="field-label">Buyer</span>
         <select data-h="buyer" ${(!h.sbu || state.buyerLoading) ? 'disabled' : ''}>
-          <option value="">${!h.sbu ? 'Select SBU first' : (state.buyerLoading ? 'Loading…' : ((state.buyerOptions.length || (state.buyerOther||[]).length) ? 'Select Buyer…'+((state.buyerOther||[]).length?' (+'+state.buyerOther.length+' from other SBUs, see bottom of list)':'') : 'Could not load Buyers'))}</option>
+          <option value="">${!h.sbu ? 'Select SBU first' : (state.buyerLoading ? 'Loading…' : (state.buyerOptions.length ? 'Select Buyer…' : 'Could not load Buyers'))}</option>
           ${state.buyerOptions.map(b => `<option value="${esc(b)}" ${h.buyer===b?'selected':''}>${esc(b)}</option>`).join('')}
-          ${otherOpts_(state.buyerOther, h.buyer, 'Other SBUs (allocated elsewhere)')}
         </select>
         ${(h.sbu && !state.buyerLoading && state.buyerLoadFailed) ? `<div class="subtle-note" style="color:#b02a2a;margin-top:4px;">Could not load buyers for this SBU. <button type="button" class="btn ghost small" data-action="retry-buyer" style="padding:2px 8px;">Retry</button></div>` : ''}
       </div>
       <div class="f"><span class="field-label">IR No</span>
         <select data-h="ir" ${(!h.buyer || state.irLoading) ? 'disabled' : ''}>
-          <option value="">${!h.buyer ? 'Select Buyer first' : (state.irLoading ? 'Loading…' : ((state.irOptions.length || (state.irOther||[]).length) ? 'Select IR…'+((state.irOther||[]).length?' (+'+state.irOther.length+' from other SBUs, see bottom of list)':'') : 'Could not load IRs'))}</option>
+          <option value="">${!h.buyer ? 'Select Buyer first' : (state.irLoading ? 'Loading…' : (state.irOptions.length ? 'Select IR…' : 'Could not load IRs'))}</option>
           ${state.irOptions.map(i => `<option value="${esc(i)}" ${h.ir===i?'selected':''}>${esc(i)}</option>`).join('')}
-          ${otherOpts_(state.irOther, h.ir, 'Allocated to another SBU (inspecting in '+esc(h.sbu)+')')}
         </select>
         ${(h.buyer && !state.irLoading && state.irLoadFailed) ? `<div class="subtle-note" style="color:#b02a2a;margin-top:4px;">Could not load IR numbers for this buyer. <button type="button" class="btn ghost small" data-action="retry-ir" style="padding:2px 8px;">Retry</button></div>` : ''}
       </div>
@@ -2592,6 +2593,7 @@ function loadReportIntoForm_(reportId, thenDownloadPdf){
   if (!r) return;
   Object.assign(state, emptyReportState(), JSON.parse(JSON.stringify(r)));
   state.editingId = r.id;
+  state.anySbu = !!(r.header && r.header.prodSbuDiffers);
   state.tab = 'entry';
   state.viewingId = null;
   render();

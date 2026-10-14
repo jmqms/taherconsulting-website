@@ -239,15 +239,6 @@ async function fetchIrs(sbu, buyer) {
   const res = await qaApi({ action: "listIrs", sbu, buyer });
   return res.ok ? res.irs : [];
 }
-// Buyers / IRs allocated to ANOTHER SBU — shown in their own group so work can still be entered.
-// The entry keeps the SBU that was selected (= production SBU).
-async function fetchOther(kind, sbu, buyer) {
-  try { const r = await qaApi({ action: kind, sbu, buyer }); const a = r && r.ok ? (r.buyers || r.irs) : null; return Array.isArray(a) ? a.filter(o => o && typeof o === "object" && o.value) : []; }
-  catch (e) { return []; }
-}
-function otherGroupHTML(arr, title) {
-  return arr.length ? `<optgroup label="${esc(title)}">` + arr.map(o => `<option value="${esc(o.value)}">${esc(o.label)}</option>`).join("") + `</optgroup>` : "";
-}
 async function fetchOrderDetail(sbu, buyer, ir) {
   const res = await qaApi({ action: "getOrderDetail", sbu, buyer, ir });
   return res.ok ? res.detail : null;
@@ -284,6 +275,12 @@ function styleSelectorHTML(prefix) {
           <input type="checkbox" id="${prefix}ManualToggle" style="width:auto"> Manual Entry
         </label>
       </h3>
+      <div id="${prefix}AnySbuRow" style="margin:0 0 12px">
+        <label style="display:flex;align-items:center;gap:8px;font-size:13px;cursor:pointer;font-weight:400">
+          <input type="checkbox" id="${prefix}AnySbu" style="width:auto;margin:0"> <span><b>Different Production SBU</b> — Buyer / IR not found under this SBU</span>
+        </label>
+        <div id="${prefix}AnySbuNote" style="display:none;font-size:12px;color:var(--ink-soft);margin-top:4px">Showing every Buyer and IR from all SBUs. The entry is saved under the SBU selected below (production SBU).</div>
+      </div>
       <div id="${prefix}LookupFields" class="form-grid">
         <div class="field"><label>SBU</label><select id="${prefix}Sbu"><option value="">Loading…</option></select></div>
         <div class="field"><label>Buyer</label><select id="${prefix}Buyer"><option value="">Select SBU first</option></select></div>
@@ -337,6 +334,17 @@ function wireStyleSelector(prefix, onChange) {
   const mEmbCatEl = document.getElementById(prefix + "ManualEmbCat");
   const mTotalQtyEl = document.getElementById(prefix + "ManualTotalQty");
   let sel = { sbu: "", buyer: "", ir: "", detail: null, manual: false };
+  const anyEl = document.getElementById(prefix + "AnySbu"), anyNote = document.getElementById(prefix + "AnySbuNote"), anyRow = document.getElementById(prefix + "AnySbuRow");
+  const anySbu = () => !!(anyEl && anyEl.checked);
+  if (anyEl) anyEl.addEventListener("change", () => {
+    if (anyNote) anyNote.style.display = anySbu() ? "" : "none";
+    if (sel.sbu) {
+      sel.buyer = ""; sel.ir = ""; sel.detail = null;
+      detailsEl.innerHTML = `Select Buyer → IR to see style details.`;
+      refreshBuyers();
+      onChange(sel);
+    }
+  });
 
   async function refreshSbus() {
     sbuEl.innerHTML = `<option value="">Loading…</option>`;
@@ -346,13 +354,13 @@ function wireStyleSelector(prefix, onChange) {
   async function refreshBuyers() {
     buyerEl.innerHTML = `<option value="">Loading…</option>`;
     irEl.innerHTML = `<option value="">Select Buyer first</option>`;
-    const [buyers, otherB] = await Promise.all([fetchBuyers(sel.sbu), fetchOther("listBuyersOther", sel.sbu, "")]);
-    buyerEl.innerHTML = `<option value="">Select Buyer…${otherB.length ? " (+" + otherB.length + " from other SBUs, see bottom of list)" : ""}</option>` + buyers.map(b => `<option value="${esc(b)}">${esc(b)}</option>`).join("") + otherGroupHTML(otherB, "Other SBUs (allocated elsewhere)");
+    const buyers = await fetchBuyers(anySbu() ? "" : sel.sbu);
+    buyerEl.innerHTML = `<option value="">Select Buyer…</option>` + buyers.map(b => `<option value="${esc(b)}">${esc(b)}</option>`).join("");
   }
   async function refreshIrs() {
     irEl.innerHTML = `<option value="">Loading…</option>`;
-    const [irs, otherI] = await Promise.all([fetchIrs(sel.sbu, sel.buyer), fetchOther("listIrsOther", sel.sbu, sel.buyer)]);
-    irEl.innerHTML = `<option value="">Select IR…${otherI.length ? " (+" + otherI.length + " from other SBUs, see bottom of list)" : ""}</option>` + irs.map(i => `<option value="${esc(i)}">${esc(i)}</option>`).join("") + otherGroupHTML(otherI, "Allocated to another SBU (entering in " + sel.sbu + ")");
+    const irs = await fetchIrs(anySbu() ? "" : sel.sbu, sel.buyer);
+    irEl.innerHTML = `<option value="">Select IR…</option>` + irs.map(i => `<option value="${esc(i)}">${esc(i)}</option>`).join("");
   }
   async function refreshDetail() {
     detailsEl.textContent = "Loading…";

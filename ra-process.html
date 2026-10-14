@@ -423,6 +423,7 @@ async function renderRAAnalysis() {
       <h3>Select Order</h3>
       <div class="form-grid">
         <div class="field"><label>RA Date</label><input type="date" id="raDate"></div>
+        <div class="field" style="grid-column:1/-1"><label style="display:flex;align-items:center;gap:8px;font-weight:400;cursor:pointer"><input type="checkbox" id="raAnySbu" style="width:auto;margin:0" onchange="onSbuChange()"> <span><b>Different Production SBU</b> — Buyer / IR not found under this SBU (shows all Buyers &amp; IRs of every SBU; saved under the SBU selected below)</span></label></div>
         <div class="field"><label>SBU</label><select id="raSbu"><option value="">Select SBU…</option></select></div>
         <div class="field"><label>Buyer</label><select id="raBuyer"><option value="">Select Buyer…</option></select></div>
         <div class="field"><label>IR No</label><select id="raIr"><option value="">Select IR…</option></select></div>
@@ -502,15 +503,8 @@ async function populateSbus() {
   }
 }
 
-// Buyers / IRs allocated to another SBU are listed in their own group so they can still be assessed.
-// The assessment keeps the SBU that was selected (= production SBU).
-async function raOther(kind, sbu, buyer) {
-  try { const r = await raApi({ action: kind, sbu, buyer }); const a = r && r.ok ? (r.buyers || r.irs) : null; return Array.isArray(a) ? a.filter(o => o && typeof o === "object" && o.value) : []; }
-  catch (e) { return []; }
-}
-function raOtherGroup(arr, title) {
-  return arr.length ? `<optgroup label="${esc(title)}">` + arr.map(o => `<option value="${esc(o.value)}">${esc(o.label)}</option>`).join("") + `</optgroup>` : "";
-}
+// "Different Production SBU" checkbox: when ticked, list ALL buyers / IRs (any SBU); the assessment keeps the SBU selected.
+const raAnySbu = () => !!(document.getElementById("raAnySbu") || {}).checked;
 
 async function onSbuChange() {
   const sbu = document.getElementById("raSbu").value;
@@ -522,14 +516,13 @@ async function onSbuChange() {
   resetAutofill();
   if (!sbu) return;
   try {
-    const res = await raApi({ action: "listBuyers", sbu });
+    const res = await raApi({ action: "listBuyers", sbu: raAnySbu() ? "" : sbu });
     if (!res.ok) throw new Error(res.error);
-    const otherB = await raOther("listBuyersOther", sbu, "");
-    if (!res.buyers.length && !otherB.length) {
+    if (!res.buyers.length) {
       buyerSel.innerHTML = `<option value="">No buyers found for this SBU in OrderInfo</option>`;
       return;
     }
-    buyerSel.innerHTML = `<option value="">Select Buyer…${otherB.length ? " (+" + otherB.length + " from other SBUs, see bottom of list)" : ""}</option>` + res.buyers.map(b => `<option>${esc(b)}</option>`).join("") + raOtherGroup(otherB, "Other SBUs (allocated elsewhere)");
+    buyerSel.innerHTML = `<option value="">Select Buyer…</option>` + res.buyers.map(b => `<option>${esc(b)}</option>`).join("");
   } catch (err) {
     buyerSel.innerHTML = `<option value="">${esc(err.message)}</option>`;
   }
@@ -544,14 +537,13 @@ async function onBuyerChange() {
   resetAutofill();
   if (!sbu || !buyer) return;
   try {
-    const res = await raApi({ action: "listIrs", sbu, buyer });
+    const res = await raApi({ action: "listIrs", sbu: raAnySbu() ? "" : sbu, buyer });
     if (!res.ok) throw new Error(res.error);
-    const otherI = await raOther("listIrsOther", sbu, buyer);
-    if (!res.irs.length && !otherI.length) {
+    if (!res.irs.length) {
       irSel.innerHTML = `<option value="">No IR found for this Buyer in OrderInfo</option>`;
       return;
     }
-    irSel.innerHTML = `<option value="">Select IR…${otherI.length ? " (+" + otherI.length + " from other SBUs, see bottom of list)" : ""}</option>` + res.irs.map(i => `<option>${esc(i)}</option>`).join("") + raOtherGroup(otherI, "Allocated to another SBU (assessing in " + sbu + ")");
+    irSel.innerHTML = `<option value="">Select IR…</option>` + res.irs.map(i => `<option>${esc(i)}</option>`).join("");
   } catch (err) {
     irSel.innerHTML = `<option value="">${esc(err.message)}</option>`;
   }
@@ -565,7 +557,7 @@ async function onIrChange() {
 
   const embSel = document.getElementById("raEmbCat");
   try {
-    const res = await raApi({ action: "listEmbCats", sbu, buyer, ir });
+    const res = await raApi({ action: "listEmbCats", sbu: raAnySbu() ? "" : sbu, buyer, ir });
     if (res.ok && res.embCats.length > 1) {
       embSel.innerHTML = `<option value="">All Categories</option>` + res.embCats.map(c => `<option>${esc(c)}</option>`).join("");
       embSel.disabled = false;
