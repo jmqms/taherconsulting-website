@@ -253,6 +253,7 @@ function styleDetailsHTML(detail) {
     ["Season", detail.season],
     ["Embellishment Category", detail.embellishmentCategory],
   ];
+  if (detail.allocatedSbu) rows.unshift(["Production SBU", (detail.sbu || "") + "  (Allocated: " + detail.allocatedSbu + ")"]);
   return `
     <div class="sd-grid">
       ${rows.map(([k, v]) => `<div class="sd-row"><span>${esc(k)}</span><b>${esc(v || "—")}</b></div>`).join("")}
@@ -481,7 +482,7 @@ function renderHub(stageId, tab, presel) {
   const btn = (t, label) => `<button class="btn ${tab === t ? "btn-primary" : "btn-ghost"}" style="font-size:11.5px;padding:8px 14px" onclick="renderHub('${stageId}','${t}')">${esc(label)}</button>`;
   el.innerHTML = `
     <div class="qa-head">
-      <div class="eyebrow">${isQa ? "QA Inspection" : "Quality Process"}</div>
+      <div class="eyebrow">${QC_PAGES[stageId] ? "QC Inspection · Quality Process" : isQa ? "QA Inspection" : "Quality Process"}</div>
       <h1>${esc(stage.label)}</h1>
     </div>
     <div style="display:flex;gap:8px;flex-wrap:wrap;margin-bottom:20px">
@@ -494,6 +495,7 @@ function renderHub(stageId, tab, presel) {
     else if (stageId === "physicalfunctional") renderPhysicalFunctional();
     else if (HUB_SECTIONS[stageId]) renderAqlProcessStage(stageId, stage.label);
     else if (stageId === "ra") renderRiskAssessment();
+    else if (QC_PAGES[stageId]) renderQcForm(stageId);
     else renderStage(stage, presel);
     const h = document.querySelector("#hubBody .qa-head"); if (h) h.remove();
     if (presel) {
@@ -505,6 +507,18 @@ function renderHub(stageId, tab, presel) {
     renderHubList(stageId, tab);
   }
 }
+
+// QC Team inspection forms: the same form as QA Inspection, opened in QC mode (own storage)
+const QC_PAGES = { bundle1: "1st-bundle-inspection.html", sewinginline: "sewing-inline-inspection.html", finishinginline: "finishing-inline-inspection.html", carton1: "1st-carton-inspection.html" };
+function renderQcForm(stageId) {
+  const box = document.getElementById("hubBody");
+  box.innerHTML = `<div class="panel" style="margin-bottom:14px;font-size:12.5px;color:var(--ink-soft)">QC Team entry — the same inspection form as QA Inspection. These reports are saved separately and do <b>not</b> appear in QA Inspection.</div>
+    <iframe id="qcFrame" src="${QC_PAGES[stageId]}?team=qc&embed=1" title="QC inspection form" style="width:100%;min-height:900px;border:0;background:transparent"></iframe>`;
+}
+window.addEventListener("message", (e) => {
+  if (e.origin !== location.origin || !e.data || !e.data.qcFrameHeight) return;
+  const f = document.getElementById("qcFrame"); if (f) f.style.height = Math.max(700, e.data.qcFrameHeight + 24) + "px";
+});
 
 function hubDate(v) {
   if (!v) return "";
@@ -531,6 +545,14 @@ async function hubLoad(stageId) {
     res = await qaApi({ action: "listAqlProcess", process: stageId });
     list = res.ok ? res.entries : [];
     out = list.map(r => Object.assign(base(r, r.ir, r.styleNo), { date: hubDate(r.date || r.createdAt), color: r.color, status: r.result || "—", by: r.inspectedBy, section: r.mode || "", raw: r }));
+  } else if (QC_PAGES[stageId]) {
+    const src = STAGE_DETAIL_SOURCES[stageId];
+    res = await qaApi(Object.assign({ action: src.action }, src.params));
+    list = res.ok ? (res.reports || []) : [];
+    out = list.map(rep => {
+      const e = inspectionReportToEntry_(rep);
+      return Object.assign(base(e, e.ir, e.styleNo), { date: hubDate(e.date), color: e.color, status: e.decision || "—", by: e.inspectedBy, section: "", raw: e });
+    });
   } else if (stageId === "ra") {
     res = await qaApi({ action: "listQualityRA" });
     list = res.ok ? res.entries : [];
@@ -629,7 +651,8 @@ function hubSee(i) {
   const head = [["SBU", r.sbu], ["Buyer", r.buyer], ["IR No", r.ir], ["Style", r.style], ["Date", r.date], ["Status", r.status], ["By", r.by], ["Color", r.color]];
   p.innerHTML = `<div class="panel" style="margin-bottom:20px;border-color:var(--gold)">
     <h3 style="display:flex;justify-content:space-between;align-items:center"><span>Details — ${esc(r.ir)} · ${esc(r.style)}</span>
-      <button class="btn btn-ghost" style="padding:4px 10px;font-size:11.5px" onclick="document.getElementById('hbDetails').innerHTML=''">✕ Close</button></h3>
+      <span style="display:flex;gap:8px">${r.raw && r.raw._reportId ? `<button class="btn btn-primary" style="padding:4px 10px;font-size:11.5px" onclick="downloadInspectionPdf('${esc(hubStage)}','${esc(r.raw._reportId)}')">⬇ Download PDF</button>` : ""}
+      <button class="btn btn-ghost" style="padding:4px 10px;font-size:11.5px" onclick="document.getElementById('hbDetails').innerHTML=''">✕ Close</button></span></h3>
     <div class="sd-grid" style="margin-bottom:14px">${head.map(([k, v]) => `<div class="sd-row"><span>${esc(k)}</span><b>${esc(v || "—")}</b></div>`).join("")}</div>
     ${hubStage === "ra" ? raEntryDetailHTML(r.raw) : renderEntryDetailsTable(r.raw)}
   </div>`;
@@ -646,13 +669,13 @@ async function ovLoadIrMap() {
   ovIrMap = {};
   try {
     // file 1 first; file 2 only supplies IRs that file 1 does not have
-    const [j1, j2] = await Promise.all(["data/masterOrders.json", "data/masterOrders2.json"].map(u => fetch(u).then(r => r.ok ? r.json() : { data: [] }).catch(() => ({ data: [] }))));
+    const [j1, j2, ov] = await Promise.all(["data/masterOrders.json", "data/masterOrders2.json", "data/sbuOverride.json"].map(u => fetch(u).then(r => r.ok ? r.json() : { data: [] }).catch(() => ({ data: [] }))));
     const have = {}; (j1.data || []).forEach(r => { have[String(r["IR No"] || "").trim()] = 1; });
     const j = { data: (j1.data || []).concat((j2.data || []).filter(r => !have[String(r["IR No"] || "").trim()])) };
     (j.data || []).forEach(r => {
       const k = String(r["IR No"] || "").trim();
       if (!k) return;
-      if (!ovIrMap[k]) ovIrMap[k] = { buyer: r["Buyer"] || "", sbu: r["SBU"] || "", style: r["Style Name"] || "", season: r["Season"] || "", item: r["Item"] || "", ship: String(r["Ship Date"] || "").slice(0, 10), qty: 0 };
+      if (!ovIrMap[k]) ovIrMap[k] = { buyer: r["Buyer"] || "", sbu: (ov && typeof ov[k] === "string" && ov[k].trim()) || r["SBU"] || "", allocatedSbu: (ov && ov[k] && ov[k] !== r["SBU"]) ? (r["SBU"] || "") : "", style: r["Style Name"] || "", season: r["Season"] || "", item: r["Item"] || "", ship: String(r["Ship Date"] || "").slice(0, 10), qty: 0 };
       ovIrMap[k].qty += Number(r["Total"]) || 0;
     });
   } catch (e) {}
@@ -1194,10 +1217,11 @@ const STAGE_DETAIL_SOURCES = {
   ra: { action: "listQualityRA" },
   testing: { action: "listTestRequests" },
   // Inspection pages: full saved reports, shown the same way as the AQL process stages
-  bundle1: { action: "list1stBundle", kind: "report", page: "1st-bundle-inspection.html" },
-  sewinginline: { action: "listSewingInline", kind: "report", page: "sewing-inline-inspection.html" },
-  finishinginline: { action: "listFinishingInline", kind: "report", page: "finishing-inline-inspection.html" },
-  carton1: { action: "list1stCarton", kind: "report", page: "1st-carton-inspection.html" },
+  // QA Process = QC Team entries: stored separately (team "qc"), never mixed with QA Inspection reports
+  bundle1: { action: "list1stBundle", params: { team: "qc" }, kind: "report", page: "1st-bundle-inspection.html" },
+  sewinginline: { action: "listSewingInline", params: { team: "qc" }, kind: "report", page: "sewing-inline-inspection.html" },
+  finishinginline: { action: "listFinishingInline", params: { team: "qc" }, kind: "report", page: "finishing-inline-inspection.html" },
+  carton1: { action: "list1stCarton", params: { team: "qc" }, kind: "report", page: "1st-carton-inspection.html" },
 };
 
 // Turn a saved inspection report into the same flat shape the AQL stages use,
@@ -1234,7 +1258,7 @@ function inspectionReportToEntry_(r) {
 function downloadInspectionPdf(stageId, reportId) {
   const src = STAGE_DETAIL_SOURCES[stageId];
   if (!src || !src.page || !reportId) return;
-  window.open(src.page + "?pdf=" + encodeURIComponent(reportId), "_blank");
+  window.open(src.page + "?team=qc&pdf=" + encodeURIComponent(reportId), "_blank");
 }
 
 let lastByStage = {};
@@ -2375,6 +2399,20 @@ function tsIsPE() { return TS_PE.indexOf(tsSection) >= 0; }
 function tsOptionChange() { const o = document.getElementById("tsOption"), x = document.getElementById("tsOptionOther"); if (o && x) x.style.display = o.value === "Others" ? "" : "none"; }
 function tsOptionHTML() { return `<div class="field"><label>Options</label><select id="tsOption" onchange="tsOptionChange()">${TS_OPTIONS.map(o => `<option>${esc(o)}</option>`).join("")}</select><input id="tsOptionOther" placeholder="Specify other option" style="display:none;margin-top:6px"></div>`; }
 const TS_REQUIREMENTS = ["Dimensional Stability to Washing", "Spirality / Skewness", "Appearance After Wash", "Colorfastness to Washing", "Colorfastness to Water", "Colorfastness to Perspiration", "Colorfastness to Rubbing/Crocking", "Colorfastness to Chlorine Bleach", "Colorfastness to Non-Chlorine Bleach", "Colorfastness to Saliva", "Phenolic Yellowing", "C/F to Actual Laundering", "Fabric Weight", "Thread Count", "ICI Pilling (10800/14400 cy)", "Random Tumble Pilling", "Bursting Strength", "PH Test", "Fabric Width", "Stretch Properties"];
+const TS_SLA_DAYS = 2; // report expected within 1-2 days (calendar days, Fridays included)
+function tsDays(a, b) { return (a && b) ? Math.round((Date.parse(b + "T00:00:00Z") - Date.parse(a + "T00:00:00Z")) / 86400000) : null; }
+// Open: days since Login Date until today (Bangladesh date). Closed: Login Date -> Report Date (turnaround).
+function tsAge(r) {
+  const login = String(r.logInDate || "").slice(0, 10); if (!login) return null;
+  const end = r.status === "Closed" ? String(r.reportDate || "").slice(0, 10) : ovYmd(new Date());
+  const d = tsDays(login, end); return d === null ? null : Math.max(0, d);
+}
+function tsAgeHTML(r) {
+  const d = tsAge(r); if (d === null) return "—";
+  const unit = d === 1 ? " day" : " days", over = d - TS_SLA_DAYS;
+  if (r.status === "Closed") return `<b>${d}${unit}</b> <span class="status-pill ${over > 0 ? "Open" : "Done"}">${over > 0 ? "Late +" + over : "In SLA"}</span>`;
+  return `<b>${d}${unit}</b> <span class="status-pill ${over > 0 ? "Open" : d === TS_SLA_DAYS ? "In-Progress" : "Done"}">${over > 0 ? "Overdue +" + over : d === TS_SLA_DAYS ? "Due today" : "On time"}</span>`;
+}
 let activeTestingSubtab = "new";
 let tsSelCtrl = null, tsList = [], tsSection = TS_SECTIONS[0];
 
@@ -2556,18 +2594,20 @@ async function renderTestingTracking() {
         <div class="field" style="margin:0"><label>Buyer</label><input id="ttBuyer" placeholder="Buyer"></div>
         <div class="field" style="margin:0"><label>IR No</label><input id="ttIr" placeholder="IR No"></div>
         <div class="field" style="margin:0"><label>Style</label><input id="ttStyle" placeholder="Style No"></div>
+        <div class="field" style="margin:0"><label>Aging</label><select id="ttAging"><option value="">All</option><option value="over">Overdue only (open &gt; ${TS_SLA_DAYS} days)</option></select></div>
         <div class="field" style="margin:0"><label>From Date</label><input type="date" id="ttFrom"></div>
         <div class="field" style="margin:0"><label>To Date</label><input type="date" id="ttTo"></div>
         <button class="btn btn-ghost" id="ttRefresh">↻ Refresh</button>
       </div>
     </div>
     <div class="stat-grid" id="ttStats"></div>
+    <div class="panel" style="margin-bottom:20px"><h3>Section-wise aging <span style="font-weight:400;font-size:12px;color:var(--ink-soft)">— SLA ${TS_SLA_DAYS} days from Login Date</span></h3><div style="overflow-x:auto" id="ttSecSummary"></div></div>
     <div id="ttClosePanel"></div>
     <div class="panel"><div style="overflow-x:auto"><table class="qa-table">
-      <thead><tr><th>Login</th><th>Section</th><th>SBU</th><th>Buyer</th><th>IR</th><th>Style</th><th>Color</th><th>Test on</th><th>Tests</th><th>Submitted by</th><th>Status</th><th></th></tr></thead>
-      <tbody id="ttBody"><tr><td colspan="12" style="text-align:center;color:var(--ink-soft)">Loading…</td></tr></tbody>
+      <thead><tr><th>Login</th><th>Section</th><th>SBU</th><th>Buyer</th><th>IR</th><th>Style</th><th>Color</th><th>Test on</th><th>Tests</th><th>Submitted by</th><th>Aging</th><th>Status</th><th></th></tr></thead>
+      <tbody id="ttBody"><tr><td colspan="13" style="text-align:center;color:var(--ink-soft)">Loading…</td></tr></tbody>
     </table></div></div>`;
-  ["ttStatus", "ttSection", "ttSbu", "ttFrom", "ttTo"].forEach(id => document.getElementById(id).addEventListener("change", ttDraw));
+  ["ttStatus", "ttSection", "ttSbu", "ttAging", "ttFrom", "ttTo"].forEach(id => document.getElementById(id).addEventListener("change", ttDraw));
   ["ttBuyer", "ttIr", "ttStyle"].forEach(id => document.getElementById(id).addEventListener("input", ttDraw));
   document.getElementById("ttRefresh").addEventListener("click", renderTestingTracking);
   try {
@@ -2578,7 +2618,7 @@ async function renderTestingTracking() {
     document.getElementById("ttSbu").innerHTML = `<option value="">All</option>` + sbus.map(x => `<option>${esc(x)}</option>`).join("");
     ttDraw();
   } catch (err) {
-    document.getElementById("ttBody").innerHTML = `<tr><td colspan="12" style="text-align:center;color:var(--reject)">${esc(err.message)}</td></tr>`;
+    document.getElementById("ttBody").innerHTML = `<tr><td colspan="13" style="text-align:center;color:var(--reject)">${esc(err.message)}</td></tr>`;
   }
 }
 
@@ -2587,31 +2627,49 @@ function ttDraw() {
   const qb = document.getElementById("ttBuyer").value.trim().toLowerCase(), qi = document.getElementById("ttIr").value.trim().toLowerCase(), qs = document.getElementById("ttStyle").value.trim().toLowerCase();
   const has = (v, q) => !q || String(v || "").toLowerCase().indexOf(q) >= 0;
   const nOpen = tsList.filter(r => r.status !== "Closed").length;
+  const openRows = tsList.filter(r => r.status !== "Closed"), closedRows = tsList.filter(r => r.status === "Closed");
+  const nOver = openRows.filter(r => (tsAge(r) || 0) > TS_SLA_DAYS).length;
+  const tats = closedRows.map(tsAge).filter(v => v !== null);
+  const avgTat = tats.length ? (tats.reduce((a, b) => a + b, 0) / tats.length).toFixed(1) : "—";
+  const oldest = openRows.slice().sort((a, b) => (tsAge(b) || 0) - (tsAge(a) || 0))[0];
   document.getElementById("ttStats").innerHTML = `
     <div class="stat-card"><span>Open</span><b>${nOpen}</b></div>
+    <div class="stat-card"><span>Overdue (&gt;${TS_SLA_DAYS} days)</span><b style="color:${nOver ? "var(--reject)" : "inherit"}">${nOver}</b></div>
     <div class="stat-card"><span>Closed</span><b>${tsList.length - nOpen}</b></div>
+    <div class="stat-card"><span>Avg turnaround</span><b>${avgTat}${tats.length ? " d" : ""}</b></div>
+    <div class="stat-card"><span>Longest pending</span><b>${oldest ? (tsAge(oldest) || 0) + " d" : "—"}</b><div style="font-size:11px;color:var(--ink-soft)">${oldest ? esc(oldest.ir) : ""}</div></div>
     <div class="stat-card"><span>Pass</span><b>${tsList.filter(r => r.result === "Pass").length}</b></div>
     <div class="stat-card"><span>Fail</span><b>${tsList.filter(r => r.result === "Fail").length}</b></div>`;
+  document.getElementById("ttSecSummary").innerHTML = `<table class="qa-table"><thead><tr><th>Section</th><th>Open</th><th>Overdue</th><th>Longest pending</th><th>Closed</th><th>Avg turnaround</th></tr></thead><tbody>${
+    TS_SECTIONS.map(sx => {
+      const o = openRows.filter(r => r.section === sx), c = closedRows.filter(r => r.section === sx).map(tsAge).filter(v => v !== null);
+      const ages = o.map(r => tsAge(r) || 0), ov = ages.filter(v => v > TS_SLA_DAYS).length;
+      return `<tr><td>${esc(sx)}</td><td>${o.length}</td><td style="${ov ? "color:var(--reject);font-weight:700" : ""}">${ov}</td><td>${ages.length ? Math.max.apply(null, ages) + " d" : "—"}</td><td>${c.length}</td><td>${c.length ? (c.reduce((a, b) => a + b, 0) / c.length).toFixed(1) + " d" : "—"}</td></tr>`;
+    }).join("")}</tbody></table>`;
   const rows = tsList.filter(r => {
     if (st === "Open" && r.status === "Closed") return false;
     if (st === "Closed" && r.status !== "Closed") return false;
     if (sec && r.section !== sec) return false;
     if (sbuF && r.sbu !== sbuF) return false;
     if (!has(r.buyer, qb) || !has(r.ir, qi) || !has(r.styleNo, qs)) return false;
+    if (document.getElementById("ttAging").value === "over" && !(r.status !== "Closed" && (tsAge(r) || 0) > TS_SLA_DAYS)) return false;
     const ld = String(r.logInDate || "").slice(0, 10), tf = document.getElementById("ttFrom").value, tt = document.getElementById("ttTo").value;
     if (tf && (!ld || ld < tf)) return false;
     if (tt && (!ld || ld > tt)) return false;
     return true;
   });
+  // open requests first, oldest (most overdue) on top; then closed, newest first
+  rows.sort((a, b) => ((a.status === "Closed") - (b.status === "Closed")) ||
+    (a.status !== "Closed" ? (tsAge(b) || 0) - (tsAge(a) || 0) : (String(b.reportDate || "") > String(a.reportDate || "") ? 1 : -1)));
   document.getElementById("ttBody").innerHTML = rows.map(r => {
     const closed = r.status === "Closed";
     return `<tr>
       <td>${esc(String(r.logInDate || "").slice(0, 10))}</td><td>${esc(r.section)}</td><td>${esc(r.sbu)}</td><td>${esc(r.buyer)}</td><td>${esc(r.ir)}</td><td>${esc(r.styleNo)}</td>
       <td>${esc(r.color)}</td><td>${esc(r.testOn)}<div style="font-size:11px;color:var(--ink-soft)">${esc(r.testOption)}</div></td>
-      <td title="${esc((r.requirements || []).join(", "))}">${(r.requirements || []).length}</td><td>${esc(r.submittedBy)}</td>
+      <td title="${esc((r.requirements || []).join(", "))}">${(r.requirements || []).length}</td><td>${esc(r.submittedBy)}</td><td style="white-space:nowrap">${tsAgeHTML(r)}</td>
       <td><span class="status-pill ${closed ? (r.result === "Fail" ? "Open" : "Done") : "In-Progress"}">${closed ? "Closed · " + esc(r.result) : "Open"}</span></td>
       <td><button class="btn ${closed ? "btn-ghost" : "btn-primary"}" style="padding:4px 10px;font-size:11.5px" onclick="ttOpenClose('${esc(r.id)}')">${closed ? "View" : "Enter Result"}</button></td></tr>`;
-  }).join("") || `<tr><td colspan="12" style="text-align:center;color:var(--ink-soft)">No requests match.</td></tr>`;
+  }).join("") || `<tr><td colspan="13" style="text-align:center;color:var(--ink-soft)">No requests match.</td></tr>`;
 }
 
 // ---------- Report Log: section-wise log of every test entry + search + details ----------
@@ -2621,7 +2679,8 @@ function rlDetailsHTML(r) {
   const closed = r.status === "Closed";
   const rows = [["SBU", r.sbu], ["Buyer", r.buyer], ["IR No", r.ir], ["Style", r.styleNo], ["Season", r.season], ["Item", r.item], ["Color", r.color],
     ["Section", r.section], ["Login Date", String(r.logInDate || "").slice(0, 10)], ["Line", r.line], ["Size", r.size], ["Fiber / Fabric Composition", r.fiber],
-    ["Fabric Type", r.fabricType], ["Test on", r.testOn], ["Options", r.testOption], ["Test Cycle (washes)", r.testCycle], ["Submitted by", r.submittedBy]];
+    ["Fabric Type", r.fabricType], ["Test on", r.testOn], ["Options", r.testOption], ["Test Cycle (washes)", r.testCycle], ["Submitted by", r.submittedBy],
+    [closed ? "Turnaround (Login → Report)" : "Pending since Login", tsAge(r) === null ? "" : tsAge(r) + " day(s)" + (tsAge(r) > TS_SLA_DAYS ? " — " + (closed ? "late by " : "overdue by ") + (tsAge(r) - TS_SLA_DAYS) + " day(s)" : " — within SLA")]];
   if (r.printType) rows.splice(8, 0, [r.section === "Embroidery Section" ? "Embroidery Type" : "Print Type", r.printType]);
   if (r.gsm) rows.splice(9, 0, ["GSM", r.gsm]);
   return `<div class="panel" style="margin:12px 0;border-color:var(--gold)">
@@ -2666,8 +2725,8 @@ async function renderReportLog() {
     </div>
     <div id="rlDetails"></div>
     <div class="panel"><div style="overflow-x:auto"><table class="qa-table">
-      <thead><tr><th>Login</th><th>Section</th><th>SBU</th><th>Buyer</th><th>IR</th><th>Style</th><th>Color</th><th>Status</th><th>Result</th><th></th></tr></thead>
-      <tbody id="rlBody"><tr><td colspan="10" style="text-align:center;color:var(--ink-soft)">Loading…</td></tr></tbody>
+      <thead><tr><th>Login</th><th>Section</th><th>SBU</th><th>Buyer</th><th>IR</th><th>Style</th><th>Color</th><th>Status</th><th>Result</th><th>Aging / Turnaround</th><th></th></tr></thead>
+      <tbody id="rlBody"><tr><td colspan="11" style="text-align:center;color:var(--ink-soft)">Loading…</td></tr></tbody>
     </table></div></div>`;
   document.getElementById("rlSections").addEventListener("click", (e) => {
     const b = e.target.closest(".rl-sec"); if (!b) return;
@@ -2709,9 +2768,9 @@ function rlDraw() {
   document.getElementById("rlBody").innerHTML = rows.map(r => `<tr>
     <td>${esc(String(r.logInDate || "").slice(0, 10))}</td><td>${esc(r.section)}</td><td>${esc(r.sbu)}</td><td>${esc(r.buyer)}</td><td>${esc(r.ir)}</td><td>${esc(r.styleNo)}</td><td>${esc(r.color)}</td>
     <td><span class="status-pill ${r.status === "Closed" ? "Done" : "In-Progress"}">${esc(r.status)}</span></td>
-    <td>${esc(r.result || "—")}</td>
+    <td>${esc(r.result || "—")}</td><td style="white-space:nowrap">${tsAgeHTML(r)}</td>
     <td><button class="btn btn-ghost" style="padding:4px 10px;font-size:11.5px" onclick="rlSee('${esc(r.id)}')">See Details</button></td></tr>`).join("") ||
-    `<tr><td colspan="10" style="text-align:center;color:var(--ink-soft)">No reports match.</td></tr>`;
+    `<tr><td colspan="11" style="text-align:center;color:var(--ink-soft)">No reports match.</td></tr>`;
 }
 
 function rlSee(id) {
