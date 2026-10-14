@@ -7,29 +7,51 @@
  * and returns the same response shapes. If the JSON cannot be loaded, handle()
  * returns null and the module falls back to its normal Apps Script call.
  *
- * To update the data: replace data/masterOrders.json in the repo.
+ * To update the data: replace data/masterOrders.json (primary) and/or data/masterOrders2.json
+ * (fallback for styles that are not in the primary file) in the repo.
  */
 (function () {
   var URL = "data/masterOrders.json";
+  var URL2 = "data/masterOrders2.json"; // fallback: used only for IRs missing from file 1
+  var URL3 = "data/sbuOverride.json";   // { "IR No": "Production SBU" } for IRs produced in a different SBU than allocated
   var ACTIONS = { listSbus: 1, listBuyers: 1, listIrs: 1, getOrderDetail: 1 };
   var loading = null;
 
   function norm(v) { return v === null || v === undefined ? "" : String(v).trim(); }
 
+  function getJson(u) {
+    return fetch(u, { cache: "no-cache" })
+      .then(function (r) { if (!r.ok) throw new Error("HTTP " + r.status); return r.json(); });
+  }
+
+  // File 1 (masterOrders.json) is the primary source. File 2 (masterOrders2.json) is only
+  // used for IRs that file 1 does not have at all, so file 1 always wins when both have an IR.
   function load() {
     if (loading) return loading;
     // cache:"no-cache" = browser asks GitHub "changed?" and gets a tiny 304 when not,
     // so data is always fresh but repeat visits cost almost nothing.
-    loading = fetch(URL, { cache: "no-cache" })
-      .then(function (r) { if (!r.ok) throw new Error("HTTP " + r.status); return r.json(); })
-      .then(function (j) {
-        var rows = (j && j.data) || [];
+    loading = Promise.all([getJson(URL).catch(function () { return null; }), getJson(URL2).catch(function () { return null; }), getJson(URL3).catch(function () { return {}; })])
+      .then(function (res) {
+        var a = res[0], b = res[1], ov = res[2] || {};
+        if (!a && !b) throw new Error("no local master order data");
+        var rows1 = (a && a.data) || [], rows2 = (b && b.data) || [];
+        var have = {};
+        rows1.forEach(function (r) { have[norm(r["IR No"])] = 1; });
+        var extra = rows2.filter(function (r) { return !have[norm(r["IR No"])]; });
+        var rows = rows1.concat(extra).map(function (r) {
+          var p = ov[norm(r["IR No"])];
+          p = norm(p);
+          if (!p || p === norm(r["SBU"])) return r;
+          var c = {}; for (var k in r) c[k] = r[k];
+          c["Allocated SBU"] = r["SBU"]; c["SBU"] = p;   // production SBU wins; allocation is kept for display
+          return c;
+        });
         var groups = {};
         rows.forEach(function (r) {
           var k = norm(r["SBU"]) + "\u0001" + norm(r["Buyer"]) + "\u0001" + norm(r["IR No"]);
           (groups[k] = groups[k] || []).push(r);
         });
-        return { rows: rows.filter(function (r) { return norm(r["SBU"]); }), groups: groups, updated: j.updated };
+        return { rows: rows.filter(function (r) { return norm(r["SBU"]); }), groups: groups, updated: (a || b).updated, fromFile2: extra.length };
       })
       .catch(function (e) { loading = null; console.warn("[MasterOrder] local data unavailable, using backend:", e); return null; });
     return loading;
@@ -75,6 +97,7 @@
       base.sbu = norm(first["SBU"]); base.buyer = norm(first["Buyer"]); base.ir = norm(first["IR No"]);
       base.embellishmentCategory = first["Embellishment Category"];
       base.shipDate = norm(first["Ship Date"]); base.lineCount = rows.length;
+      base.allocatedSbu = norm(first["Allocated SBU"]);
     }
     return base;
   }
