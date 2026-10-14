@@ -242,6 +242,15 @@ async function qaApiRaw(payload){
   }
   throw lastErr;
 }
+/* ---- Buyer / IR allocated to ANOTHER SBU: shown in a separate group so the inspector can still inspect it.
+        The entry keeps the SBU the inspector selected (= production SBU). ---- */
+async function loadOther_(kind, sbu, buyer){
+  try{ const r = await qaApi({ action:kind, sbu:sbu, buyer:buyer }); const a = r && r.ok ? (r.buyers||r.irs) : null; return Array.isArray(a) ? a.filter(o=>o && typeof o==='object' && o.value) : []; }
+  catch(e){ return []; }
+}
+function otherOpts_(arr, selected, title){
+  return (arr && arr.length) ? `<optgroup label="${title}">${arr.map(o=>`<option value="${esc(o.value)}" ${selected===o.value?'selected':''}>${esc(o.label)}</option>`).join('')}</optgroup>` : '';
+}
 function isOwnReport_(r){ const t=(r&&r.header&&r.header.inspectionType)||''; return !t || t===INSPECTION_TYPE; }
 async function loadReports(){
   try{
@@ -285,22 +294,24 @@ async function loadSbuOptions(){
   state.sbuLoading=false; render();
 }
 async function loadBuyerOptions(sbu){
-  state.buyerOptions=[]; state.irOptions=[]; state.buyerLoading=true; state.buyerLoadFailed=false; render();
+  state.buyerOptions=[]; state.irOptions=[]; state.buyerOther=[]; state.irOther=[]; state.buyerLoading=true; state.buyerLoadFailed=false; render();
   try{
     const res = await qaApi({ action:"listBuyers", sbu:sbu });
     if (!res.ok) throw new Error(res.error||'listBuyers failed');
     state.buyerOptions = Array.isArray(res.buyers)?res.buyers:[];
-    state.buyerLoadFailed = state.buyerOptions.length===0;
+    state.buyerOther = await loadOther_('listBuyersOther', sbu, '');
+    state.buyerLoadFailed = state.buyerOptions.length===0 && !state.buyerOther.length;
   }catch(e){ state.buyerOptions=[]; state.buyerLoadFailed=true; }
   state.buyerLoading=false; render();
 }
 async function loadIrOptions(sbu, buyer){
-  state.irOptions=[]; state.irLoading=true; state.irLoadFailed=false; render();
+  state.irOptions=[]; state.irOther=[]; state.irLoading=true; state.irLoadFailed=false; render();
   try{
     const res = await qaApi({ action:"listIrs", sbu:sbu, buyer:buyer });
     if (!res.ok) throw new Error(res.error||'listIrs failed');
     state.irOptions = Array.isArray(res.irs)?res.irs:[];
-    state.irLoadFailed = state.irOptions.length===0;
+    state.irOther = await loadOther_('listIrsOther', sbu, buyer);
+    state.irLoadFailed = state.irOptions.length===0 && !state.irOther.length;
   }catch(e){ state.irOptions=[]; state.irLoadFailed=true; }
   state.irLoading=false; render();
 }
@@ -476,12 +487,14 @@ function renderOrderInfoPanel(h){
         <select data-hf-sel="buyer" ${!h.sbu?'disabled':''}>
           <option value="">${state.buyerLoading?'Loading...':'-- select Buyer --'}</option>
           ${state.buyerOptions.map(s=>`<option value="${esc(s)}" ${h.buyer===s?'selected':''}>${esc(s)}</option>`).join('')}
+          ${otherOpts_(state.buyerOther, h.buyer, 'Other SBUs (allocated elsewhere)')}
         </select>
       </div>
       <div class="f"><span class="field-label">IR</span>
         <select data-hf-sel="ir" ${!h.buyer?'disabled':''}>
           <option value="">${state.irLoading?'Loading...':'-- select IR --'}</option>
           ${state.irOptions.map(s=>`<option value="${esc(s)}" ${h.ir===s?'selected':''}>${esc(s)}</option>`).join('')}
+          ${otherOpts_(state.irOther, h.ir, 'Allocated to another SBU (inspecting in '+esc(h.sbu)+')')}
         </select>
       </div>
       <div class="f"><span class="field-label">Style Name</span><input type="text" value="${esc(h.styleName)}" readonly></div>

@@ -502,6 +502,16 @@ async function populateSbus() {
   }
 }
 
+// Buyers / IRs allocated to another SBU are listed in their own group so they can still be assessed.
+// The assessment keeps the SBU that was selected (= production SBU).
+async function raOther(kind, sbu, buyer) {
+  try { const r = await raApi({ action: kind, sbu, buyer }); const a = r && r.ok ? (r.buyers || r.irs) : null; return Array.isArray(a) ? a.filter(o => o && typeof o === "object" && o.value) : []; }
+  catch (e) { return []; }
+}
+function raOtherGroup(arr, title) {
+  return arr.length ? `<optgroup label="${esc(title)}">` + arr.map(o => `<option value="${esc(o.value)}">${esc(o.label)}</option>`).join("") + `</optgroup>` : "";
+}
+
 async function onSbuChange() {
   const sbu = document.getElementById("raSbu").value;
   const buyerSel = document.getElementById("raBuyer");
@@ -514,11 +524,12 @@ async function onSbuChange() {
   try {
     const res = await raApi({ action: "listBuyers", sbu });
     if (!res.ok) throw new Error(res.error);
-    if (!res.buyers.length) {
+    const otherB = await raOther("listBuyersOther", sbu, "");
+    if (!res.buyers.length && !otherB.length) {
       buyerSel.innerHTML = `<option value="">No buyers found for this SBU in OrderInfo</option>`;
       return;
     }
-    buyerSel.innerHTML = `<option value="">Select Buyer…</option>` + res.buyers.map(b => `<option>${esc(b)}</option>`).join("");
+    buyerSel.innerHTML = `<option value="">Select Buyer…</option>` + res.buyers.map(b => `<option>${esc(b)}</option>`).join("") + raOtherGroup(otherB, "Other SBUs (allocated elsewhere)");
   } catch (err) {
     buyerSel.innerHTML = `<option value="">${esc(err.message)}</option>`;
   }
@@ -535,11 +546,12 @@ async function onBuyerChange() {
   try {
     const res = await raApi({ action: "listIrs", sbu, buyer });
     if (!res.ok) throw new Error(res.error);
-    if (!res.irs.length) {
+    const otherI = await raOther("listIrsOther", sbu, buyer);
+    if (!res.irs.length && !otherI.length) {
       irSel.innerHTML = `<option value="">No IR found for this Buyer in OrderInfo</option>`;
       return;
     }
-    irSel.innerHTML = `<option value="">Select IR…</option>` + res.irs.map(i => `<option>${esc(i)}</option>`).join("");
+    irSel.innerHTML = `<option value="">Select IR…</option>` + res.irs.map(i => `<option>${esc(i)}</option>`).join("") + raOtherGroup(otherI, "Allocated to another SBU (assessing in " + sbu + ")");
   } catch (err) {
     irSel.innerHTML = `<option value="">${esc(err.message)}</option>`;
   }
