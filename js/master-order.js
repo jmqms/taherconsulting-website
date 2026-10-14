@@ -14,7 +14,7 @@
   var URL = "data/masterOrders.json";
   var URL2 = "data/masterOrders2.json"; // fallback: used only for IRs missing from file 1
   var URL3 = "data/sbuOverride.json";   // { "IR No": "Production SBU" } for IRs produced in a different SBU than allocated
-  var ACTIONS = { listSbus: 1, listBuyers: 1, listIrs: 1, getOrderDetail: 1 };
+  var ACTIONS = { listSbus: 1, listBuyers: 1, listIrs: 1, getOrderDetail: 1, listBuyersOther: 1, listIrsOther: 1 };
   var loading = null;
 
   function norm(v) { return v === null || v === undefined ? "" : String(v).trim(); }
@@ -70,11 +70,34 @@
     return Object.keys(set).sort();
   }
 
+  // "Other SBU" lookups: let an inspector pick a Buyer / IR that is allocated to a different SBU
+  // than the one they are working in. The entry keeps the SBU they selected (the production SBU).
+  function otherBuyers(db, sbu) {
+    if (!sbu) return [];
+    var own = {}, map = {};
+    db.rows.forEach(function (r) { if (norm(r["SBU"]) === sbu) own[norm(r["Buyer"])] = 1; });
+    db.rows.forEach(function (r) { var b = norm(r["Buyer"]); if (b && !own[b]) (map[b] = map[b] || {})[norm(r["SBU"])] = 1; });
+    return Object.keys(map).sort().map(function (b) { return { value: b, label: b + " \u2014 " + Object.keys(map[b]).sort().join(", ") }; });
+  }
+  function otherIrs(db, sbu, buyer) {
+    if (!sbu || !buyer) return [];
+    var map = {};
+    db.rows.forEach(function (r) {
+      if (norm(r["Buyer"]) !== buyer || norm(r["SBU"]) === sbu) return;
+      var ir = norm(r["IR No"]); if (ir) (map[ir] = map[ir] || {})[norm(r["SBU"])] = 1;
+    });
+    return Object.keys(map).sort().map(function (ir) { return { value: ir, label: ir + " \u2014 " + Object.keys(map[ir]).sort().join(", ") }; });
+  }
+
   // flavor "ra" keeps Risk Assessment's detail shape (embCat filter + embCats list);
   // anything else returns the QA / inspection shape.
   function detail(db, p, flavor) {
     var sbu = norm(p.sbu), buyer = norm(p.buyer), ir = norm(p.ir), emb = norm(p.embCat);
-    var rows = db.groups[sbu + "\u0001" + buyer + "\u0001" + ir] || [];
+    var rows = db.groups[sbu + "\u0001" + buyer + "\u0001" + ir] || [], fromOther = "";
+    if (!rows.length && sbu && buyer && ir) {   // IR is allocated to another SBU: look it up there, keep the chosen SBU as production SBU
+      rows = db.rows.filter(function (r) { return norm(r["Buyer"]) === buyer && norm(r["IR No"]) === ir; });
+      if (rows.length) fromOther = norm(rows[0]["SBU"]);
+    }
     if (flavor === "ra" && emb) rows = rows.filter(function (r) { return norm(r["Embellishment Category"]) === emb; });
     if (!rows.length) return null;
     var first = rows[0], colorMap = {}, order = [], total = 0, embSet = {};
@@ -94,10 +117,10 @@
       base.embellishmentCategory = emb || embCats.join(", ");
       base.embCats = embCats;
     } else {
-      base.sbu = norm(first["SBU"]); base.buyer = norm(first["Buyer"]); base.ir = norm(first["IR No"]);
+      base.sbu = fromOther ? sbu : norm(first["SBU"]); base.buyer = norm(first["Buyer"]); base.ir = norm(first["IR No"]);
       base.embellishmentCategory = first["Embellishment Category"];
       base.shipDate = norm(first["Ship Date"]); base.lineCount = rows.length;
-      base.allocatedSbu = norm(first["Allocated SBU"]);
+      base.allocatedSbu = fromOther || norm(first["Allocated SBU"]);
     }
     return base;
   }
@@ -112,6 +135,8 @@
           case "listSbus":   return { ok: true, sbus: distinct(db.rows, "SBU", {}) };
           case "listBuyers": return { ok: true, buyers: distinct(db.rows, "Buyer", { SBU: p.sbu }) };
           case "listIrs":    return { ok: true, irs: distinct(db.rows, "IR No", { SBU: p.sbu, Buyer: p.buyer }) };
+          case "listBuyersOther": return { ok: true, buyers: otherBuyers(db, norm(p.sbu)) };
+          case "listIrsOther":    return { ok: true, irs: otherIrs(db, norm(p.sbu), norm(p.buyer)) };
           case "getOrderDetail": return { ok: true, detail: detail(db, p, flavor) };
         }
         return null;
