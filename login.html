@@ -20,6 +20,26 @@
 <meta name="twitter:description" content="Sign in to your Taher Consulting client or team dashboard.">
 <meta name="twitter:image" content="https://taherconsultingbd.com/assets/og-image.png">
 <link rel="stylesheet" href="css/style.css">
+<style>
+.pw-wrap{position:relative}
+.pw-wrap input{padding-right:78px}
+.pw-toggle{position:absolute;right:6px;top:50%;transform:translateY(-50%);background:none;border:none;color:#5f6670;font-size:12.5px;font-weight:700;letter-spacing:.06em;text-transform:uppercase;padding:8px 10px;cursor:pointer;border-radius:8px;font-family:inherit}
+.pw-toggle:hover{color:#1B211D;background:rgba(0,0,0,.06)}
+</style>
+<script>
+document.addEventListener("DOMContentLoaded", function(){
+  var t = document.getElementById("pwToggle"), p = document.getElementById("password");
+  if (!t || !p) return;
+  t.addEventListener("click", function(){
+    var showing = p.type === "text";
+    p.type = showing ? "password" : "text";
+    t.textContent = showing ? "Show" : "Hide";
+    t.setAttribute("aria-label", showing ? "Show password" : "Hide password");
+    t.setAttribute("aria-pressed", showing ? "false" : "true");
+    p.focus();
+  });
+});
+</script>
 </head>
 <body>
 
@@ -59,7 +79,10 @@
         </div>
         <div class="field">
           <label for="password">Password</label>
-          <input type="password" id="password" required placeholder="••••••••" autocomplete="current-password">
+          <div class="pw-wrap">
+            <input type="password" id="password" required placeholder="Enter password" autocomplete="current-password">
+            <button type="button" class="pw-toggle" id="pwToggle" aria-label="Show password" aria-pressed="false">Show</button>
+          </div>
         </div>
         <div class="remember-row">
           <label><input type="checkbox" id="rememberMe"> Remember me</label>

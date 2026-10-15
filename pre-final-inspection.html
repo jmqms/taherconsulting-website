@@ -2676,5 +2676,18 @@ loadReports().then(() => {
   });
 });
 </script>
+<script src="js/module-auth.js"></script>
+<script>
+  /* Module login — same panel as the other modules. Opened from QA Process (QC team) it
+     shares the QA Process login; opened from QA Inspection it uses the QA Inspection login. */
+  (function(){
+    var qc = (new URLSearchParams(location.search).get('team')||'').toLowerCase() === 'qc';
+    tcInitModuleAuth(qc
+      ? { moduleKey: "qa", sheetName: "QAUsers", displayLabel: "QA Process",
+          theme: { icon: "📋", accent: "#2F6E52", iconBg: "#E5F0E9", bg: "#0F1F18" } }
+      : { moduleKey: "qainspection", sheetName: "QAInspectionUsers", displayLabel: "QA Inspection",
+          theme: { icon: "✅", accent: "#1E3364", iconBg: "#E7EBF4", bg: "#0A1420" } });
+  })();
+</script>
 </body>
 </html>

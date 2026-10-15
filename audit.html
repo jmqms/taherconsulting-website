@@ -131,7 +131,10 @@
         <label>User ID</label>
         <input type="text" id="login-userid" placeholder="Enter your User ID" autocomplete="off">
         <label>Password</label>
-        <input type="password" id="login-password" placeholder="Enter your password" autocomplete="off">
+        <div style="position:relative">
+            <input type="password" id="login-password" placeholder="Enter your password" autocomplete="off" style="padding-right:78px">
+            <button type="button" id="login-pw-toggle" aria-label="Show password" aria-pressed="false" style="position:absolute;right:6px;top:50%;transform:translateY(-50%);background:none;border:none;color:#5f6670;font-size:12.5px;font-weight:700;letter-spacing:.06em;text-transform:uppercase;padding:8px 10px;cursor:pointer;border-radius:8px;font-family:inherit">Show</button>
+        </div>
         <button class="btn login-btn" onclick="attemptLogin()">🔒 Sign In</button>
         <button class="btn login-btn" style="background:#64748b; margin-top:10px;" onclick="loginAsGuest()">👁️ Continue as Guest (View Only)</button>
     </div>
@@ -600,7 +603,7 @@
     // ---- Login now checked against the "AuditUsers" tab of the shared
     //      Google Sheet (see users-backend.gs) instead of a hardcoded list.
     //      Add/remove auditors directly in that Sheet — no code edit needed.
-    const AUDIT_AUTH_API_URL = "https://script.google.com/macros/s/AKfycbwUHhuey3xss614nJPgXQwl449URBPX-SRgldd28JWLFrFSkRcJreYqDDK_hbIpr3Qi/exec"; // common user management (taherconsultingbd.com)
+    const AUDIT_AUTH_API_URL = "https://script.google.com/macros/s/AKfycbx7Cwnp8hoKuxcQ57TlllwBaA7zr9S2bcFVi9-mzyyY8RhRL3YiUpbJMFohLmQZkf1a/exec"; // common user management (taherconsultingbd.com)
     const AUDIT_AUTH_SHEET = "AuditUsers";
 
     const SESSION_KEY = "jmfabrics_qms_session";
@@ -678,6 +681,14 @@
     }
 
     // Allow pressing Enter in the password field to submit login
+    document.getElementById('login-pw-toggle').addEventListener('click', function(){
+        var p = document.getElementById('login-password'), showing = p.type === 'text';
+        p.type = showing ? 'password' : 'text';
+        this.textContent = showing ? 'Show' : 'Hide';
+        this.setAttribute('aria-label', showing ? 'Show password' : 'Hide password');
+        this.setAttribute('aria-pressed', showing ? 'false' : 'true');
+        p.focus();
+    });
     document.getElementById('login-password').addEventListener('keydown', function(e) {
         if (e.key === 'Enter') attemptLogin();
     });
