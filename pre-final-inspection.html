@@ -119,6 +119,8 @@ table.log tr:hover td{background:rgba(27,33,29,0.03);}
 .rep-table input,.rep-table select,.rep-table textarea{width:100%;font-size:12px;padding:5px 7px;}
 .rep-group-hd td{background:var(--panel-2);font-weight:700;color:var(--brand);font-size:11px;text-transform:uppercase;letter-spacing:.04em;}
 .rep-subgroup-hd td{background:transparent;font-weight:700;color:var(--text);font-size:10.5px;padding-top:10px;border-bottom:1px solid var(--border-soft);}
+.row-missing td{background:rgba(229,72,77,.14);}
+.row-missing{outline:1.5px solid #e5484d;outline-offset:-1px;}
 .result-select.PASS{color:var(--good);} .result-select.FAIL{color:var(--crit);}
 .gallery{display:grid;grid-template-columns:repeat(auto-fill,minmax(140px,1fr));gap:12px;}
 .gallery figure{margin:0;background:var(--panel-2);border:1px solid var(--border);border-radius:8px;overflow:hidden;}
@@ -272,38 +274,204 @@ const DEFECT_CATEGORIES = ['Assembling / Sewing','Finishing','Stitch & Seam','Fa
 const SIGNOFF_ROLES = ['Inspector','Factory QA / Representative','Quality Manager (JMF)','Buyer / Client Representative'];
 
 const QUANTITY_PACKING_CHECKPOINT_GROUPS = [
-  { group: 'A. Quantity Verification', items: [
-    'Available Quantity Check (vs. Packing List / Order)', 'Shipment Quantity Tolerance (Short / Over Shipment)', 'Carton Quantity Accuracy Check', 'Total Packed Quantity Verification', 'Size-wise Quantity Verification', 'Color-wise Quantity Verification', 'Assortment Ratio Verification', 'Carton Count vs. Purchase Order', 'Factory Packing List Verification', 'PO Number Verification', 'Style Number Verification', 'SKU Verification', 'Destination Verification'
-  ]},
-  { group: 'B. Carton Inspection', items: [
-    'Carton Assortment Verification', 'Carton Dimensions Check', 'Carton Weight Check', 'Carton Strength Verification', 'Outer Carton Condition Check', 'Carton Cleanliness Check', 'Carton Damage Check', 'Mixed SKU Prevention Check', 'Carton Sequence Number Verification'
-  ]},
-  { group: 'C. Packaging Verification', items: [
-    'Outer Packaging Conformity (Carton Seal / Tape)', 'Shipping Front Marks', 'Shipping Side Marks', 'Carton Markings / Barcode Check', 'Retail Carton Sticker Verification', 'Unit Packing Verification', 'Inner Packing Verification', 'Polybag Quality Check', 'Polybag Suffocation Warning Check', 'Polybag Air Hole Verification', 'Polybag Thickness Verification', 'Folding Method Verification', 'Hanger Position & Direction Check', 'Set Packing Verification', 'Spare Button Availability', 'Polybag Sticker Information Check', 'Packing Method Compliance'
-  ]},
-  { group: 'D. Approval & Shipment Readiness', items: [
-    'PP Sample / Black Seal Availability', 'PP Sample Approval Comment Availability', 'SHS / Gold Seal Availability', 'SHS Approval Comment Availability', 'TOP Sample Availability', 'Golden Sample Availability', 'Approved Trim Card Availability', 'Approved Shade Band Availability', 'Sealed Good Cartons Verification', 'Carton Drop Test', 'Inspector Seal Application', 'Shipment Release Recommendation', 'Country of Origin Label Verification', 'Compliance Label Verification', 'Customer Special Requirement/Country wise routine Verification'
-  ]},
+  {
+    "group": "A. Quantity Verification",
+    "items": [
+      "Available Quantity Check (vs. Packing List / Order)",
+      "Shipment Quantity Tolerance (Short / Over Shipment)",
+      "Carton Quantity Accuracy Check",
+      "Total Packed Quantity Verification",
+      "Size-wise & Color-wise Quantity Verification",
+      "Assortment Ratio Verification",
+      "Factory Packing List Verification",
+      "Style, PO Number Verification",
+      "SKU Verification",
+      "Destination Verification"
+    ]
+  },
+  {
+    "group": "B. Carton Inspection",
+    "items": [
+      "Carton Dimensions Check",
+      "Carton Weight Check",
+      "Carton Cleanliness and Damage Check",
+      "Carton Drop Test"
+    ]
+  },
+  {
+    "group": "C. Packaging Verification",
+    "items": [
+      "Outer Packaging Conformity (Carton Seal / Tape)",
+      "Shipping Front Marks",
+      "Shipping Side Marks",
+      "Retail Carton Sticker Verification",
+      "Unit Packing Verification",
+      "Inner Packing Verification",
+      "Polybag Quality & Thickness Verification",
+      "Polybag Suffocation Warning Check",
+      "Polybag Air Hole Verification",
+      "Folding Method Verification",
+      "Hanger Position & Direction Check",
+      "Set Packing Verification",
+      "Spare Button Availability",
+      "Polybag Sticker Information Check"
+    ]
+  },
+  {
+    "group": "D. Approval & Shipment Readiness",
+    "items": [
+      "PP Sample / Black Seal Availability",
+      "PP Sample Approval Comment Availability",
+      "SHS / Gold Seal Availability",
+      "SHS Approval Comment Availability",
+      "TOP Sample Availability",
+      "Approved Trim Card Availability",
+      "Approved Shade Band Availability",
+      "Compliance Label Verification",
+      "Customer Special Requirement/Country wise routine Verification"
+    ]
+  }
 ];
 
 const TEST_CHECKPOINT_GROUPS = [
-  { group: 'A. STYLE / CONSTRUCTION / COLOUR', subgroups: [
-    { subgroup: 'Product Appearance', items: ['Product Style / Construction (vs. PP Sample)', 'Product Colours (vs. Approved Shade Band)', 'Colour Shading Check', 'Handfeel Check (vs. Approved Standard)', 'Wash / Dry Process Check', 'Fabrics GSM Check', 'Fabric Construction Verification', 'Fabric Surface Evaluation', 'Fabric Grain Check', 'Bowing & Skewing Check', 'Stripe Matching Check', 'Plaid / Check Matching', 'Shade Variation Within Garment', 'Shade Variation Between Garments'] },
-  ]},
-  { group: 'B. ARTWORK & LABELS', subgroups: [
-    { subgroup: 'Branding & Artwork', items: ['Logo General Quality & Design', 'Logo Position Check', 'Logo Dimensions (Width & Height)', 'Logo Stretch / Elongation Test', 'Logo Appearance After Stretch', 'Embroidery Quality Check', 'Printing Quality Check', 'Artwork Placement Check'] },
-    { subgroup: 'Main Labels & Care Labels', items: ['Main Label Verification', 'Care Label Verification', 'Size Label Verification', 'Label Position Verification', 'Fiber Content Verification', 'Country of Origin Verification', 'Warning Label Verification', 'Compliance Label Verification', 'CPSIA / Tracking Label Check', 'Brand Label Attachment Quality'] },
-    { subgroup: 'Barcode & Information Verification', items: ['Barcode Label Verification', 'Barcode Scanning Test', 'RFID Verification (if applicable)', 'Information on Product Verification', 'Information on Carton Verification', 'Information on Polybag Verification', 'Information on Hangtag Verification', 'PO Number Verification', 'SKU Verification', 'Price Ticket Verification'] },
-    { subgroup: 'Hangtags', items: ['Hangtag Design Verification', 'Hangtag Position Verification', 'Hangtag Attachment Security', 'Hangtag Information Verification', 'Promotional Tag Verification (If Applicable)'] },
-  ]},
-  { group: 'C. FUNCTIONAL & SAFETY TESTS', subgroups: [
-    { subgroup: 'Safety Compliance', items: ['Metal / Needle Detection Check', 'Needle Damage Check', 'Sharp Point Check', 'Sharp Edge Check', 'Small Parts Security Check', 'Choking Hazard Check (If Applicable-Applicable for Kidswear)', 'Child Safety Compliance Check (If Applicable-Applicable for Kidswear)', 'Drawcord Safety Check (If Applicable-Applicable for Kidswear)', 'Drawstring Length Check (If Applicable-Applicable for Kidswear)'] },
-    { subgroup: 'Seam & Construction Performance', items: ['Stitch Density Check', 'Seam Strength Test', 'Crotch Seam Strength', 'Strap Strength Test', 'Pull Test (Button/Snap/Hook/Eyelet)', 'Symmetry Check'] },
-    { subgroup: 'Trims & Accessories', items: ['Button Check', 'Button Security Test', 'Snap Function Test', 'Hook & Eye Function Test', 'Rivet Security Test', 'Eyelet Security Test', 'Zipper Test', 'Zipper Lock Function Test', 'Velcro Function Test', 'Toggle Function Test'] },
-    { subgroup: 'Fabric & Performance Tests', items: ['Odor Check', 'Moisture / Aqua Boy Check', 'Rubbing (Colour Fastness) Test - Dry', 'Rubbing (Colour Fastness) Test - Wet', 'Elastic Recovery Check', 'Elastic Resistance at Waistband', 'Stretch & Recovery Test', 'Pilling Check', 'Shedding Test', 'Lamination / Bonding Check', 'Binding Check', 'Twisting Check'] },
-    { subgroup: 'Product-Specific Tests', items: ['Bra Cup Check (If Applicable-Applicable for Bra)', 'Hygiene Sticker Check (If Applicable-Applicable for Underwear)', 'Seam Pocket Check (If Applicable-Applicable for Leggings)'] },
-  ]},
-  { group: 'D. Test Report Verification', isReport: true, items: ['Fabric Test Report (In-House)', 'Fabric Test Report (3rd Party)', 'Garment Test Report (In-House)', 'Garment Test Report (3rd Party)', 'Cross-Staining Test', 'Printing Durability Test', 'Embroidery Durability Test', 'Heat-Seal Durability Test', 'AOP Durability Test', 'RM Test Report (In-House & 3rd Party)'] },
+  {
+    "group": "A. Style / Construction / Colour",
+    "subgroups": [
+      {
+        "subgroup": "Product Appearance",
+        "items": [
+          "Product Style / Construction (vs. PP Sample)",
+          "Product Colours (vs. Approved Shade Band)",
+          "Colour Shading Check",
+          "Handfeel Check (vs. Approved Standard)",
+          "Fabrics GSM Check",
+          "Fabric Construction Verification",
+          "Stripe Matching/Plaid / Check Matching Check"
+        ]
+      }
+    ]
+  },
+  {
+    "group": "B. Artwork & Labels",
+    "subgroups": [
+      {
+        "subgroup": "Branding & Artwork",
+        "items": [
+          "Logo General Quality & Design",
+          "Logo Position Check",
+          "Logo Dimensions (Width & Height)",
+          "Logo Stretch / Elongation Test",
+          "Logo Appearance After Stretch",
+          "Embroidery Quality Check",
+          "Printing Quality Check"
+        ]
+      },
+      {
+        "subgroup": "Main Labels & Care Labels",
+        "items": [
+          "Main Label Verification",
+          "Care Label Verification",
+          "Size Label Verification",
+          "Label Position Verification",
+          "Fiber Content Verification",
+          "Country of Origin Label Verification",
+          "Warning Label Verification",
+          "Brand Label Attachment Quality"
+        ]
+      },
+      {
+        "subgroup": "Barcode & Information Verification",
+        "items": [
+          "Barcode Label Verification &  Scanning Test",
+          "RFID Verification (if applicable)",
+          "Price Ticket Verification"
+        ]
+      },
+      {
+        "subgroup": "Hangtags",
+        "items": [
+          "Hangtag Information, Design, Position Verification",
+          "Hangtag Attachment Security",
+          "Promotional Tag Verification (If Applicable)"
+        ]
+      }
+    ]
+  },
+  {
+    "group": "C. Functional & Safety Tests",
+    "subgroups": [
+      {
+        "subgroup": "Safety Compliance",
+        "items": [
+          "Metal / Needle Detection Check",
+          "Needle Damage Check",
+          "Sharp Point/Edge Check",
+          "Small Parts Security Check",
+          "Choking Hazard Check (If Applicable-Applicable for Kidswear)",
+          "Child Safety Compliance Check (If Applicable-Applicable for Kidswear)",
+          "Drawcord Safety and Length Check (If Applicable-Applicable for Kidswear)"
+        ]
+      },
+      {
+        "subgroup": "Seam & Construction Performance",
+        "items": [
+          "Stitch Density Check",
+          "Seam Strength Test",
+          "Strap Strength Test",
+          "Pull Test (Button/Snap/Hook/Eyelet)"
+        ]
+      },
+      {
+        "subgroup": "Trims & Accessories",
+        "items": [
+          "Button Security Test",
+          "Snap Function Test",
+          "Hook & Eye Function Test",
+          "Rivet Security Test",
+          "Eyelet Security Test",
+          "Zipper Lock Function Test",
+          "Velcro Function Test",
+          "Toggle Function Test"
+        ]
+      },
+      {
+        "subgroup": "Fabric & Performance Tests",
+        "items": [
+          "Odor Check",
+          "Moisture / Aqua Boy Check",
+          "Rubbing (Colour Fastness) Test",
+          "Elastic Recovery Check",
+          "Stretch & Recovery Test",
+          "Shedding Test",
+          "Lamination / Bonding Check"
+        ]
+      },
+      {
+        "subgroup": "Product-Specific Tests",
+        "items": [
+          "Bra Cup Check (If Applicable-Applicable for Bra)",
+          "Hygiene Sticker Check (If Applicable-Applicable for Underwear)",
+          "Seam Pocket Check (If Applicable-Applicable for Leggings)"
+        ]
+      }
+    ]
+  },
+  {
+    "group": "D. Test Report Verification",
+    "items": [
+      "Fabric Test Report (In-House)",
+      "Fabric Test Report (3rd Party)",
+      "Garment Test Report (In-House)",
+      "Garment Test Report (3rd Party)",
+      "Cross-Staining Test",
+      "Printing Durability Test",
+      "Embroidery Durability Test",
+      "Heat-Seal Durability Test",
+      "AOP Durability Test",
+      "RM Test Report (In-House & 3rd Party)"
+    ],
+    "isReport": true
+  }
 ];
 
 function flatPackingCheckpoints(){
@@ -350,7 +518,7 @@ function emptyReportState(){
     cartonDims: [ { poNumber:'', cartonNo:'', dims:'', comments:'' } ],
     defects: [],
     noDefectsFound: false,
-    testCheckpoints: flatTestCheckpoints().map(c => ({ group:c.group, subgroup:c.subgroup, label:c.label, isReport:c.isReport, applicable:'Yes', result:'', comments:'', testReportNumber:'', pictures:[] })),
+    testCheckpoints: flatTestCheckpoints().map(c => ({ group:c.group, subgroup:c.subgroup, label:c.label, isReport:c.isReport, applicable:'', result:'', comments:'', testReportNumber:'', pictures:[] })),
     measurements: { poms: [ { description:'', size:'', tolMinus:'', tolPlus:'', spec:'', m:[] } ], pictures:[], pieceCount:0, readingsManual:'', ootReadingsManual:'' },
     signOff: SIGNOFF_ROLES.map(role => ({ role, name:'', signature:'' })),
     remarks:'',
@@ -915,15 +1083,24 @@ function stripPictureData_(obj){
 
 /* ============================= PDF EXPORT (professional, generated from data) ============================= */
 
+// ---- Submit gate: every Section 03 checkpoint needs a Result; every Section 04 checkpoint needs Applicable + Result ----
+function missingCheckpoints_(S){
+  S = S || state;
+  const m03 = [], m04 = [];
+  (S.packingCheckpoints || []).forEach((c,i) => { if (!c.result) m03.push(i); });
+  (S.testCheckpoints || []).forEach((c,i) => { if (!c.applicable || !c.result) m04.push(i); });
+  return { m03: m03, m04: m04 };
+}
+
 function computeOverallResult_(S){
   S = S || state;
   const t = defectTotals(S.defects);
   const aql = aqlFor(S);
   const meas = computeMeasurement(S);
   const packingResults = S.packingCheckpoints.map(c=>c.result).filter(Boolean);
-  const packingResult = packingResults.includes('Fail') ? 'FAIL' : (packingResults.length ? 'PASS' : 'N/A');
+  const packingResult = packingResults.includes('Fail') ? 'FAIL' : (packingResults.includes('Pass') ? 'PASS' : 'N/A');
   const testResults = S.testCheckpoints.map(c=>c.result).filter(Boolean);
-  const testsResult = testResults.includes('Fail') ? 'FAIL' : (testResults.length ? 'PASS' : 'N/A');
+  const testsResult = testResults.includes('Fail') ? 'FAIL' : (testResults.includes('Pass') ? 'PASS' : 'N/A');
   const measResult = meas.result || 'N/A';
   const failCount = [packingResult, aql.result, testsResult, measResult].filter(r=>r==='FAIL').length;
   const anyResult = [packingResult, aql.result, testsResult, measResult].some(r=>r==='PASS'||r==='FAIL');
@@ -947,7 +1124,7 @@ async function generatePdfReport(srcData){
 
     function ensureRoom(need){ if (ctx.y + need > pageH - 14){ doc.addPage(); ctx.y = 16; } }
     function heading(text){
-      ensureRoom(12);
+      ensureRoom(30);
       doc.setFont('helvetica','bold'); doc.setFontSize(11); doc.setTextColor(20,20,20);
       doc.text(text, margin, ctx.y); ctx.y += 5.5;
     }
@@ -1242,113 +1419,194 @@ async function generatePdfReport(srcData){
       const sampleSizeN = aql.sampleSize || 0;
       const defRate = sampleSizeN ? fmt1(totalDef/sampleSizeN*100) : '0.0';
       const totalAllowed = aql.criticalAllowed + aql.majorAllowed + aql.minorAllowed;
+      const RED = [211,47,47], ORG = [233,142,18], YEL = [221,184,20];
+      const GREY_TXT = [120,120,120], DARK = [30,30,30];
+      const setTxt = c => doc.setTextColor(c[0],c[1],c[2]);
 
-      // Rough total height so the whole card ensures room / page-breaks as one block.
-      ensureRoom(85);
+      ensureRoom(100);
       let cy = ctx.y;
 
-      // -- Header bar --
-      fitRoundedRect(cardX, cy, cardW, 9, [24,110,68]);
-      doc.setFont('helvetica','bold'); doc.setFontSize(11); doc.setTextColor(255,255,255);
-      doc.text('Workmanship', cardX+4, cy+6.3);
-      pillRight(aql.result||'N/A', cardX+cardW-4, cy+6.3, aql.result);
+      // -- Header bar: "Workmanship" + result pill --
+      fitRoundedRect(cardX, cy, cardW, 10, [24,128,84]);
+      doc.setFont('helvetica','bold'); doc.setFontSize(12); doc.setTextColor(255,255,255);
+      doc.text('Workmanship', cardX+4, cy+6.8);
+      pillRight(aql.result||'N/A', cardX+cardW-4, cy+6.6, aql.result);
       doc.setTextColor(20,20,20);
-      cy += 9 + 5;
+      cy += 10 + 4;
 
-      // -- Inspection standards: method/level (left) + Critical/Major/Minor boxes (right) --
-      doc.setFont('helvetica','bold'); doc.setFontSize(7); doc.setTextColor(110,110,110);
-      doc.text('INSPECTION STANDARDS', cardX+1, cy);
-      cy += 5;
+      // -- Inspection standards (light panel): sampling method/level (left) + 3 severity cards (right) --
+      const panelH = 41;
+      doc.setFillColor(244,244,244); doc.roundedRect(cardX, cy, cardW, panelH, 2, 2, 'F');
+      doc.setFont('helvetica','bold'); doc.setFontSize(8); setTxt([40,40,40]);
+      doc.text('Inspection standards', cardX+4, cy+6);
 
-      const leftW2 = cardW * 0.34;
-      const boxesX = cardX + leftW2 + 4;
-      const boxesW = cardW - leftW2 - 4;
-      const boxGap = 3, boxW = (boxesW - boxGap*2) / 3;
-      const standardsTop = cy;
+      const leftW2 = cardW * 0.33;
+      doc.setFont('helvetica','normal'); doc.setFontSize(7); setTxt(GREY_TXT);
+      doc.text('Workmanship sampling method', cardX+4, cy+14);
+      doc.setFont('helvetica','bold'); doc.setFontSize(8.2); setTxt(DARK);
+      doc.text((h.samplingPlan||'Single') + ' level & AQL (ISO 2859-1)', cardX+4, cy+18.6);
+      doc.setFont('helvetica','normal'); doc.setFontSize(7); setTxt(GREY_TXT);
+      doc.text('Workmanship sampling level & AQL', cardX+4, cy+27);
+      doc.setFont('helvetica','bold'); doc.setFontSize(8.2); setTxt(DARK);
+      doc.text(h.inspectionLevel || '-', cardX+4, cy+31.6);
 
-      doc.setFont('helvetica','normal'); doc.setFontSize(6.6); doc.setTextColor(130,130,130);
-      doc.text('Workmanship sampling method', cardX+1, cy+3.2);
-      doc.setFont('helvetica','bold'); doc.setFontSize(8.3); doc.setTextColor(30,30,30);
-      doc.text((h.samplingPlan||'Single') + ' level & AQL (ISO 2859-1)', cardX+1, cy+7.6);
-      doc.setFont('helvetica','normal'); doc.setFontSize(6.6); doc.setTextColor(130,130,130);
-      doc.text('Workmanship sampling level & AQL', cardX+1, cy+14.4);
-      doc.setFont('helvetica','bold'); doc.setFontSize(8.3); doc.setTextColor(30,30,30);
-      doc.text(h.inspectionLevel || '-', cardX+1, cy+18.8);
-
-      // -- one severity box: colored label pill + AQL / Sample size / Acceptance point --
-      function severityBox(x, y, w, label, color, aqlv, sample, ac){
-        doc.setFont('helvetica','bold'); doc.setFontSize(6.1);
-        const tw = Math.min(w, doc.getTextWidth(label) + 5);
-        doc.setFillColor(color[0],color[1],color[2]);
-        doc.roundedRect(x, y, tw, 4.4, 1, 1, 'F');
-        doc.setTextColor(255,255,255);
-        doc.text(label, x+2.2, y+3.1);
-        doc.setTextColor(20,20,20);
-        const rowLabel = (lbl, val, ly) => {
-          doc.setFont('helvetica','normal'); doc.setFontSize(6.3); doc.setTextColor(130,130,130);
-          doc.text(lbl, x, ly);
-          doc.setFont('helvetica','bold'); doc.setFontSize(8.6); doc.setTextColor(30,30,30);
-          doc.text(String(val), x, ly+3.7);
+      const boxesX = cardX + leftW2 + 2, boxGap = 3;
+      const boxW = (cardW - leftW2 - 2 - 3 - boxGap*2) / 3, boxH = 35;
+      function severityCard(x, y, label, color, aqlv, ac){
+        doc.setFillColor(232,232,232); doc.roundedRect(x, y, boxW, boxH, 2, 2, 'F');
+        doc.setFont('helvetica','bold'); doc.setFontSize(6.2);
+        const tw = doc.getTextWidth(label) + 5;
+        doc.setFillColor(color[0],color[1],color[2]); doc.roundedRect(x+3, y+3, tw, 4.4, 2.2, 2.2, 'F');
+        doc.setTextColor(255,255,255); doc.text(label, x+5.5, y+6.1);
+        const row = (lbl, val, ly, big) => {
+          doc.setFont('helvetica','normal'); doc.setFontSize(7.2); setTxt(GREY_TXT);
+          doc.text(lbl, x+3, ly);
+          doc.setFont('helvetica','bold'); doc.setFontSize(big?14:9); setTxt(DARK);
+          doc.text(String(val), x+boxW-3, ly + (big?1:0), { align:'right' });
         };
-        rowLabel('AQL', aqlv, y+9.4);
-        rowLabel('Sample size', sample, y+16.8);
-        rowLabel('Acceptance point', ac, y+24.2);
+        row('AQL', aqlv, y+15, true);
+        row('Sample size', sampleSizeN||'-', y+23.5, false);
+        row('Acceptance point', ac, y+30.5, false);
       }
-      severityBox(boxesX, standardsTop, boxW, 'CRITICAL DEFECTS', [211,47,47], h.aqlCritical===0?'0':(h.aqlCritical||'-'), sampleSizeN||'-', aql.criticalAllowed);
-      severityBox(boxesX+boxW+boxGap, standardsTop, boxW, 'MAJOR DEFECTS', [227,140,20], h.aqlMajor||'-', sampleSizeN||'-', aql.majorAllowed);
-      severityBox(boxesX+ (boxW+boxGap)*2, standardsTop, boxW, 'MINOR DEFECTS', [216,180,20], h.aqlMinor||'-', sampleSizeN||'-', aql.minorAllowed);
-
-      // Severity boxes' last line (Acceptance point value) sits at standardsTop+24.2+3.7 —
-      // clear that before starting the next bar, plus a small visual gap.
-      cy += 32;
-
-      // -- Sample size / Defective pieces / Total defects found vs allowed bar --
-      const barH = 15;
-      fitRoundedRect(cardX, cy, cardW, barH, [246,245,240]);
-      doc.setFont('helvetica','normal'); doc.setFontSize(6.8); doc.setTextColor(130,130,130);
-      doc.text('Sample size', cardX+4, cy+5.2);
-      doc.setFont('helvetica','bold'); doc.setFontSize(10.5); doc.setTextColor(30,30,30);
-      doc.text(String(sampleSizeN||0), cardX+4, cy+11.5);
-
-      doc.setFont('helvetica','normal'); doc.setFontSize(6.8); doc.setTextColor(130,130,130);
-      doc.text('Defective pieces', cardX+38, cy+5.2);
-      doc.setFont('helvetica','bold'); doc.setFontSize(10.5); doc.setTextColor(30,30,30);
-      doc.text(totalDef + ' (' + defRate + '%)', cardX+38, cy+11.5);
-
-      const rightBlockX = cardX + cardW - 78;
-      doc.setFont('helvetica','normal'); doc.setFontSize(6.8); doc.setTextColor(130,130,130);
-      doc.text('Total defects found', rightBlockX, cy+5.2);
-      let fbx = rightBlockX;
-      fbx += countBadge('CRITICAL', dt.Critical, fbx, cy+10.5, [211,47,47]) + 3;
-      fbx += countBadge('MAJOR', dt.Major, fbx, cy+10.5, [227,140,20]) + 3;
-      countBadge('MINOR', dt.Minor, fbx, cy+10.5, [216,180,20]);
-
-      doc.setFont('helvetica','normal'); doc.setFontSize(6.8); doc.setTextColor(130,130,130);
-      doc.text('Total defects allowed: ' + totalAllowed + ' (C:' + aql.criticalAllowed + ' M:' + aql.majorAllowed + ' m:' + aql.minorAllowed + ')', rightBlockX, cy+14.3);
+      const by = cy + 3.5;
+      severityCard(boxesX, by, 'CRITICAL DEFECTS', RED, h.aqlCritical===0?'0':(h.aqlCritical||'-'), aql.criticalAllowed);
+      severityCard(boxesX+boxW+boxGap, by, 'MAJOR DEFECTS', ORG, h.aqlMajor||'-', aql.majorAllowed);
+      severityCard(boxesX+(boxW+boxGap)*2, by, 'MINOR DEFECTS', YEL, h.aqlMinor||'-', aql.minorAllowed);
       doc.setTextColor(20,20,20);
+      cy += panelH + 3;
 
-      ctx.y = cy + barH + 5;
+      // -- Summary band: sample size | defective pieces | total defects found / allowed per severity --
+      const bandH = 21;
+      doc.setFillColor(231,245,238); doc.roundedRect(cardX, cy, cardW, bandH, 1.5, 1.5, 'F');
+      doc.setDrawColor(150,190,170); doc.setLineWidth(0.3);
+      const vline = x => doc.line(x, cy+3, x, cy+bandH-3);
+      doc.setFont('helvetica','normal'); doc.setFontSize(7.5); setTxt(GREY_TXT);
+      doc.text('Sample size', cardX+4, cy+7);
+      doc.setFont('helvetica','bold'); doc.setFontSize(13); setTxt(DARK);
+      doc.text(String(sampleSizeN||0), cardX+4, cy+15.5);
+      vline(cardX+38);
+      doc.setFont('helvetica','normal'); doc.setFontSize(7.5); setTxt(GREY_TXT);
+      doc.text('Defective pieces', cardX+43, cy+7);
+      doc.setFont('helvetica','bold'); doc.setFontSize(13); setTxt(DARK);
+      doc.text(String(totalDef), cardX+43, cy+15.5);
+      const dw = doc.getTextWidth(String(totalDef));
+      doc.setFont('helvetica','normal'); doc.setFontSize(8); setTxt(GREY_TXT);
+      doc.text('(' + defRate + '%)', cardX+43+dw+1.5, cy+15.5);
+      vline(cardX+86);
+      doc.setFont('helvetica','normal'); doc.setFontSize(7.5); setTxt(GREY_TXT);
+      doc.text('Total defects found', cardX+90, cy+12.3);
+      doc.text('Total defects allowed', cardX+90, cy+17.8);
+      const sx0 = cardX + 126, sw = (cardX + cardW - sx0) / 3;
+      [['CRITICAL',RED,dt.Critical,aql.criticalAllowed],['MAJOR',ORG,dt.Major,aql.majorAllowed],['MINOR',YEL,dt.Minor,aql.minorAllowed]].forEach((s,i) => {
+        const cx = sx0 + sw*i + sw/2;
+        if (i>0) vline(sx0 + sw*i);
+        doc.setFont('helvetica','bold'); doc.setFontSize(5.8);
+        const tw = doc.getTextWidth(s[0]) + 4;
+        doc.setFillColor(s[1][0],s[1][1],s[1][2]); doc.roundedRect(cx-tw/2, cy+2.3, tw, 4, 2, 2, 'F');
+        doc.setTextColor(255,255,255); doc.text(s[0], cx, cy+5.2, { align:'center' });
+        doc.setFont('helvetica','bold'); doc.setFontSize(10.5); setTxt(DARK);
+        doc.text(String(s[2]), cx, cy+12.3, { align:'center' });
+        doc.setFont('helvetica','normal'); doc.setFontSize(9); setTxt(GREY_TXT);
+        doc.text(String(s[3]), cx, cy+17.8, { align:'center' });
+      });
+      doc.setLineWidth(0.2); doc.setDrawColor(0); doc.setTextColor(20,20,20);
+      ctx.y = cy + bandH + 4;
 
-      // -- Defects checklist name + per-category breakdown --
-      ensureRoom(14);
-      doc.setFont('helvetica','bold'); doc.setFontSize(9.5); doc.setTextColor(20,20,20);
-      doc.text('Defects checklist', margin, ctx.y); ctx.y += 5;
-      doc.setFont('helvetica','normal'); doc.setFontSize(8); doc.setTextColor(70,70,70);
-      doc.text(h.defectChecklistName || 'Standard Defect Classification (AQL 2.5)', margin, ctx.y); ctx.y += 5;
+      // -- Defects checklist: one row per defect name with severity counts and photo count --
+      const agg = [], idx = {};
+      (S.defects || []).forEach(d => {
+        const name = String(d.description || d.category || 'Unspecified defect').trim() || 'Unspecified defect';
+        if (idx[name] === undefined){ idx[name] = agg.length; agg.push({ name:name, Critical:0, Major:0, Minor:0, pics:0 }); }
+        const r = agg[idx[name]];
+        if (r[d.severity] !== undefined) r[d.severity] += Number(d.qty) || 1;
+        r.pics += (d.pictures || []).length;
+      });
+      const padX = 4, colW = 20, colsX = cardX + cardW - padX - colW*3;
+      const nameW = colsX - (cardX + padX) - 4;
+      doc.setFont('helvetica','normal'); doc.setFontSize(9);
+      const rowsLay = agg.map(r => {
+        const lines = doc.splitTextToSize(r.name, nameW - 16);
+        return { r:r, lines:lines, h: Math.max(8.5, lines.length*4 + 4.5) };
+      });
+      const headH = 29;
+      const panelBg = [238,238,238];
+      const drawChip = (x, y, n) => {            // small "photo" chip: icon + count
+        doc.setFillColor(222,222,222); doc.roundedRect(x, y-3.4, 10.5, 5, 2.5, 2.5, 'F');
+        doc.setDrawColor(100,100,100); doc.setLineWidth(0.25); doc.roundedRect(x+1.8, y-2.1, 3.4, 2.6, 0.4, 0.4, 'S');
+        doc.setFillColor(100,100,100); doc.triangle(x+2.2, y+0.2, x+3.5, y-1.2, x+4.8, y+0.2, 'F');
+        doc.setLineWidth(0.2); doc.setDrawColor(0);
+        doc.setFont('helvetica','bold'); doc.setFontSize(6.5); setTxt([80,80,80]);
+        doc.text(String(n), x+6, y+0.1);
+      };
+      const drawHeader = (y0) => {
+        doc.setFont('helvetica','normal'); doc.setFontSize(7.5); setTxt(GREY_TXT);
+        doc.text('Defects checklist', cardX+padX, y0+6);
+        doc.setFont('helvetica','normal'); doc.setFontSize(12); setTxt(DARK);
+        const nm = doc.splitTextToSize(h.defectChecklistName || 'Standard Defect Classification (AQL 2.5)', cardW - padX*2)[0];
+        doc.text(nm, cardX+padX, y0+13);
+        doc.setDrawColor(190,190,190); doc.setLineWidth(0.25); doc.line(cardX+padX, y0+16.5, cardX+cardW-padX, y0+16.5);
+        doc.setFont('helvetica','normal'); doc.setFontSize(9.5); setTxt(GREY_TXT);
+        doc.text('Total defects found', cardX+padX, y0+25);
+        [['CRITICAL',RED,dt.Critical],['MAJOR',ORG,dt.Major],['MINOR',YEL,dt.Minor]].forEach((s,i) => {
+          const cx = colsX + colW*i + colW/2;
+          doc.setFont('helvetica','bold'); doc.setFontSize(5.8);
+          const tw = doc.getTextWidth(s[0]) + 4;
+          doc.setFillColor(s[1][0],s[1][1],s[1][2]); doc.roundedRect(cx-tw/2, y0+19, tw, 4, 2, 2, 'F');
+          doc.setTextColor(255,255,255); doc.text(s[0], cx, y0+21.9, { align:'center' });
+          doc.setFont('helvetica','normal'); doc.setFontSize(10); setTxt(GREY_TXT);
+          doc.text(String(s[2]), cx, y0+27.3, { align:'center' });
+          if (i>0){ doc.setDrawColor(190,190,190); doc.line(colsX + colW*i, y0+18, colsX + colW*i, y0+28.5); }
+        });
+        doc.setLineWidth(0.2); doc.setDrawColor(0);
+      };
+      const drawRow = (lay, y0) => {
+        doc.setFillColor(255,255,255); doc.rect(cardX, y0, cardW, lay.h, 'F');
+        doc.setDrawColor(215,215,215); doc.setLineWidth(0.25); doc.line(cardX, y0+lay.h, cardX+cardW, y0+lay.h);
+        doc.setFont('helvetica','normal'); doc.setFontSize(9); setTxt(DARK);
+        const ty = y0 + lay.h/2 - (lay.lines.length-1)*2 + 1.1;
+        doc.text(lay.lines, cardX+padX, ty, { lineHeightFactor: 1.2 });
+        if (lay.r.pics){
+          const lastW = doc.getTextWidth(lay.lines[lay.lines.length-1]);
+          drawChip(cardX+padX+lastW+2.5, ty + (lay.lines.length-1)*4 - 0.4, lay.r.pics);
+        }
+        ['Critical','Major','Minor'].forEach((k,i) => {
+          const cx = colsX + colW*i + colW/2;
+          doc.setFont('helvetica','normal'); doc.setFontSize(9.5); setTxt(lay.r[k] ? DARK : GREY_TXT);
+          doc.text(lay.r[k] ? String(lay.r[k]) : '-', cx, y0 + lay.h/2 + 1.3, { align:'center' });
+          if (i>0){ doc.setDrawColor(215,215,215); doc.line(colsX + colW*i, y0, colsX + colW*i, y0+lay.h); }
+        });
+        doc.setLineWidth(0.2); doc.setDrawColor(0);
+      };
 
-      const catTotals = {};
-      DEFECT_CATEGORIES.forEach(cat => { catTotals[cat] = { Critical:0, Major:0, Minor:0 }; });
-      S.defects.forEach(d => { if (catTotals[d.category] && catTotals[d.category][d.severity]!==undefined) catTotals[d.category][d.severity] += Number(d.qty)||1; });
-      const usedCats = DEFECT_CATEGORIES.filter(cat => catTotals[cat].Critical + catTotals[cat].Major + catTotals[cat].Minor > 0);
-      if (usedCats.length){
-        table({ theme:'grid', head:[['Total defects found','Critical','Major','Minor']],
-          body: usedCats.map(cat => [cat, catTotals[cat].Critical||'-', catTotals[cat].Major||'-', catTotals[cat].Minor||'-']),
-          columnStyles:{0:{cellWidth:100}} });
-      } else {
-        doc.setFont('helvetica', S.noDefectsFound ? 'bold' : 'italic'); doc.setFontSize(8); doc.setTextColor(S.noDefectsFound ? 46 : 150, S.noDefectsFound ? 110 : 150, S.noDefectsFound ? 70 : 150);
-        doc.text(S.noDefectsFound ? 'No workmanship defects found during this inspection.' : 'No defects logged yet.', margin, ctx.y); ctx.y += 6;
+      if (!rowsLay.length){
+        ensureRoom(headH + 14);
+        const y0 = ctx.y;
+        doc.setFillColor(panelBg[0],panelBg[1],panelBg[2]); doc.roundedRect(cardX, y0, cardW, headH + 12, 2, 2, 'F');
+        drawHeader(y0);
+        doc.setFont('helvetica', S.noDefectsFound ? 'bold' : 'italic'); doc.setFontSize(8.5);
+        setTxt(S.noDefectsFound ? [46,110,70] : [140,140,140]);
+        doc.text(S.noDefectsFound ? 'No workmanship defects found during this inspection.' : 'No defects logged yet.', cardX+padX, y0 + headH + 7);
         doc.setTextColor(20,20,20);
+        ctx.y = y0 + headH + 16;
+      } else {
+        let i = 0, first = true;
+        while (i < rowsLay.length){
+          const need = (first ? headH : 3) + rowsLay[i].h + 2;
+          if (ctx.y + need > pageH - 14){ doc.addPage(); ctx.y = 16; }
+          const y0 = ctx.y;
+          let used = first ? headH : 3, j = i;
+          while (j < rowsLay.length && y0 + used + rowsLay[j].h + 2 <= pageH - 14){ used += rowsLay[j].h; j++; }
+          if (j === i){ used += rowsLay[j].h; j++; }
+          doc.setFillColor(panelBg[0],panelBg[1],panelBg[2]);
+          doc.roundedRect(cardX, y0, cardW, used + 2, 2, 2, 'F');
+          let yy = y0;
+          if (first){ drawHeader(y0); yy += headH; } else { yy += 3; }
+          for (let k = i; k < j; k++){ drawRow(rowsLay[k], yy); yy += rowsLay[k].h; }
+          ctx.y = yy + 6;
+          i = j; first = false;
+        }
       }
+      doc.setTextColor(20,20,20);
       ctx.y += 2;
     }
 
@@ -1411,7 +1669,7 @@ async function generatePdfReport(srcData){
     // ---------------- 04 on-site checkpoints & tests ----------------------------
     heading('04. On-Site Checkpoints & Tests \u2014 Section Result: ' + testsResult);
     table({ theme:'grid', head:[['Group','Checkpoint / Test','Applicable','Result','Comments / Report #']],
-      body: S.testCheckpoints.map(c=>[c.group,c.label,c.applicable,c.result||'-', c.isReport?c.testReportNumber:c.comments]),
+      body: S.testCheckpoints.map(c=>[c.group,c.label,c.applicable||'-',c.result||'-', c.isReport?c.testReportNumber:c.comments]),
       columnStyles:{1:{cellWidth:60}} });
     // ---------------- 05 workmanship ------------------------------------------
     heading('05. Workmanship \u2014 AQL Result: ' + (aql.result||'N/A'));
@@ -1988,13 +2246,13 @@ function renderSection02(){
 /* ---- 03. QUANTITY & PACKING CHECKPOINTS ---- */
 function renderSection03(){
   const results = state.packingCheckpoints.map(c=>c.result).filter(Boolean);
-  const sectionResult = results.includes('Fail') ? 'FAIL' : (results.length ? 'PASS' : 'N/A');
+  const sectionResult = results.includes('Fail') ? 'FAIL' : (results.includes('Pass') ? 'PASS' : 'N/A');
   let lastGroup = null;
   const rowsHtml = state.packingCheckpoints.map((c,i) => {
     const groupHd = c.group !== lastGroup ? `<tr class="rep-group-hd"><td colspan="4">${esc(c.group)}</td></tr>` : '';
     lastGroup = c.group;
     return groupHd + `
-      <tr>
+      <tr class="${state.showMissing && !c.result ? 'row-missing' : ''}">
         <td>${esc(c.label)}</td>
         <td><select class="result-select ${c.result==='Pass'?'PASS':c.result==='Fail'?'FAIL':''}" data-pk="${i}:result"><option value="">--</option><option ${c.result==='Pass'?'selected':''}>Pass</option><option ${c.result==='Fail'?'selected':''}>Fail</option><option ${c.result==='N/A'?'selected':''}>N/A</option></select></td>
         <td><input type="text" data-pk="${i}:comments" value="${esc(c.comments)}"></td>
@@ -2004,6 +2262,7 @@ function renderSection03(){
   return `
   <div class="panel panel-pad section-block">
     <h2 class="section-title">03. Quantity & Packing Checkpoints</h2>
+    <div class="subtle-note" style="margin:0 0 8px;">Every checkpoint needs a Result (Pass / Fail / N/A). The report cannot be submitted until all of them are selected.</div>
     <table class="rep-table">
       <thead><tr><th style="width:34%">Checkpoint</th><th>Result</th><th>Comments</th><th>Pictures</th></tr></thead>
       <tbody>${rowsHtml}</tbody>
@@ -2083,10 +2342,10 @@ function renderSection05(){
     }
     lastSubgroup = c.subgroup;
     return hd + `
-      <tr>
+      <tr class="${state.showMissing && (!c.applicable || !c.result) ? 'row-missing' : ''}">
         <td>${esc(c.label)}</td>
-        <td><select data-tc="${i}:applicable"><option ${c.applicable==='Yes'?'selected':''}>Yes</option><option ${c.applicable==='No'?'selected':''}>No</option></select></td>
-        <td><select class="result-select ${c.result==='Pass'?'PASS':c.result==='Fail'?'FAIL':''}" data-tc="${i}:result"><option value="">--</option><option ${c.result==='Pass'?'selected':''}>Pass</option><option ${c.result==='Fail'?'selected':''}>Fail</option><option ${c.result==='N/A'?'selected':''}>N/A</option></select></td>
+        <td><select data-tc="${i}:applicable"><option value="">--</option><option ${c.applicable==='Yes'?'selected':''}>Yes</option><option ${c.applicable==='No'?'selected':''}>No</option></select></td>
+        <td><select class="result-select ${c.result==='Pass'?'PASS':c.result==='Fail'?'FAIL':''}" data-tc="${i}:result" ${c.applicable==='No'?'disabled title="Not applicable \u2014 result is N/A"':''}><option value="">--</option><option ${c.result==='Pass'?'selected':''}>Pass</option><option ${c.result==='Fail'?'selected':''}>Fail</option><option ${c.result==='N/A'?'selected':''}>N/A</option></select></td>
         <td>${c.isReport
           ? `<input type="text" placeholder="Test report #" data-tc="${i}:testReportNumber" value="${esc(c.testReportNumber)}">`
           : `<input type="text" placeholder="Comments" data-tc="${i}:comments" value="${esc(c.comments)}">`}
@@ -2095,10 +2354,11 @@ function renderSection05(){
       </tr>`;
   }).join('');
   const results = state.testCheckpoints.map(c=>c.result).filter(Boolean);
-  const sectionResult = results.includes('Fail') ? 'FAIL' : (results.length ? 'PASS' : 'N/A');
+  const sectionResult = results.includes('Fail') ? 'FAIL' : (results.includes('Pass') ? 'PASS' : 'N/A');
   return `
   <div class="panel panel-pad section-block">
     <h2 class="section-title">04. On-Site Checkpoints & Tests</h2>
+    <div class="subtle-note" style="margin:0 0 8px;">Choose <b>Yes</b> or <b>No</b> in <b>Applicable</b> for every checkpoint. <b>Yes</b> sets the Result to Pass (you can change it); <b>No</b> sets it to N/A. The report cannot be submitted until every checkpoint is filled in.</div>
     <table class="rep-table">
       <thead><tr><th style="width:34%">Checkpoint / Test</th><th>Applicable</th><th>Result</th><th>Comments / Report #</th><th>Picture</th></tr></thead>
       <tbody>${rowsHtml}</tbody>
@@ -2492,7 +2752,12 @@ function bindEvents(){
   // ---- 05. Test checkpoints ----
   document.querySelectorAll('[data-tc]').forEach(el => el.onchange = (e) => {
     const [i, field] = el.dataset.tc.split(':');
-    state.testCheckpoints[Number(i)][field] = e.target.value;
+    const row = state.testCheckpoints[Number(i)];
+    row[field] = e.target.value;
+    if (field === 'applicable'){
+      // Yes -> Pass (can still be changed by hand); No -> N/A; blank -> clear
+      row.result = e.target.value === 'Yes' ? 'Pass' : (e.target.value === 'No' ? 'N/A' : '');
+    }
     render();
   });
 
@@ -2558,6 +2823,19 @@ function bindEvents(){
   if (submitBtn) submitBtn.onclick = () => {
     if (tcBlockIfGuest('Submitting a report')) return;
     state.remarks = document.getElementById('f_remarks').value;
+    const miss = missingCheckpoints_(state);
+    if (miss.m03.length || miss.m04.length){
+      state.showMissing = true;
+      render();
+      const parts = [];
+      if (miss.m03.length) parts.push('Section 03: ' + miss.m03.length + ' checkpoint(s) have no Result');
+      if (miss.m04.length) parts.push('Section 04: ' + miss.m04.length + ' checkpoint(s) need Applicable (Yes / No) and a Result');
+      alert('Report cannot be submitted yet.\n\n' + parts.join('\n') + '\n\nThe rows still to fill are highlighted in red.');
+      const first = document.querySelector('tr.row-missing');
+      if (first) first.scrollIntoView({ behavior:'smooth', block:'center' });
+      return;
+    }
+    state.showMissing = false;
     saveCurrentReport_(true);
   };
   const pdfBtn = document.querySelector('[data-action="download-pdf"]');
@@ -2611,6 +2889,7 @@ function loadReportIntoForm_(reportId, thenDownloadPdf){
 function resetEntryForm_(){
   Object.assign(state, emptyReportState());
   state.editingId = null;
+  state.showMissing = false;
   state.styleDetail = null;
   state.buyerOptions = []; state.irOptions = [];
 }
