@@ -342,6 +342,7 @@ function emptyReportState(){
     allQtyCheck: { comments:'', result:'', pictures:[] },
     cartonSelection: { totalCarton:'', pictures:[] },
     colorQty: [],
+    orderColors: [],
     sampleOverview: [ { styleId:'', styleName:'', orderQty:'', availableQty:'', cartonsAvailable:'', cartonsSelected:'', actualSampleInspected:'', remarks:'' } ],
     styleOverviewPics: { pictures:[] },
     cartonQtySelection: { totalCartonsPackingList:'', randomSelectionPerformed:'Yes', selectedCartonNumbers:'', pictures:[] },
@@ -538,7 +539,9 @@ async function loadStyleDetail(sbu, buyer, ir){
     state.header.season = d.season || '';
     state.header.actualOrderQty = d.totalQty || '';
     if (!state.header.orderQty) state.header.orderQty = d.totalQty || '';
-    state.colorQty = (d.colors || []).map(c => ({ color: c.color, qty: c.qty, readyQty:'', cartonQty:'', selectedCartonNo:'' }));
+    state.orderColors = (d.colors || []).map(c => ({ color: c.color, qty: c.qty }));
+    // Colours are picked from a dropdown. When re-opening a saved report keep what was entered.
+    if (!(state.editingId && state.colorQty && state.colorQty.length)) state.colorQty = [{ color:'', qty:'', readyQty:'', cartonQty:'' }];
     state.sampleOverview = [{
       styleId: ir || '', styleName: d.styleName || '', orderQty: d.totalQty || '',
       availableQty:'', cartonsAvailable:'', cartonsSelected:'', actualSampleInspected:'', remarks:''
@@ -967,55 +970,52 @@ async function generatePdfReport(srcData){
       doc.text(caption, margin, ctx.y); ctx.y += 5.5;
       doc.setTextColor(20,20,20);
 
-      const colW = (pageW - margin*2 - 6) / 2;
-      const maxH = 50;
-
+      // Boxed grid, 3 per row, caption under each box (same look as the sample report).
+      // Every photo option is listed: a slot with no photo is drawn as an empty box.
+      const COLS = 3, GAP = 4;
+      const boxW = (pageW - margin*2 - GAP*(COLS-1)) / COLS;
+      const boxH = 36;
+      const slots = [];
       for (const g of groups){
-        ensureRoom(9);
-        doc.setFont('helvetica','bold'); doc.setFontSize(8.5); doc.setTextColor(40,40,40);
-        doc.text(String(g.label || ''), margin, ctx.y); ctx.y += 4;
-        doc.setTextColor(20,20,20);
-
-        if (!g.pics.length){
-          doc.setFont('helvetica','italic'); doc.setFontSize(7.5); doc.setTextColor(150,150,150);
-          doc.text('No photo added.', margin, ctx.y); ctx.y += 6;
-          doc.setTextColor(20,20,20);
-          continue;
-        }
-
-        let col = 0, rowTop = ctx.y, rowH = 0;
-        for (const p of g.pics){
-          const data = await picJpegDataUrl_(p);
-          if (col === 0){ ensureRoom(maxH + 6); rowTop = ctx.y; rowH = 0; }
-          const x = margin + col * (colW + 6);
-          let drawnH = 8;
-          if (data){
-            let props = null;
-            try { props = doc.getImageProperties(data); } catch(e){ props = null; }
-            let w = colW, hgt = maxH;
-            if (props && props.width && props.height){
-              hgt = colW * props.height / props.width;
-              if (hgt > maxH){ hgt = maxH; w = maxH * props.width / props.height; }
+        if (!g.pics.length) slots.push({ label: String(g.label || ''), pic: null });
+        else for (const p of g.pics) slots.push({ label: String(g.label || ''), pic: p });
+      }
+      doc.setFont('helvetica','normal'); doc.setFontSize(7.5);
+      for (let i = 0; i < slots.length; i += COLS){
+        const row = slots.slice(i, i + COLS);
+        doc.setFont('helvetica','normal'); doc.setFontSize(7.5);
+        const caps = row.map(sl => doc.splitTextToSize(sl.label, boxW - 1).slice(0, 3));
+        const capH = Math.max.apply(null, caps.map(c => c.length)) * 3.2;
+        ensureRoom(boxH + capH + 7);
+        const top = ctx.y;
+        for (let k = 0; k < row.length; k++){
+          const x = margin + k * (boxW + GAP);
+          doc.setDrawColor(215,215,215); doc.setFillColor(240,240,240); doc.setLineWidth(0.2);
+          doc.rect(x, top, boxW, boxH, 'FD');
+          const sl = row[k];
+          if (sl.pic){
+            const data = await picJpegDataUrl_(sl.pic);
+            if (data){
+              let props = null;
+              try { props = doc.getImageProperties(data); } catch(e){ props = null; }
+              const iw = boxW - 3, ih = boxH - 3;
+              let w = iw, hgt = ih;
+              if (props && props.width && props.height){
+                const sc = Math.min(iw / props.width, ih / props.height);
+                w = props.width * sc; hgt = props.height * sc;
+              }
+              try { doc.addImage(data, 'JPEG', x + (boxW - w)/2, top + (boxH - hgt)/2, w, hgt); }
+              catch(e){ doc.setFont('helvetica','italic'); doc.setFontSize(7); doc.setTextColor(170,70,70); doc.text('[image could not be embedded]', x + 2, top + 6); }
+            } else {
+              doc.setFont('helvetica','italic'); doc.setFontSize(7); doc.setTextColor(170,70,70);
+              doc.text('[photo not retrievable]', x + 2, top + 6);
             }
-            try {
-              doc.addImage(data, 'JPEG', x, rowTop, w, hgt);
-              drawnH = hgt;
-            } catch(e){
-              doc.setFont('helvetica','italic'); doc.setFontSize(7.5); doc.setTextColor(170,70,70);
-              doc.text('[image could not be embedded]', x, rowTop + 5);
-              doc.setTextColor(20,20,20);
-            }
-          } else {
-            doc.setFont('helvetica','italic'); doc.setFontSize(7.5); doc.setTextColor(170,70,70);
-            doc.text('[photo not retrievable \u2014 open the Drive link]', x, rowTop + 5);
-            doc.setTextColor(20,20,20);
           }
-          rowH = Math.max(rowH, drawnH);
-          col++;
-          if (col === 2){ col = 0; ctx.y = rowTop + rowH + 4; }
+          doc.setFont('helvetica','normal'); doc.setFontSize(7.5); doc.setTextColor(30,30,30);
+          doc.text(caps[k], x, top + boxH + 3.6);
         }
-        if (col === 1) ctx.y = rowTop + rowH + 4;
-        ctx.y += 3;
+        doc.setTextColor(20,20,20);
+        ctx.y = top + boxH + capH + 5;
       }
       ctx.y += 2;
     }
@@ -1377,9 +1377,10 @@ async function generatePdfReport(srcData){
     if (S.allQtyCheck.result || S.allQtyCheck.comments){
       table({ theme:'plain', body:[['All Qty/Cartons Available', S.allQtyCheck.result||'-', S.allQtyCheck.comments||'']] });
     }
-    if (S.colorQty.length){
-      table({ theme:'grid', head:[['Color','Actual Order Qty','Order Qty Ready','Color wise Carton Qty','Selected Carton No']],
-        body: S.colorQty.map(c=>[c.color, c.qty, c.readyQty||'-', c.cartonQty||'-', c.selectedCartonNo||'-']) });
+    const pdfColors_ = (S.colorQty || []).filter(c => c.color);
+    if (pdfColors_.length){
+      table({ theme:'grid', head:[['Color','Actual Order Qty','Order Qty Ready','Color wise Carton Qty']],
+        body: pdfColors_.map(c=>[c.color, c.qty, c.readyQty||'-', c.cartonQty||'-']) });
     }
     // ---------------- 02 sample overview -------------------------------------
     heading('02. Sample Selection & AQL Plan');
@@ -1391,8 +1392,12 @@ async function generatePdfReport(srcData){
                 S.cartonQtySelection.randomSelectionPerformed||'-',
                 S.cartonQtySelection.selectedCartonNumbers||'-' ]] });
     }
-    table({ theme:'grid', head:[['Style ID','Style Name','Order Qty','Avail. Qty','Cartons Avail.','Cartons Sel.','Sample Insp.','Remarks']],
-      body: S.sampleOverview.map(r=>[r.styleId,r.styleName,r.orderQty,r.availableQty,r.cartonsAvailable,r.cartonsSelected,r.actualSampleInspected,r.remarks]) });
+    // Style / Assortment Overview was removed from the form; older reports that still hold data in it keep it here.
+    const legacyOverview_ = (S.sampleOverview || []).filter(r => r.availableQty || r.cartonsAvailable || r.cartonsSelected || r.actualSampleInspected || r.remarks);
+    if (legacyOverview_.length){
+      table({ theme:'grid', head:[['Style ID','Style Name','Order Qty','Avail. Qty','Cartons Avail.','Cartons Sel.','Sample Insp.','Remarks']],
+        body: legacyOverview_.map(r=>[r.styleId,r.styleName,r.orderQty,r.availableQty,r.cartonsAvailable,r.cartonsSelected,r.actualSampleInspected,r.remarks]) });
+    }
 
     // ---------------- 03 packing checkpoints ---------------------------------
     heading('03. Quantity & Packing Checkpoints \u2014 Section Result: ' + packingResult);
@@ -1813,9 +1818,7 @@ function renderSection01(h, aql){
       <div class="f" style="flex:1;min-width:220px;"><span class="field-label">Comments</span><input type="text" data-aq="comments" value="${esc(state.allQtyCheck.comments)}"></div>
     </div>
 
-    ${renderStyleOverviewTable()}
-
-    <div class="row" style="align-items:flex-end;margin-top:18px;">
+    <div class="row" style="align-items:flex-end;margin-top:12px;">
       <div class="f"><span class="field-label">All Ready Carton Picture</span>${pictureWidget('allQty', '0')}</div>
     </div>
 
@@ -1823,66 +1826,47 @@ function renderSection01(h, aql){
   </div>`;
 }
 
-/* ---- Style / Assortment Overview (lives inside 01, right after All Quantities & Cartons Available) ---- */
-function renderStyleOverviewTable(){
-  const rows = state.sampleOverview;
-  const totalOrder = rows.reduce((s,r)=>s+(Number(r.orderQty)||0),0);
-  const totalAvail = rows.reduce((s,r)=>s+(Number(r.availableQty)||0),0);
-  const totalCartonsAvail = rows.reduce((s,r)=>s+(Number(r.cartonsAvailable)||0),0);
-  const totalCartonsSel = rows.reduce((s,r)=>s+(Number(r.cartonsSelected)||0),0);
-  const totalActualSample = rows.reduce((s,r)=>s+(Number(r.actualSampleInspected)||0),0);
-  return `
-    <h3 class="section-title" style="margin-top:20px;font-size:12.5px;">Style / Assortment Overview</h3>
-    <table class="rep-table">
-      <thead><tr><th>Style ID</th><th>Style Name / Description</th><th>Order Qty</th><th>Available Qty</th><th>Available %</th><th>Cartons Available</th><th>Cartons Selected</th><th>Actual Sample Inspected</th><th>Remarks</th><th></th></tr></thead>
-      <tbody>
-        ${rows.map((r,i)=>`
-          <tr>
-            <td><input type="text" data-so="${i}:styleId" value="${esc(r.styleId)}"></td>
-            <td><input type="text" data-so="${i}:styleName" value="${esc(r.styleName)}"></td>
-            <td><input type="number" data-so="${i}:orderQty" value="${esc(r.orderQty)}"></td>
-            <td><input type="number" data-so="${i}:availableQty" value="${esc(r.availableQty)}"></td>
-            <td>${r.orderQty ? fmt1((Number(r.availableQty)||0)/Number(r.orderQty)*100)+'%' : ''}</td>
-            <td><input type="number" data-so="${i}:cartonsAvailable" value="${esc(r.cartonsAvailable)}"></td>
-            <td><input type="number" data-so="${i}:cartonsSelected" value="${esc(r.cartonsSelected)}"></td>
-            <td><input type="number" data-so="${i}:actualSampleInspected" value="${esc(r.actualSampleInspected)}"></td>
-            <td><input type="text" data-so="${i}:remarks" value="${esc(r.remarks)}"></td>
-            <td>${rows.length>1?`<button type="button" class="btn danger small" data-so-remove="${i}">&#10005;</button>`:''}</td>
-          </tr>`).join('')}
-        <tr class="rep-group-hd"><td colspan="2">TOTAL</td><td>${totalOrder}</td><td>${totalAvail}</td><td></td><td>${totalCartonsAvail}</td><td>${totalCartonsSel}</td><td>${totalActualSample}</td><td colspan="2"></td></tr>
-      </tbody>
-    </table>
-    <div class="row" style="align-items:flex-end;margin-top:8px;">
-      <button type="button" class="btn ghost small row-add-btn" data-action="add-overview-row">+ Add Style Row</button>
-    </div>`;
-}
-
 /* ---- Quantity: colour-wise status (colours come from Order Information) ---- */
 function renderColourQtyTable(){
+  const manual = state.header.dataMode === 'manual';
   const rows = state.colorQty || [];
+  const opts = state.orderColors || [];
   const tOrder = rows.reduce((s,c)=>s+(Number(c.qty)||0),0);
   const tReady = rows.reduce((s,c)=>s+(Number(c.readyQty)||0),0);
   const tCarton = rows.reduce((s,c)=>s+(Number(c.cartonQty)||0),0);
+  const usedAll = opts.length > 0 && opts.every(o => rows.some(r => r.color === o.color));
+  const colorCell = (c,i) => {
+    if (manual) return `<b>${esc(c.color)}</b>`;
+    const taken = new Set(rows.filter((_,j)=>j!==i).map(x=>x.color).filter(Boolean));
+    const choices = opts.filter(o => !taken.has(o.color));
+    const missing = c.color && !choices.some(o => o.color === c.color);
+    return `<select data-cq="${i}:color"><option value="">-- Select colour --</option>
+      ${choices.map(o=>`<option value="${esc(o.color)}" ${o.color===c.color?'selected':''}>${esc(o.color)}</option>`).join('')}
+      ${missing ? `<option value="${esc(c.color)}" selected>${esc(c.color)}</option>` : ''}</select>`;
+  };
   return `
     <h3 class="section-title" style="margin-top:22px;font-size:12.5px;">Quantity <span class="tag">colour-wise status</span></h3>
     <table class="rep-table">
       <thead>
-        <tr><th>Color</th><th>Actual Order Qty</th><th>Order Qty Ready</th><th>Color wise Carton Qty</th><th>Selected Carton No</th></tr>
+        <tr><th>Color</th><th>Actual Order Qty</th><th>Order Qty Ready</th><th>Color wise Carton Qty</th>${manual ? '' : '<th></th>'}</tr>
       </thead>
       <tbody>
         ${rows.length ? rows.map((c,i)=>`
           <tr>
-            <td><b>${esc(c.color)}</b></td>
-            <td>${(Number(c.qty)||0).toLocaleString()}</td>
+            <td>${colorCell(c,i)}</td>
+            <td>${c.color ? (Number(c.qty)||0).toLocaleString() : '-'}</td>
             <td><input type="number" data-cq="${i}:readyQty" value="${esc(c.readyQty)}"></td>
             <td><input type="number" data-cq="${i}:cartonQty" value="${esc(c.cartonQty)}"></td>
-            <td><input type="text" data-cq="${i}:selectedCartonNo" value="${esc(c.selectedCartonNo)}"></td>
+            ${manual ? '' : `<td>${rows.length>1 ? `<button type="button" class="btn danger small" data-cq-remove="${i}">&#10005;</button>` : ''}</td>`}
           </tr>`).join('')
-        : `<tr><td colspan="5" style="color:var(--muted)">Select SBU &rarr; Buyer &rarr; IR above &mdash; the colours and their Actual Order Qty load straight from Order Information.</td></tr>`}
-        ${rows.length ? `<tr class="rep-group-hd"><td>TOTAL</td><td>${tOrder.toLocaleString()}</td><td>${tReady.toLocaleString()}</td><td>${tCarton.toLocaleString()}</td><td></td></tr>` : ''}
+        : `<tr><td colspan="${manual?4:5}" style="color:var(--muted)">Select SBU &rarr; Buyer &rarr; IR above &mdash; the colours from Order Information then appear in the Color dropdown.</td></tr>`}
+        ${rows.length ? `<tr class="rep-group-hd"><td>TOTAL</td><td>${tOrder.toLocaleString()}</td><td>${tReady.toLocaleString()}</td><td>${tCarton.toLocaleString()}</td>${manual ? '' : '<td></td>'}</tr>` : ''}
       </tbody>
     </table>
-    <div class="subtle-note">Colour and Actual Order Qty are read-only &mdash; they mirror Order Information so the two can never drift apart. Enter what is actually ready per colour in <b>Order Qty Ready</b>.</div>`;
+    ${manual ? '' : `<div class="row" style="align-items:flex-end;margin-top:8px;">
+      <button type="button" class="btn ghost small row-add-btn" data-action="add-color-row" ${(!opts.length || usedAll) ? 'disabled' : ''}>+ Add Colour</button>
+    </div>`}
+    <div class="subtle-note">Pick the colour from the dropdown (colours come from Order Information) &mdash; its Actual Order Qty fills in automatically. Then enter the <b>Order Qty Ready</b> and <b>Color wise Carton Qty</b>.</div>`;
 }
 
 /* ---- Auto / Manual toggle for Order/Style Information ---- */
@@ -2386,7 +2370,7 @@ function bindEvents(){
   });
   const addManualColor = document.querySelector('[data-action="add-manual-color"]');
   if (addManualColor) addManualColor.onclick = () => {
-    state.colorQty.push({ color:'', qty:'', readyQty:'', cartonQty:'', selectedCartonNo:'' });
+    state.colorQty.push({ color:'', qty:'', readyQty:'', cartonQty:'' });
     render();
   };
 
@@ -2418,9 +2402,23 @@ function bindEvents(){
   document.querySelectorAll('[data-cqs]').forEach(el => el.onchange = (e) => { state.cartonQtySelection[el.dataset.cqs] = e.target.value; render(); });
   document.querySelectorAll('[data-cq]').forEach(el => el.onchange = (e) => {
     const [i, field] = el.dataset.cq.split(':');
-    state.colorQty[Number(i)][field] = e.target.value;
+    const row = state.colorQty[Number(i)];
+    row[field] = e.target.value;
+    if (field === 'color'){
+      const o = (state.orderColors || []).find(x => x.color === e.target.value);
+      row.qty = o ? o.qty : '';
+    }
     render();
   });
+  document.querySelectorAll('[data-cq-remove]').forEach(el => el.onclick = () => {
+    state.colorQty.splice(Number(el.dataset.cqRemove), 1);
+    render();
+  });
+  const addColorRow = document.querySelector('[data-action="add-color-row"]');
+  if (addColorRow) addColorRow.onclick = () => {
+    state.colorQty.push({ color:'', qty:'', readyQty:'', cartonQty:'' });
+    render();
+  };
 
   // ---- 02. Sample overview rows ----
   document.querySelectorAll('[data-so]').forEach(el => el.onchange = (e) => {
