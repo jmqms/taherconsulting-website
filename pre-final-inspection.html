@@ -1290,129 +1290,7 @@ async function generatePdfReport(srcData){
     doc.setTextColor(20,20,20);
     ctx.y += 13;
 
-    // ---------------- Workmanship + Tests&Checkpoints (left) / site & inspector (right) --
-    {
-      const gap = 6, rightW = 55, leftW = (pageW - margin*2) - gap - rightW;
-      const lx = margin, rx = margin + leftW + gap;
-      ensureRoom(26);
-      let ly = ctx.y, ry = ctx.y;
-
-      // -- Workmanship card --
-      const totalDef = dt.Critical + dt.Major + dt.Minor;
-      const sampleSizeN = aql.sampleSize || 0;
-      const defRate = sampleSizeN ? fmt1(totalDef/sampleSizeN*100) : '0.0';
-      const wmH = 24;
-      fitRoundedRect(lx, ly, leftW, wmH, [232,245,233]);
-      doc.setFont('helvetica','bold'); doc.setFontSize(10); doc.setTextColor(20,110,60);
-      doc.text('Workmanship', lx+4, ly+7);
-      pillRight(aql.result||'N/A', lx+leftW-4, ly+7, aql.result);
-      doc.setFont('helvetica','normal'); doc.setFontSize(8); doc.setTextColor(70,70,70);
-      doc.text('Defective rate: ' + defRate + '% (' + totalDef + '/' + sampleSizeN + ')', lx+4, ly+13.5);
-      let bx = lx+4;
-      bx += countBadge('CRI', dt.Critical, bx, ly+19, [211,47,47]) + 3;
-      bx += countBadge('MAJ', dt.Major, bx, ly+19, [230,150,20]) + 3;
-      countBadge('MIN', dt.Minor, bx, ly+19, [225,190,20]);
-      ly += wmH + 4;
-
-      // -- Tests & Checkpoints card --
-      const rows07 = [
-        ['Quantity & Packing Checkpoints', packingResult],
-        ['On-Site Checkpoints & Tests', testsResult],
-        ['Measurements', measResult||'N/A'],
-      ];
-      const passedN = rows07.filter(r=>r[1]==='PASS').length;
-      const naN = rows07.filter(r=>r[1]==='N/A').length;
-      const tcH = 10 + rows07.length*6;
-      fitRoundedRect(lx, ly, leftW, tcH, [232,245,233]);
-      doc.setFont('helvetica','bold'); doc.setFontSize(10); doc.setTextColor(20,110,60);
-      doc.text('Tests & checkpoints', lx+4, ly+7);
-      pillRight(testsResult, lx+leftW-4, ly+7, testsResult);
-      doc.setFont('helvetica','normal'); doc.setFontSize(7.5); doc.setTextColor(70,70,70);
-      doc.text(passedN + ' passed, ' + naN + ' N/A of ' + rows07.length, lx+4, ly+12.5);
-      let ry2 = ly + 17;
-      rows07.forEach(r=>{
-        doc.setFont('helvetica','normal'); doc.setFontSize(7.5); doc.setTextColor(50,50,50);
-        doc.text(r[0], lx+4, ry2);
-        pillRight(r[1], lx+leftW-4, ry2, r[1]);
-        ry2 += 6;
-      });
-      ly += tcH + 4;
-
-      // -- Inspection site card (right column) --
-      const addrLines = doc.splitTextToSize('South Nayapara, 6 No Dogri, Bhawal Mirzapur, Gazipur, Bangladesh', rightW-8);
-      const siteH = 12 + addrLines.length*3.6;
-      fitRoundedRect(rx, ry, rightW, siteH, [237,239,244]);
-      doc.setFont('helvetica','bold'); doc.setFontSize(8.5); doc.setTextColor(40,40,40);
-      doc.text('Inspection site', rx+4, ry+6);
-      doc.setFont('helvetica','normal'); doc.setFontSize(7.5); doc.setTextColor(60,60,60);
-      doc.text(h.factoryName || 'J.M. Fabrics Ltd.', rx+4, ry+11);
-      doc.setFontSize(6.8); doc.setTextColor(100,100,100);
-      doc.text(addrLines, rx+4, ry+15);
-      ry += siteH + 4;
-
-      // -- Inspector card (right column) --
-      const inspH = 15;
-      fitRoundedRect(rx, ry, rightW, inspH, [237,239,244]);
-      doc.setFont('helvetica','bold'); doc.setFontSize(8.5); doc.setTextColor(40,40,40);
-      doc.text('Inspector', rx+4, ry+6);
-      doc.setFont('helvetica','normal'); doc.setFontSize(7.5); doc.setTextColor(60,60,60);
-      doc.text(h.inspectorName || '-', rx+4, ry+11);
-      doc.setFontSize(6.8); doc.setTextColor(100,100,100);
-      doc.text('From: ' + (h.factoryName || 'J.M. Fabrics Ltd.'), rx+4, ry+14.5);
-      ry += inspH + 4;
-
-      ctx.y = Math.max(ly, ry);
-      doc.setTextColor(20,20,20);
-    }
-
-    // ---------------- Inspector's remark card ----------------------------------
-    if (S.remarks){
-      ensureRoom(16);
-      const lines = doc.splitTextToSize(S.remarks, pageW - margin*2 - 8);
-      const rH = 12 + lines.length*3.8;
-      fitRoundedRect(margin, ctx.y, pageW - margin*2, rH, [255,243,224]);
-      doc.setFont('helvetica','bold'); doc.setFontSize(9); doc.setTextColor(150,100,10);
-      doc.text('Inspector\u2019s remark', margin+4, ctx.y+6.5);
-      doc.setFont('helvetica','normal'); doc.setFontSize(7.8); doc.setTextColor(60,50,30);
-      doc.text(lines, margin+4, ctx.y+11.5);
-      ctx.y += rH + 4;
-      doc.setTextColor(20,20,20);
-    }
-
-    // ---------------- PO & Product details card ---------------------------------
-    {
-      const poRows = [
-        ['PO ref', h.poNo || '-', 'Entity responsible', h.factoryName || '-'],
-        ['Style', [h.styleId,h.styleName].filter(Boolean).join(' \u2014 ') || '-', 'Item / Dept', [h.item,h.productDept].filter(Boolean).join(' / ') || '-'],
-        ['Order Qty', h.orderQty || '-', 'Offer Qty', h.offerQty || '-'],
-        ['Season', h.season || '-', 'SBU / Buyer', [h.sbu,h.buyer].filter(Boolean).join(' / ') || '-'],
-      ];
-      const pdH = 10 + poRows.length*6;
-      ensureRoom(pdH + 4);
-      fitRoundedRect(margin, ctx.y, pageW - margin*2, pdH, [227,242,253]);
-      doc.setFont('helvetica','bold'); doc.setFontSize(9); doc.setTextColor(20,70,130);
-      doc.text('PO & Product details', margin+4, ctx.y+6.5);
-      let py = ctx.y + 12;
-      const colA = margin+4, colB = margin+4+ (pageW-margin*2)/2;
-      poRows.forEach(r=>{
-        doc.setFont('helvetica','bold'); doc.setFontSize(7.3); doc.setTextColor(50,80,110);
-        // Measure the label widths while the bold font is still active — measuring
-        // after switching to normal under-measures bold glyphs and makes the value
-        // text overlap the tail of the label (the "squished together" look in the PDF).
-        const labelAw = doc.getTextWidth(r[0] + ':  ');
-        const labelBw = doc.getTextWidth(r[2] + ':  ');
-        doc.text(r[0]+':', colA, py);
-        doc.text(r[2]+':', colB, py);
-        doc.setFont('helvetica','normal'); doc.setTextColor(40,40,40);
-        doc.text(String(r[1]), colA + labelAw, py);
-        doc.text(String(r[3]), colB + labelBw, py);
-        py += 6;
-      });
-      ctx.y += pdH + 6;
-      doc.setTextColor(20,20,20);
-    }
-
-    // ---------------- Workmanship details card (page 1, before 00.) ---------
+    // ---------------- Workmanship details card (page 1, straight under the overall result) ---------
     {
       const cardX = margin, cardW = pageW - margin*2;
       const totalDef = dt.Critical + dt.Major + dt.Minor;
@@ -1423,7 +1301,7 @@ async function generatePdfReport(srcData){
       const GREY_TXT = [120,120,120], DARK = [30,30,30];
       const setTxt = c => doc.setTextColor(c[0],c[1],c[2]);
 
-      ensureRoom(100);
+      ensureRoom(88);
       let cy = ctx.y;
 
       // -- Header bar: "Workmanship" + result pill --
@@ -1608,6 +1486,111 @@ async function generatePdfReport(srcData){
       }
       doc.setTextColor(20,20,20);
       ctx.y += 2;
+    }
+
+    // ---------------- Workmanship + Tests&Checkpoints (left) / site & inspector (right) --
+    {
+      const gap = 6, rightW = 55, leftW = (pageW - margin*2) - gap - rightW;
+      const lx = margin, rx = margin + leftW + gap;
+      ensureRoom(42);
+      let ly = ctx.y, ry = ctx.y;
+
+      // -- Tests & Checkpoints card --
+      const rows07 = [
+        ['Quantity & Packing Checkpoints', packingResult],
+        ['On-Site Checkpoints & Tests', testsResult],
+        ['Measurements', measResult||'N/A'],
+      ];
+      const passedN = rows07.filter(r=>r[1]==='PASS').length;
+      const naN = rows07.filter(r=>r[1]==='N/A').length;
+      const tcH = 10 + rows07.length*6;
+      fitRoundedRect(lx, ly, leftW, tcH, [232,245,233]);
+      doc.setFont('helvetica','bold'); doc.setFontSize(10); doc.setTextColor(20,110,60);
+      doc.text('Tests & checkpoints', lx+4, ly+7);
+      pillRight(testsResult, lx+leftW-4, ly+7, testsResult);
+      doc.setFont('helvetica','normal'); doc.setFontSize(7.5); doc.setTextColor(70,70,70);
+      doc.text(passedN + ' passed, ' + naN + ' N/A of ' + rows07.length, lx+4, ly+12.5);
+      let ry2 = ly + 17;
+      rows07.forEach(r=>{
+        doc.setFont('helvetica','normal'); doc.setFontSize(7.5); doc.setTextColor(50,50,50);
+        doc.text(r[0], lx+4, ry2);
+        pillRight(r[1], lx+leftW-4, ry2, r[1]);
+        ry2 += 6;
+      });
+      ly += tcH + 4;
+
+      // -- Inspection site card (right column) --
+      const addrLines = doc.splitTextToSize('South Nayapara, 6 No Dogri, Bhawal Mirzapur, Gazipur, Bangladesh', rightW-8);
+      const siteH = 12 + addrLines.length*3.6;
+      fitRoundedRect(rx, ry, rightW, siteH, [237,239,244]);
+      doc.setFont('helvetica','bold'); doc.setFontSize(8.5); doc.setTextColor(40,40,40);
+      doc.text('Inspection site', rx+4, ry+6);
+      doc.setFont('helvetica','normal'); doc.setFontSize(7.5); doc.setTextColor(60,60,60);
+      doc.text(h.factoryName || 'J.M. Fabrics Ltd.', rx+4, ry+11);
+      doc.setFontSize(6.8); doc.setTextColor(100,100,100);
+      doc.text(addrLines, rx+4, ry+15);
+      ry += siteH + 4;
+
+      // -- Inspector card (right column) --
+      const inspH = 15;
+      fitRoundedRect(rx, ry, rightW, inspH, [237,239,244]);
+      doc.setFont('helvetica','bold'); doc.setFontSize(8.5); doc.setTextColor(40,40,40);
+      doc.text('Inspector', rx+4, ry+6);
+      doc.setFont('helvetica','normal'); doc.setFontSize(7.5); doc.setTextColor(60,60,60);
+      doc.text(h.inspectorName || '-', rx+4, ry+11);
+      doc.setFontSize(6.8); doc.setTextColor(100,100,100);
+      doc.text('From: ' + (h.factoryName || 'J.M. Fabrics Ltd.'), rx+4, ry+14.5);
+      ry += inspH + 4;
+
+      ctx.y = Math.max(ly, ry);
+      doc.setTextColor(20,20,20);
+    }
+
+    // ---------------- Inspector's remark card ----------------------------------
+    if (S.remarks){
+      ensureRoom(16);
+      const lines = doc.splitTextToSize(S.remarks, pageW - margin*2 - 8);
+      const rH = 12 + lines.length*3.8;
+      fitRoundedRect(margin, ctx.y, pageW - margin*2, rH, [255,243,224]);
+      doc.setFont('helvetica','bold'); doc.setFontSize(9); doc.setTextColor(150,100,10);
+      doc.text('Inspector\u2019s remark', margin+4, ctx.y+6.5);
+      doc.setFont('helvetica','normal'); doc.setFontSize(7.8); doc.setTextColor(60,50,30);
+      doc.text(lines, margin+4, ctx.y+11.5);
+      ctx.y += rH + 4;
+      doc.setTextColor(20,20,20);
+    }
+
+    // ---------------- PO & Product details card ---------------------------------
+    {
+      const poRows = [
+        ['PO ref', h.poNo || '-', 'Entity responsible', h.factoryName || '-'],
+        ['Style', [h.styleId,h.styleName].filter(Boolean).join(' \u2014 ') || '-', 'Item / Dept', [h.item,h.productDept].filter(Boolean).join(' / ') || '-'],
+        ['Order Qty', h.orderQty || '-', 'Offer Qty', h.offerQty || '-'],
+        ['Season', h.season || '-', 'SBU / Buyer', [h.sbu,h.buyer].filter(Boolean).join(' / ') || '-'],
+      ];
+      const pdH = 10 + poRows.length*6;
+      ensureRoom(pdH + 4);
+      fitRoundedRect(margin, ctx.y, pageW - margin*2, pdH, [227,242,253]);
+      doc.setFont('helvetica','bold'); doc.setFontSize(9); doc.setTextColor(20,70,130);
+      doc.text('PO & Product details', margin+4, ctx.y+6.5);
+      let py = ctx.y + 12;
+      const colA = margin+4, colB = margin+4+ (pageW-margin*2)/2;
+      poRows.forEach(r=>{
+        doc.setFont('helvetica','bold'); doc.setFontSize(7.3); doc.setTextColor(50,80,110);
+        // Measure the label widths while the bold font is still active — measuring
+        // after switching to normal under-measures bold glyphs and makes the value
+        // text overlap the tail of the label (the "squished together" look in the PDF).
+        const labelAw = doc.getTextWidth(r[0] + ':  ');
+        const labelBw = doc.getTextWidth(r[2] + ':  ');
+        doc.text(r[0]+':', colA, py);
+        doc.text(r[2]+':', colB, py);
+        doc.setFont('helvetica','normal'); doc.setTextColor(40,40,40);
+        doc.text(String(r[1]), colA + labelAw, py);
+        doc.text(String(r[3]), colB + labelBw, py);
+        py += 6;
+      });
+      ctx.y += pdH + 6;
+      doc.setTextColor(20,20,20);
     }
 
     // ---------------- 00 sampling plan & AQL --------------------------------
