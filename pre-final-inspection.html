@@ -1492,54 +1492,62 @@ async function generatePdfReport(srcData){
     {
       const gap = 6, rightW = 55, leftW = (pageW - margin*2) - gap - rightW;
       const lx = margin, rx = margin + leftW + gap;
-      ensureRoom(42);
+      ensureRoom(56);
       let ly = ctx.y, ry = ctx.y;
 
-      // -- Tests & Checkpoints card --
+      // -- Tests & Checkpoints card: numbered rows, thin green dividers, one pill per row --
       const rows07 = [
         ['Quantity & Packing Checkpoints', packingResult],
         ['On-Site Checkpoints & Tests', testsResult],
-        ['Measurements', measResult||'N/A'],
+        ['Workmanship (AQL)', aql.result || 'N/A'],
+        ['Measurements', measResult || 'N/A'],
       ];
       const passedN = rows07.filter(r=>r[1]==='PASS').length;
       const naN = rows07.filter(r=>r[1]==='N/A').length;
-      const tcH = 10 + rows07.length*6;
+      const rowH7 = 8.5, headH7 = 19;
+      const tcH = headH7 + rows07.length*rowH7 + 3;
       fitRoundedRect(lx, ly, leftW, tcH, [232,245,233]);
-      doc.setFont('helvetica','bold'); doc.setFontSize(10); doc.setTextColor(20,110,60);
-      doc.text('Tests & checkpoints', lx+4, ly+7);
-      pillRight(testsResult, lx+leftW-4, ly+7, testsResult);
-      doc.setFont('helvetica','normal'); doc.setFontSize(7.5); doc.setTextColor(70,70,70);
-      doc.text(passedN + ' passed, ' + naN + ' N/A of ' + rows07.length, lx+4, ly+12.5);
-      let ry2 = ly + 17;
-      rows07.forEach(r=>{
-        doc.setFont('helvetica','normal'); doc.setFontSize(7.5); doc.setTextColor(50,50,50);
-        doc.text(r[0], lx+4, ry2);
-        pillRight(r[1], lx+leftW-4, ry2, r[1]);
-        ry2 += 6;
+      doc.setFont('helvetica','bold'); doc.setFontSize(11); doc.setTextColor(20,110,60);
+      doc.text('Tests & checkpoints', lx+4, ly+7.5);
+      pillRight(testsResult, lx+leftW-4, ly+7.3, testsResult);
+      doc.setFont('helvetica','normal'); doc.setFontSize(7.8); doc.setTextColor(80,80,80);
+      doc.text(passedN + ' passed, ' + naN + ' N/A of ' + rows07.length, lx+4, ly+13.5);
+      doc.setDrawColor(150,205,160); doc.setLineWidth(0.25);
+      doc.line(lx+4, ly+headH7-1, lx+leftW-4, ly+headH7-1);
+      rows07.forEach((r,i)=>{
+        const top = ly + headH7 + i*rowH7;
+        const base = top + rowH7/2 + 1.2;
+        doc.setFont('helvetica','normal'); doc.setFontSize(8); doc.setTextColor(120,120,120);
+        doc.text((i+1) + '.', lx+4, base);
+        doc.setTextColor(30,30,30);
+        doc.text(r[0], lx+10, base);
+        pillRight(r[1], lx+leftW-4, base, r[1]);
+        if (i < rows07.length-1) doc.line(lx+4, top+rowH7, lx+leftW-4, top+rowH7);
       });
+      doc.setLineWidth(0.2); doc.setDrawColor(0);
       ly += tcH + 4;
 
       // -- Inspection site card (right column) --
       const addrLines = doc.splitTextToSize('South Nayapara, 6 No Dogri, Bhawal Mirzapur, Gazipur, Bangladesh', rightW-8);
-      const siteH = 12 + addrLines.length*3.6;
+      const siteH = 17 + addrLines.length*3.4;
       fitRoundedRect(rx, ry, rightW, siteH, [237,239,244]);
       doc.setFont('helvetica','bold'); doc.setFontSize(8.5); doc.setTextColor(40,40,40);
-      doc.text('Inspection site', rx+4, ry+6);
+      doc.text('Inspection site', rx+4, ry+6.5);
       doc.setFont('helvetica','normal'); doc.setFontSize(7.5); doc.setTextColor(60,60,60);
-      doc.text(h.factoryName || 'J.M. Fabrics Ltd.', rx+4, ry+11);
+      doc.text(h.factoryName || 'J.M. Fabrics Ltd.', rx+4, ry+12);
       doc.setFontSize(6.8); doc.setTextColor(100,100,100);
-      doc.text(addrLines, rx+4, ry+15);
+      doc.text(addrLines, rx+4, ry+16.5);
       ry += siteH + 4;
 
       // -- Inspector card (right column) --
-      const inspH = 15;
+      const inspH = 20;
       fitRoundedRect(rx, ry, rightW, inspH, [237,239,244]);
       doc.setFont('helvetica','bold'); doc.setFontSize(8.5); doc.setTextColor(40,40,40);
-      doc.text('Inspector', rx+4, ry+6);
+      doc.text('Inspector', rx+4, ry+6.5);
       doc.setFont('helvetica','normal'); doc.setFontSize(7.5); doc.setTextColor(60,60,60);
-      doc.text(h.inspectorName || '-', rx+4, ry+11);
+      doc.text(h.inspectorName || '-', rx+4, ry+12);
       doc.setFontSize(6.8); doc.setTextColor(100,100,100);
-      doc.text('From: ' + (h.factoryName || 'J.M. Fabrics Ltd.'), rx+4, ry+14.5);
+      doc.text('From: ' + (h.factoryName || 'J.M. Fabrics Ltd.'), rx+4, ry+16.5);
       ry += inspH + 4;
 
       ctx.y = Math.max(ly, ry);
