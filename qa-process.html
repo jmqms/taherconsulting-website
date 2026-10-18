@@ -1771,7 +1771,13 @@ const PP_SECTIONS = [
   { id: "production", no: "10", title: "Production workshop (Sewing)", rows: [
     ["Styling", "Follow approved PPS / comments"], ["Size spec", "Use updated size spec"], ["Size / colour ratio", "Follow PO sheet"], ["Needle thread", "Per BOM and trim card"],
     ["Top thread", "Per BOM and trim card"], ["Inner thread", "Per BOM and trim card"], ["Stitch density", "Lock stitch 14-15/in, flatlock 17-18/in, overlock 14-15/in"],
-    ["Needle", "Ball point needle no. 7-9 as needed"], ["Labels", "Main, tab, barcode, care label per approved trim card"], ["Wash / dye", "Follow approved shade band (NA if none)", "wash"] ] },
+    ["Stitch type", "Per tech pack (301 lock, 401 chain, 504 overlock etc.)"], ["Stitch tension", "Balanced, no puckering, no skipped stitch"],
+    ["Seam allowance", "Per pattern / spec, tolerance ±1/16\""], ["Seam strength", "Per buyer standard, no seam slippage"],
+    ["Stitch margin / topstitch gap", "Even, per spec (e.g. 1/4\" edge stitch)"], ["Backstitch / bartack", "Start, end and stress points per spec"],
+    ["Needle", "Use ball point needle no. 7-9 as needed; size / type per fabric and BOM"],
+    ["Folder / attachment use", "Correct guide, uniform hem and binding"], ["Seam puckering", "No puckering on seam, per approved standard"],
+    ["Matching (stripe / check / plaid)", "Matched at side seam, center, pocket"], ["Operation sequence", "Per approved OB, no skipped operation"],
+    ["Labels", "Main, tab, barcode, care label per approved trim card"], ["Wash / dye", "Follow approved shade band (NA if none)", "wash"] ] },
   { id: "finishing", no: "11", title: "Finishing", rows: [
     ["Hang tag", "Per approved trim card; all info correct"], ["Price tag", "Per approved trim card; all info correct"], ["Barcode sticker", "Per approved trim card; all info correct"],
     ["Polybag", "Per approved trim card; all info correct"], ["Photo inlay", "Per approval (NA if none)"], ["Folding image", "Customer approval before pack start"],
@@ -1820,6 +1826,12 @@ function ppSectionHTML(s) {
 }
 function ppAutosize(t) { t.style.height = "auto"; t.style.height = t.scrollHeight + "px"; }
 function ppAutosizeAll() { document.querySelectorAll(".pp-sd").forEach(ppAutosize); }
+// Re-fit after fonts load / window resize so standard requirement text is never clipped.
+if (!window.__ppFit) {
+  window.__ppFit = true;
+  window.addEventListener("resize", () => ppAutosizeAll());
+  if (document.fonts && document.fonts.ready) document.fonts.ready.then(() => ppAutosizeAll());
+}
 function ppAddRow(id) {
   const sec = PP_SECTIONS.find(s => s.id === id), tb = document.querySelector(`table[data-sec="${id}"] tbody`);
   tb.insertAdjacentHTML("beforeend", ppRowHTML(sec, ["", ""], null, true));
@@ -2056,6 +2068,9 @@ function renderPPMeeting() {
   const el = tcEl();
   el.innerHTML = `
     <style>
+      .pp-t input.pp-it, .pp-t textarea.pp-sd, .pp-t input.pp-rm { font-family: var(--body); font-size: 14.5px; line-height: 1.4; letter-spacing: normal; text-transform: none; }
+      textarea[id^="ppm_"], textarea[id^="ppc_"] { font-family: var(--body); font-size: 14.5px; line-height: 1.4; }
+      .pp-t textarea.pp-sd { flex: 1; min-width: 0; overflow: hidden; resize: none; padding-top: 6px; padding-bottom: 6px; }
       .pp-t input.pp-it[readonly], .pp-t textarea.pp-sd[readonly] { background: transparent; border-color: transparent; box-shadow: none; cursor: default; resize: none; }
       .pp-t input.pp-it:not([readonly]), .pp-t textarea.pp-sd:not([readonly]) { background: #FFFBEA; border-color: var(--gold); }
     </style>
@@ -2112,7 +2127,7 @@ function renderPPMeeting() {
     </div>
   `;
   addColorRow("pp");
-  ppAutosizeAll();
+  ppAutosizeAll(); requestAnimationFrame(ppAutosizeAll); setTimeout(ppAutosizeAll, 300);
   ppProgress();
   ppSelCtrl = ppWireSelector((sel) => {
     refreshColorOptions("pp", sel.detail);
@@ -2275,7 +2290,7 @@ async function ppMakePdf(e) {
   doc.setFont("helvetica", "bold"); doc.setFontSize(15); doc.text("PRE-PRODUCTION Meeting Report", M, 14);
   doc.setFont("helvetica", "normal"); doc.setFontSize(9); doc.text("JM Fabrics Limited  |  New Asia Group", M, 19.5);
   doc.setFontSize(7.5); doc.rect(W - M - 46, 6, 46, 16);
-  ["JMF QA-Dept : 003", "Version No : 002", "Effective Date : 01-11-17", "Revision Date : 19.03.2019"].forEach((t, i) => doc.text(t, W - M - 44, 10.5 + i * 3.6));
+  ["JMF QA-Dept : 003", "Version No : 003", "Effective Date : 01-11-17", "Revision Date : 19-10-2026"].forEach((t, i) => doc.text(t, W - M - 44, 10.5 + i * 3.6));
   let y = 26;
   const k = (l, v) => [{ content: T(l), styles: { fontStyle: "bold", fillColor: LIGHT } }, T(v)];
   const a = r.approvals || {};
