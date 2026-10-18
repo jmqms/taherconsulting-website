@@ -45,6 +45,7 @@ async function handleLogin(event) {
           action: "login",
           userId: idInput.value,
           password: pwInput.value,
+          ua: navigator.userAgent,
         }),
       });
 
@@ -69,7 +70,7 @@ async function handleLogin(event) {
         return;
       }
 
-      const session = { name: data.name, role: data.role, loggedInAt: Date.now() };
+      const session = { name: data.name, designation: data.designation || data.role || "", role: data.role || data.designation || "", loggedInAt: Date.now() };
       const store = remember ? localStorage : sessionStorage;
       store.setItem("tc_session", JSON.stringify(session));
 

@@ -127,6 +127,11 @@ function tcInitModuleAuth(opts) {
     });
     if (allowGuest) {
       document.getElementById("tc-module-guest").addEventListener("click", () => {
+        // note the guest visit in the login history (fire-and-forget; never blocks the page)
+        try {
+          fetch(MODULE_AUTH_API_URLS[0], { method: "POST", headers: { "Content-Type": "text/plain;charset=utf-8" },
+            body: JSON.stringify({ action: "logGuest", sheet: opts.sheetName, ua: navigator.userAgent }) }).catch(() => {});
+        } catch (e) {}
         applySession({ name: "Guest", designation: "Guest", role: "guest" });
       });
     }
@@ -186,7 +191,7 @@ function tcInitModuleAuth(opts) {
     btn.disabled = true;
     btn.textContent = "Checking…";
 
-    const payload = { action: "login", userId, password, sheet: opts.sheetName };
+    const payload = { action: "login", userId, password, sheet: opts.sheetName, ua: navigator.userAgent };
     let data = null;
     for (const url of MODULE_AUTH_API_URLS) {
       data = await askServer(url, payload, btn);
