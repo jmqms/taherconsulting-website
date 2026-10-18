@@ -1796,12 +1796,14 @@ const PP_TEST_OPTS = ["", "Required", "Not required"];
 
 const ppSecIds = () => PP_SECTIONS.map(s => s.id);
 
-function ppRowHTML(sec, row, prev) {
+function ppRowHTML(sec, row, prev, open) {
   prev = prev || {};
+  const ro = open ? "" : " readonly";
   const test = sec.kind === "test", opts = test ? PP_TEST_OPTS : PP_STATUS, st = prev.status || "";
   return `<tr${row[2] ? ` data-tag="${row[2]}"` : ""}>
-    <td><input class="pp-it" value="${esc(row[0])}" placeholder="Checkpoint"></td>
-    <td><textarea class="pp-sd" rows="1" placeholder="Standard requirement" oninput="ppAutosize(this)">${esc(row[1])}</textarea></td>
+    <td><input class="pp-it"${ro} value="${esc(row[0])}" placeholder="Checkpoint"></td>
+    <td><div style="display:flex;gap:8px;align-items:flex-start"><textarea class="pp-sd"${ro} rows="1" placeholder="Standard requirement" oninput="ppAutosize(this)">${esc(row[1])}</textarea>
+      <label title="Tick to edit this checkpoint and its standard requirement" style="display:flex;align-items:center;gap:4px;white-space:nowrap;font-size:12px;font-weight:600;cursor:pointer;margin:0"><input type="checkbox" class="pp-ed" style="width:auto;margin:0"${open ? " checked" : ""} onchange="ppToggleEdit(this)"> Edit</label></div></td>
     <td><select class="pp-st" ${st ? "" : 'data-auto="1"'} data-kind="${test ? "test" : "check"}" onchange="ppStatusChanged(this)">${opts.map(o => `<option${o === st ? " selected" : ""}>${o}</option>`).join("")}</select></td>
     <td><input class="pp-rm" value="${esc(prev.remarks || "")}" placeholder="${test ? "Method / lab / remarks" : "Required if Deviation"}"></td>
     <td class="x" style="width:34px"><button type="button" class="btn btn-ghost" style="padding:2px 8px" title="Remove checkpoint" onclick="ppRemoveRow(this)">✕</button></td></tr>`;
@@ -1811,7 +1813,7 @@ function ppSectionHTML(s) {
   return `<div class="panel" style="margin-bottom:24px">
     <h3>${s.no}. ${esc(s.title)}</h3>
     <table class="qa-table pp-t" data-sec="${s.id}">
-      <thead><tr><th style="width:22%">Checkpoint</th><th style="width:34%">Standard requirement <span style="font-weight:400">(editable)</span></th><th style="width:14%">${test ? "Required?" : "Status"}</th><th>${test ? "Method / remarks" : "Remarks / action plan"}</th><th style="width:34px"></th></tr></thead>
+      <thead><tr><th style="width:22%">Checkpoint</th><th style="width:34%">Standard requirement <span style="font-weight:400">(tick Edit to change)</span></th><th style="width:14%">${test ? "Required?" : "Status"}</th><th>${test ? "Method / remarks" : "Remarks / action plan"}</th><th style="width:34px"></th></tr></thead>
       <tbody>${s.rows.map(r => ppRowHTML(s, r)).join("")}</tbody>
     </table>
     <button type="button" class="btn btn-ghost" style="margin-top:8px" onclick="ppAddRow('${s.id}')">+ Add checkpoint</button></div>`;
@@ -1820,8 +1822,14 @@ function ppAutosize(t) { t.style.height = "auto"; t.style.height = t.scrollHeigh
 function ppAutosizeAll() { document.querySelectorAll(".pp-sd").forEach(ppAutosize); }
 function ppAddRow(id) {
   const sec = PP_SECTIONS.find(s => s.id === id), tb = document.querySelector(`table[data-sec="${id}"] tbody`);
-  tb.insertAdjacentHTML("beforeend", ppRowHTML(sec, ["", ""]));
+  tb.insertAdjacentHTML("beforeend", ppRowHTML(sec, ["", ""], null, true));
   tb.lastElementChild.querySelector(".pp-it").focus(); ppProgress();
+}
+// Checkpoint names and standards are locked by default; the row's Edit tick unlocks both (prevents accidental changes).
+function ppToggleEdit(cb) {
+  const tr = cb.closest("tr"), on = cb.checked;
+  [tr.querySelector(".pp-it"), tr.querySelector(".pp-sd")].forEach(el => { el.readOnly = !on; });
+  if (on) tr.querySelector(".pp-sd").focus();
 }
 function ppRemoveRow(btn) { btn.closest("tr").remove(); ppProgress(); }
 
@@ -2047,6 +2055,10 @@ function renderPPMeeting() {
   colorDetail.pp = null;
   const el = tcEl();
   el.innerHTML = `
+    <style>
+      .pp-t input.pp-it[readonly], .pp-t textarea.pp-sd[readonly] { background: transparent; border-color: transparent; box-shadow: none; cursor: default; resize: none; }
+      .pp-t input.pp-it:not([readonly]), .pp-t textarea.pp-sd:not([readonly]) { background: #FFFBEA; border-color: var(--gold); }
+    </style>
     <div class="qa-head">
       <div class="eyebrow">Quality Process</div>
       <h1>PP Meeting</h1>
