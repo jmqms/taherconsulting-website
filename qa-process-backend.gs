@@ -494,7 +494,7 @@ function listTesting_(testType) {
 // closing the request updates that same row (Pass -> Done, Fail -> Open).
 
 const TESTREQ_SHEET = "TestingRequests";
-const TESTREQ_HEADERS = ["Id","Status","Section","SBU","Buyer","IR","StyleNo","Season","Item","LogInDate","Color","Line","Size","Fiber","FabricType","TestOn","TestOption","RequirementsJSON","SubmittedBy","CreatedAt","ReportDate","TrfNo","Result","Comments","ClosedAt","TestCycle","PrintType","Gsm"];
+const TESTREQ_HEADERS = ["Id","Status","Section","SBU","Buyer","IR","StyleNo","Season","Item","LogInDate","Color","Line","Size","Fiber","FabricType","TestOn","TestOption","RequirementsJSON","SubmittedBy","CreatedAt","ReportDate","TrfNo","Result","Comments","ClosedAt","TestCycle","PrintType","Gsm","Submission"];
 
 function saveTestRequest_(e) {
   e = e || {};
@@ -507,7 +507,7 @@ function saveTestRequest_(e) {
       id, "Open", e.section || "", e.sbu || "", e.buyer || "", e.ir || "", e.styleNo || "", e.season || "", e.item || "",
       e.logInDate || "", e.color || "", e.line || "", e.size || "", e.fiber || "", e.fabricType || "",
       e.testOn || "", e.testOption || "", JSON.stringify(e.requirements || []), e.submittedBy || "", nowBD_(),
-      "", "", "", "", "", e.testCycle === undefined ? "" : e.testCycle, e.printType || "", e.gsm || ""
+      "", "", "", "", "", e.testCycle === undefined ? "" : e.testCycle, e.printType || "", e.gsm || "", e.submission || ""
     ]);
     saveEntry_({
       stage: "testing", orderNo: "", styleNo: e.styleNo || "", irNo: e.ir || "",
@@ -525,7 +525,7 @@ function testReqRow_(r) {
     id: r[0], status: r[1] || "Open", section: r[2], sbu: r[3], buyer: r[4], ir: r[5], styleNo: r[6], season: r[7], item: r[8],
     logInDate: normValOI_(r[9]), color: r[10], line: r[11], size: r[12], fiber: r[13], fabricType: r[14],
     testOn: r[15], testOption: r[16], requirements: reqs, submittedBy: r[18], createdAt: r[19],
-    reportDate: normValOI_(r[20]), trpNo: r[21], result: r[22], comments: r[23], closedAt: r[24], testCycle: r[25] === undefined ? "" : r[25], printType: r[26] || "", gsm: r[27] || ""
+    reportDate: normValOI_(r[20]), trpNo: r[21], result: r[22], comments: r[23], closedAt: r[24], testCycle: r[25] === undefined ? "" : r[25], printType: r[26] || "", gsm: r[27] || "", submission: r[28] || ""
   };
 }
 

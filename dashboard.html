@@ -118,7 +118,13 @@
 <script>
   const session = requireLogin();
   if (session) {
-    document.getElementById("dashUser").innerHTML = `Signed in as <b>${session.name}</b> — ${session.role}` + (/guest|visitor/i.test(session.role||"") ? ` <span style="background:#B84226;padding:3px 9px;border-radius:2px;margin-left:8px;font-size:10.5px">VIEW ONLY</span>` : "");
+    document.getElementById("dashUser").innerHTML = `Signed in as <b>${session.name}</b> — ${session.designation || session.role}` + (/guest|visitor/i.test(session.role||"") ? ` <span style="background:#B84226;padding:3px 9px;border-radius:2px;margin-left:8px;font-size:10.5px">VIEW ONLY</span>` : "");
+    if (/admin/i.test(session.role || "")) {
+      const a = document.createElement("a");
+      a.href = "login-history.html"; a.textContent = "Login History";
+      a.style.cssText = "margin-left:14px;font-size:11.5px;letter-spacing:.06em;text-transform:uppercase;border:1px solid currentColor;padding:3px 9px;border-radius:2px;text-decoration:none;color:inherit";
+      document.getElementById("dashUser").appendChild(a);
+    }
     document.getElementById("welcomeName").textContent = `, ${session.name.split(" ")[0]}`;
   }
 </script>

@@ -2427,6 +2427,7 @@ function tsIsPE() { return TS_PE.indexOf(tsSection) >= 0; }
 function tsOptionChange() { const o = document.getElementById("tsOption"), x = document.getElementById("tsOptionOther"); if (o && x) x.style.display = o.value === "Others" ? "" : "none"; }
 function tsOptionHTML() { return `<div class="field"><label>Options</label><select id="tsOption" onchange="tsOptionChange()">${TS_OPTIONS.map(o => `<option>${esc(o)}</option>`).join("")}</select><input id="tsOptionOther" placeholder="Specify other option" style="display:none;margin-top:6px"></div>`; }
 const TS_REQUIREMENTS = ["Dimensional Stability to Washing", "Spirality / Skewness", "Appearance After Wash", "Colorfastness to Washing", "Colorfastness to Water", "Colorfastness to Perspiration", "Colorfastness to Rubbing/Crocking", "Colorfastness to Chlorine Bleach", "Colorfastness to Non-Chlorine Bleach", "Colorfastness to Saliva", "Phenolic Yellowing", "C/F to Actual Laundering", "Fabric Weight", "Thread Count", "ICI Pilling (10800/14400 cy)", "Random Tumble Pilling", "Bursting Strength", "PH Test", "Fabric Width", "Stretch Properties"];
+const TS_SUBMISSIONS = Array.from({ length: 10 }, (_, i) => { const n = i + 1, t = n % 100; const suf = (t >= 11 && t <= 13) ? "th" : ({1:"st",2:"nd",3:"rd"}[n % 10] || "th"); return n + suf + " Submission"; });
 const TS_SLA_DAYS = 2; // report expected within 1-2 days (calendar days, Fridays included)
 function tsDays(a, b) { return (a && b) ? Math.round((Date.parse(b + "T00:00:00Z") - Date.parse(a + "T00:00:00Z")) / 86400000) : null; }
 // Open: days since Login Date until today (Bangladesh date). Closed: Login Date -> Report Date (turnaround).
@@ -2529,7 +2530,8 @@ function renderTestingNew() {
           <select id="tsColor">${colorOptionsHTML(null, "")}</select>
           <input id="tsColorCustom" placeholder="Type color name" style="display:none;margin-top:6px">
         </div>
-        ${tsIsPE() ? `<div class="field"><label>GSM</label><input id="tsGsm" type="number" min="0" step="any"></div>` : `<div class="field"><label>Size</label><input id="tsSize"></div>`}
+        ${tsIsPE() ? `<div class="field"><label>GSM</label><input id="tsGsm" type="number" min="0" step="any"></div>
+        <div class="field"><label>Submission</label><select id="tsSubmission">${TS_SUBMISSIONS.map(o => `<option>${esc(o)}</option>`).join("")}</select></div>` : `<div class="field"><label>Size</label><input id="tsSize"></div>`}
         <div class="field"><label>Fiber / Fabric Composition</label><input id="tsFiber" placeholder="e.g. 92% Cotton 8% Elastane"></div>
         <div class="field"><label>Fabric Type</label><input id="tsFabric" placeholder="e.g. Single Jersey"></div>
         <div class="field"><label>Test on</label><select id="tsTestOn">${TS_TEST_ON.map(o => `<option>${esc(o)}</option>`).join("")}</select></div>
@@ -2585,6 +2587,7 @@ async function saveTestRequest() {
     color: color,
     line: tsIsPE() ? "" : document.getElementById("tsLine").value, size: tsIsPE() ? "" : document.getElementById("tsSize").value,
     printType: tsIsPE() ? document.getElementById("tsPrintType").value : "", gsm: tsIsPE() ? document.getElementById("tsGsm").value : "",
+    submission: tsIsPE() ? document.getElementById("tsSubmission").value : "",
     testCycle: document.getElementById("tsCycle").value,
     fiber: document.getElementById("tsFiber").value, fabricType: document.getElementById("tsFabric").value,
     testOn: document.getElementById("tsTestOn").value,
@@ -2693,7 +2696,7 @@ function ttDraw() {
     const closed = r.status === "Closed";
     return `<tr>
       <td>${esc(String(r.logInDate || "").slice(0, 10))}</td><td>${esc(r.section)}</td><td>${esc(r.sbu)}</td><td>${esc(r.buyer)}</td><td>${esc(r.ir)}</td><td>${esc(r.styleNo)}</td>
-      <td>${esc(r.color)}</td><td>${esc(r.testOn)}<div style="font-size:11px;color:var(--ink-soft)">${esc(r.testOption)}</div></td>
+      <td>${esc(r.color)}${r.submission ? `<div style="font-size:11px;color:var(--ink-soft)">${esc(r.submission)}</div>` : ""}</td><td>${esc(r.testOn)}<div style="font-size:11px;color:var(--ink-soft)">${esc(r.testOption)}</div></td>
       <td title="${esc((r.requirements || []).join(", "))}">${(r.requirements || []).length}</td><td>${esc(r.submittedBy)}</td><td style="white-space:nowrap">${tsAgeHTML(r)}</td>
       <td><span class="status-pill ${closed ? (r.result === "Fail" ? "Open" : "Done") : "In-Progress"}">${closed ? "Closed · " + esc(r.result) : "Open"}</span></td>
       <td><button class="btn ${closed ? "btn-ghost" : "btn-primary"}" style="padding:4px 10px;font-size:11.5px" onclick="ttOpenClose('${esc(r.id)}')">${closed ? "View" : "Enter Result"}</button></td></tr>`;
@@ -2711,6 +2714,7 @@ function rlDetailsHTML(r) {
     [closed ? "Turnaround (Login → Report)" : "Pending since Login", tsAge(r) === null ? "" : tsAge(r) + " day(s)" + (tsAge(r) > TS_SLA_DAYS ? " — " + (closed ? "late by " : "overdue by ") + (tsAge(r) - TS_SLA_DAYS) + " day(s)" : " — within SLA")]];
   if (r.printType) rows.splice(8, 0, [r.section === "Embroidery Section" ? "Embroidery Type" : "Print Type", r.printType]);
   if (r.gsm) rows.splice(9, 0, ["GSM", r.gsm]);
+  if (r.submission) rows.splice(r.gsm ? 10 : 9, 0, ["Submission", r.submission]);
   return `<div class="panel" style="margin:12px 0;border-color:var(--gold)">
     <h3 style="display:flex;justify-content:space-between;align-items:center"><span>Details — ${esc(r.ir)} · ${esc(r.styleNo)}</span>
       <button class="btn btn-ghost" style="padding:4px 10px;font-size:11.5px" onclick="document.getElementById('rlDetails').innerHTML=''">✕ Close</button></h3>
@@ -2794,7 +2798,7 @@ function rlDraw() {
     (!ir || String(r.ir || "").toLowerCase().indexOf(ir) >= 0));
   document.getElementById("rlCount").textContent = rows.length + " report(s)" + (rlSection !== "All" ? " in " + rlSection : "");
   document.getElementById("rlBody").innerHTML = rows.map(r => `<tr>
-    <td>${esc(String(r.logInDate || "").slice(0, 10))}</td><td>${esc(r.section)}</td><td>${esc(r.sbu)}</td><td>${esc(r.buyer)}</td><td>${esc(r.ir)}</td><td>${esc(r.styleNo)}</td><td>${esc(r.color)}</td>
+    <td>${esc(String(r.logInDate || "").slice(0, 10))}</td><td>${esc(r.section)}</td><td>${esc(r.sbu)}</td><td>${esc(r.buyer)}</td><td>${esc(r.ir)}</td><td>${esc(r.styleNo)}</td><td>${esc(r.color)}${r.submission ? `<div style="font-size:11px;color:var(--ink-soft)">${esc(r.submission)}</div>` : ""}</td>
     <td><span class="status-pill ${r.status === "Closed" ? "Done" : "In-Progress"}">${esc(r.status)}</span></td>
     <td>${esc(r.result || "—")}</td><td style="white-space:nowrap">${tsAgeHTML(r)}</td>
     <td><button class="btn btn-ghost" style="padding:4px 10px;font-size:11.5px" onclick="rlSee('${esc(r.id)}')">See Details</button></td></tr>`).join("") ||
@@ -2823,7 +2827,7 @@ function ttOpenClose(id) {
         <div class="sd-row"><span>Style</span><b>${esc(r.styleNo || "—")}</b></div>
       </div>
       <div style="font-size:13px;color:var(--ink-soft);margin-bottom:12px"><b>Tests:</b> ${esc((r.requirements || []).join(", ") || "—")}<br>
-        <b>Sample:</b> ${esc(r.testOn)} · ${esc(r.testOption)} · ${esc(r.color)} · ${esc(r.printType || r.size)}${r.gsm ? " · " + esc(r.gsm) + " GSM" : ""} · ${esc(r.fiber)} · ${esc(r.fabricType)}${r.testCycle !== "" && r.testCycle != null ? " · Cycle: " + esc(r.testCycle) + " wash" : ""}</div>
+        <b>Sample:</b> ${esc(r.testOn)} · ${esc(r.testOption)} · ${esc(r.color)} · ${esc(r.printType || r.size)}${r.gsm ? " · " + esc(r.gsm) + " GSM" : ""}${r.submission ? " · " + esc(r.submission) : ""} · ${esc(r.fiber)} · ${esc(r.fabricType)}${r.testCycle !== "" && r.testCycle != null ? " · Cycle: " + esc(r.testCycle) + " wash" : ""}</div>
       <div class="form-grid">
         <div class="field"><label>Report / Log Out Date</label><input type="date" id="tcDate" value="${esc(String(r.reportDate || "").slice(0, 10))}" ${closed ? "disabled" : ""}></div>
         <div class="field"><label>TRF No</label><input id="tcTrp" value="${esc(r.trpNo)}" ${closed ? "disabled" : ""}></div>

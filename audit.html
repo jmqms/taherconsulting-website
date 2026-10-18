@@ -622,7 +622,7 @@
             const res = await fetch(AUDIT_AUTH_API_URL, {
                 method: 'POST',
                 headers: { 'Content-Type': 'text/plain;charset=utf-8' },
-                body: JSON.stringify({ action: 'login', userId: userIdVal, password: passwordVal, sheet: AUDIT_AUTH_SHEET })
+                body: JSON.stringify({ action: 'login', userId: userIdVal, password: passwordVal, sheet: AUDIT_AUTH_SHEET, ua: navigator.userAgent })
             });
             const data = await res.json();
 
