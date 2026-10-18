@@ -1219,6 +1219,7 @@ async function loadStyleTrackingResults() {
                   <td>${esc(String(last))}</td>
                   <td>
                     <button class="btn btn-ghost" style="padding:4px 10px;font-size:11.5px" onclick="showStageDetails('${s.id}')">See Details</button>
+                    ${s.id === "ppmeeting" && rows.length ? `<button class="btn btn-ghost" style="padding:4px 10px;font-size:11.5px" onclick="ppDownloadIrPdf(this)">⬇ PDF</button>` : ""}
                     <button class="btn btn-ghost" style="padding:4px 10px;font-size:11.5px" onclick="goToStageForTracking('${s.id}')">+ Add Entry</button>
                   </td>
                 </tr>
@@ -1393,7 +1394,7 @@ async function showStageDetails(stageId) {
       </h3>
       ${entries.length ? entries.map((e, idx) => `
         <div style="margin-bottom:${idx < entries.length - 1 ? "18px" : "0"};${idx < entries.length - 1 ? "padding-bottom:18px;border-bottom:1px solid var(--line)" : ""}">
-          ${entries.length > 1 || e._reportId || e.report ? `<div style="display:flex;align-items:center;justify-content:space-between;font-weight:600;margin-bottom:6px">
+          ${entries.length > 1 || e._reportId || stageId === "ppmeeting" ? `<div style="display:flex;align-items:center;justify-content:space-between;font-weight:600;margin-bottom:6px">
             <span>${entries.length > 1 ? "Entry " + (idx + 1) : ""}</span>
             ${e._reportId ? `<button class="btn btn-ghost" style="padding:4px 10px;font-size:11.5px" onclick="downloadInspectionPdf('${esc(stageId)}','${esc(e._reportId)}')">⬇ Download PDF</button>` : ""}
           </div>` : ""}
@@ -1767,7 +1768,7 @@ const PP_SECTIONS = [
     ["Proper bundling", "All parts of a garment in same bundle"], ["Proper storing", "Flat on rack; none on the floor"] ] },
   { id: "embellishment", no: "09", title: "Embellishment (print / embroidery / heat-seal)", embNA: true, rows: [
     ["Position", "Follow BOM / sign-off"], ["Length", "Per approved spec"], ["Width", "Per approved spec"], ["Print colour & quality", "Match approval; compare with approval before bulk"] ] },
-  { id: "production", no: "10", title: "Production workshop", rows: [
+  { id: "production", no: "10", title: "Production workshop (Sewing)", rows: [
     ["Styling", "Follow approved PPS / comments"], ["Size spec", "Use updated size spec"], ["Size / colour ratio", "Follow PO sheet"], ["Needle thread", "Per BOM and trim card"],
     ["Top thread", "Per BOM and trim card"], ["Inner thread", "Per BOM and trim card"], ["Stitch density", "Lock stitch 14-15/in, flatlock 17-18/in, overlock 14-15/in"],
     ["Needle", "Ball point needle no. 7-9 as needed"], ["Labels", "Main, tab, barcode, care label per approved trim card"], ["Wash / dye", "Follow approved shade band (NA if none)", "wash"] ] },
@@ -1782,21 +1783,47 @@ const PP_SECTIONS = [
   { id: "spec", no: "13", title: "Critical spec points for measurement check", rows: [
     ["Chest width", "Maintain within spec"], ["Waist width", "Maintain within spec"], ["Total / back length", "Maintain within spec"], ["Armhole", "Maintain within spec"],
     ["Minimum extend", "Maintain within spec"], ["Seam solidity / bursting", "No cracking in any operation; take care of neck stretch"] ] },
+  { id: "testInhouse", no: "13b", title: "Testing requirements: Garments in-house test", kind: "test", rows: [
+    ["Appearance after wash", "No distortion, twisting, colour change or shade variation after wash"], ["Pull test (button / snap / trims)", "Minimum 50 N or per buyer requirement"],
+    ["Metal detection check", "100% garments through metal / needle detector; no metal contamination"], ["Shrinkage / dimensional stability after wash", "Within approved limit"],
+    ["Spirality after wash", "Within approved limit"], ["Seam strength / seam slippage", "Per buyer standard"], ["Print / embroidery durability (wash and rub)", "No cracking, peeling or fading"],
+    ["Pilling", "Rating per buyer test method"] ] },
+  { id: "testLab", no: "13c", title: "Testing requirements: Lab / third-party test", kind: "test", rows: [
+    ["Colour fastness (wash / rubbing / perspiration)", "Per buyer test standard"], ["Physical test (tensile / tear / burst)", "Per buyer test standard"],
+    ["Chemical / RSL test", "Per buyer RSL"], ["Fibre composition", "Match care label composition"] ] },
 ];
+const PP_TEST_OPTS = ["", "Required", "Not required"];
 
 const ppSecIds = () => PP_SECTIONS.map(s => s.id);
 
+function ppRowHTML(sec, row, prev) {
+  prev = prev || {};
+  const test = sec.kind === "test", opts = test ? PP_TEST_OPTS : PP_STATUS, st = prev.status || "";
+  return `<tr${row[2] ? ` data-tag="${row[2]}"` : ""}>
+    <td><input class="pp-it" value="${esc(row[0])}" placeholder="Checkpoint"></td>
+    <td><textarea class="pp-sd" rows="1" placeholder="Standard requirement" oninput="ppAutosize(this)">${esc(row[1])}</textarea></td>
+    <td><select class="pp-st" ${st ? "" : 'data-auto="1"'} data-kind="${test ? "test" : "check"}" onchange="ppStatusChanged(this)">${opts.map(o => `<option${o === st ? " selected" : ""}>${o}</option>`).join("")}</select></td>
+    <td><input class="pp-rm" value="${esc(prev.remarks || "")}" placeholder="${test ? "Method / lab / remarks" : "Required if Deviation"}"></td>
+    <td class="x" style="width:34px"><button type="button" class="btn btn-ghost" style="padding:2px 8px" title="Remove checkpoint" onclick="ppRemoveRow(this)">✕</button></td></tr>`;
+}
 function ppSectionHTML(s) {
+  const test = s.kind === "test";
   return `<div class="panel" style="margin-bottom:24px">
     <h3>${s.no}. ${esc(s.title)}</h3>
     <table class="qa-table pp-t" data-sec="${s.id}">
-      <thead><tr><th style="width:22%">Checkpoint</th><th style="width:34%">Standard requirement</th><th style="width:14%">Status</th><th>Remarks / action plan</th></tr></thead>
-      <tbody>${s.rows.map(r => `<tr${r[2] ? ` data-tag="${r[2]}"` : ""}>
-        <td><b>${esc(r[0])}</b></td><td style="color:var(--ink-soft);font-size:12.5px">${esc(r[1])}</td>
-        <td><select class="pp-st" data-auto="1" onchange="ppStatusChanged(this)">${PP_STATUS.map(o => `<option>${o}</option>`).join("")}</select></td>
-        <td><input class="pp-rm" placeholder="Required if Deviation"></td></tr>`).join("")}</tbody>
-    </table></div>`;
+      <thead><tr><th style="width:22%">Checkpoint</th><th style="width:34%">Standard requirement <span style="font-weight:400">(editable)</span></th><th style="width:14%">${test ? "Required?" : "Status"}</th><th>${test ? "Method / remarks" : "Remarks / action plan"}</th><th style="width:34px"></th></tr></thead>
+      <tbody>${s.rows.map(r => ppRowHTML(s, r)).join("")}</tbody>
+    </table>
+    <button type="button" class="btn btn-ghost" style="margin-top:8px" onclick="ppAddRow('${s.id}')">+ Add checkpoint</button></div>`;
 }
+function ppAutosize(t) { t.style.height = "auto"; t.style.height = t.scrollHeight + "px"; }
+function ppAutosizeAll() { document.querySelectorAll(".pp-sd").forEach(ppAutosize); }
+function ppAddRow(id) {
+  const sec = PP_SECTIONS.find(s => s.id === id), tb = document.querySelector(`table[data-sec="${id}"] tbody`);
+  tb.insertAdjacentHTML("beforeend", ppRowHTML(sec, ["", ""]));
+  tb.lastElementChild.querySelector(".pp-it").focus(); ppProgress();
+}
+function ppRemoveRow(btn) { btn.closest("tr").remove(); ppProgress(); }
 
 function ppDateField(l, k) {
   return `<div class="field"><label>${esc(l)}</label>
@@ -1826,6 +1853,17 @@ function ppReportPanelsHTML() {
     <div class="panel" style="margin-bottom:24px"><h3>02. IE Comments</h3><div class="form-grid">${f(PP_IE, "ppi")}</div></div>
     <div class="panel" style="margin-bottom:24px"><h3>03. Mechanical Comments</h3>
       <div class="form-grid">${PP_MECH_FIELDS.map(([l, d], i) => `<div class="field"${i === 0 ? ' style="grid-column:1/-1"' : ""}><label>${esc(l)}</label><textarea id="ppm_${i}" rows="2">${esc(d)}</textarea></div>`).join("")}</div></div>
+    <div class="panel" style="margin-bottom:24px">
+      <h3>Requirement Template</h3>
+      <div id="ppTplInfo" style="margin-bottom:10px">Using: <b>Default template</b></div>
+      <div style="display:flex;gap:8px;flex-wrap:wrap">
+        <button type="button" class="btn btn-ghost" onclick="ppSaveTemplate('buyer')">Save for this Buyer</button>
+        <button type="button" class="btn btn-ghost" onclick="ppSaveTemplate('style')">Save for this Style</button>
+        <button type="button" class="btn btn-ghost" onclick="ppResetTemplate()">Reset to default</button>
+      </div>
+      <div style="font-size:12px;color:var(--ink-soft);margin-top:8px">Edit any standard requirement or checkpoint below, or use “+ Add checkpoint” / ✕ in any section. Save it as the Buyer template or the Style template; it loads automatically next time (Style template wins over Buyer template).</div>
+      <div id="ppTplMsg" class="form-msg"></div>
+    </div>
     <div class="panel" style="margin:0 0 24px;position:sticky;top:48px;z-index:4;border-color:var(--gold)"><div id="ppProgress" style="font-size:13.5px"></div></div>
     ${PP_SECTIONS.map(ppSectionHTML).join("")}
     <div class="panel" style="margin-bottom:24px">
@@ -1861,7 +1899,7 @@ function ppActionsFromDeviations() {
   document.querySelectorAll(".pp-t tbody tr").forEach(tr => {
     if (tr.querySelector(".pp-st").value !== "Deviation") return;
     const sec = PP_SECTIONS.find(s => s.id === tr.closest("table").dataset.sec);
-    const txt = `${sec.title}: ${tr.cells[0].textContent.trim()} — ${tr.querySelector(".pp-rm").value.trim()}`;
+    const txt = `${sec.title}: ${tr.querySelector(".pp-it").value.trim()} — ${tr.querySelector(".pp-rm").value.trim()}`;
     if (!have.includes(txt)) ppAddAction(txt);
   });
 }
@@ -1871,18 +1909,19 @@ function ppStatusChanged(sel) {
   ppPaint(sel); ppProgress();
 }
 function ppPaint(sel) {
-  const v = sel.value;
-  sel.style.background = v === "Correct" ? "var(--pass-dim)" : v === "Deviation" ? "var(--reject-dim)" : v === "NA" ? "#ECEFEA" : "";
-  sel.style.color = v === "Correct" ? "var(--pass)" : v === "Deviation" ? "var(--reject)" : "";
-  sel.style.fontWeight = v === "Deviation" ? "700" : "";
+  const map = { Correct: ["var(--pass-dim)", "var(--pass)"], Deviation: ["var(--reject-dim)", "var(--reject)"], NA: ["#ECEFEA", ""], Required: ["#FFF4D6", "#7a5a00"], "Not required": ["#ECEFEA", ""] };
+  const m = map[sel.value];
+  sel.style.background = m ? m[0] : ""; sel.style.color = m ? m[1] : "";
+  sel.style.fontWeight = sel.value === "Deviation" || sel.value === "Required" ? "700" : "";
 }
 function ppProgress() {
+  const el = document.getElementById("ppProgress"); if (!el) return;
   const all = Array.from(document.querySelectorAll(".pp-st"));
-  const n = v => all.filter(s => s.value === v).length;
-  const el = document.getElementById("ppProgress");
-  if (!el) return;
-  const done = all.length - n("");
-  el.innerHTML = `<b>Checkpoints ${done}/${all.length} marked</b> &nbsp;·&nbsp; <span style="color:var(--pass)">Correct ${n("Correct")}</span> &nbsp;·&nbsp; <span style="color:var(--reject)">Deviation ${n("Deviation")}</span> &nbsp;·&nbsp; NA ${n("NA")}`;
+  const chk = all.filter(s => s.dataset.kind !== "test");
+  const n = v => chk.filter(s => s.value === v).length;
+  const done = all.filter(s => s.value).length;
+  const req = all.filter(s => s.value === "Required").length;
+  el.innerHTML = `<b>Checkpoints ${done}/${all.length} marked</b> &nbsp;·&nbsp; <span style="color:var(--pass)">Correct ${n("Correct")}</span> &nbsp;·&nbsp; <span style="color:var(--reject)">Deviation ${n("Deviation")}</span> &nbsp;·&nbsp; NA ${n("NA")} &nbsp;·&nbsp; Tests required ${req}`;
 }
 // Auto-NA: embellishment section when order has no print/embroidery/heat-seal; wash row for Non-Wash products.
 function ppAutoNA() {
@@ -1893,13 +1932,66 @@ function ppAutoNA() {
     const sec = PP_SECTIONS.find(s => s.id === t.dataset.sec);
     t.querySelectorAll("tbody tr").forEach(tr => {
       const sel = tr.querySelector(".pp-st");
-      if (!sel.hasAttribute("data-auto")) return;
+      if (sel.dataset.kind === "test" || !sel.hasAttribute("data-auto")) return;
       const na = (sec.embNA && !hasEmb && emb) || (tr.dataset.tag === "wash" && nonWash);
       sel.value = na ? "NA" : "";
       ppPaint(sel);
     });
   });
   ppProgress();
+}
+
+// ---- Requirement templates: default < Buyer template < Style template (saved in the PPTemplates sheet) ----
+function ppCurrentTemplate() {
+  const sections = {};
+  document.querySelectorAll(".pp-t").forEach(t => {
+    sections[t.dataset.sec] = Array.from(t.querySelectorAll("tbody tr")).map(tr => ({ i: tr.querySelector(".pp-it").value.trim(), s: tr.querySelector(".pp-sd").value.trim(), t: tr.dataset.tag || "" })).filter(r => r.i);
+  });
+  const mechanical = Object.fromEntries(PP_MECH_FIELDS.map(([l], i) => [l, (document.getElementById("ppm_" + i) || {}).value || ""]));
+  return { sections, mechanical };
+}
+function ppApplyTemplate(tpl) {
+  PP_SECTIONS.forEach(sec => {
+    const tb = document.querySelector(`table[data-sec="${sec.id}"] tbody`); if (!tb) return;
+    const prev = {};
+    tb.querySelectorAll("tr").forEach(tr => { const sel = tr.querySelector(".pp-st"); prev[tr.querySelector(".pp-it").value.trim().toLowerCase()] = { status: sel.hasAttribute("data-auto") ? "" : sel.value, remarks: tr.querySelector(".pp-rm").value }; });
+    const rows = tpl && tpl.sections && tpl.sections[sec.id] ? tpl.sections[sec.id].map(r => [r.i, r.s, r.t]) : sec.rows;
+    tb.innerHTML = rows.map(r => ppRowHTML(sec, r, prev[String(r[0]).trim().toLowerCase()])).join("");
+  });
+  PP_MECH_FIELDS.forEach(([l, d], i) => { const el = document.getElementById("ppm_" + i); if (el) el.value = tpl && tpl.mechanical && l in tpl.mechanical ? tpl.mechanical[l] : d; });
+  document.querySelectorAll(".pp-st").forEach(ppPaint);
+  ppAutosizeAll(); ppAutoNA();
+}
+function ppSetTplInfo(text) { const el = document.getElementById("ppTplInfo"); if (el) el.innerHTML = text; }
+let ppTplToken = 0;
+async function ppLoadTemplates(sel) {
+  const token = ++ppTplToken;
+  try {
+    const res = await qaApi({ action: "getPPTemplate", buyer: sel.buyer, style: (sel.detail && sel.detail.styleName) || "" });
+    if (token !== ppTplToken) return;
+    if (res.ok && res.styleTpl) { ppApplyTemplate(res.styleTpl); ppSetTplInfo(`Using: <b>Style template</b> — ${esc(sel.detail.styleName)} (${esc(sel.buyer)})`); }
+    else if (res.ok && res.buyerTpl) { ppApplyTemplate(res.buyerTpl); ppSetTplInfo(`Using: <b>Buyer template</b> — ${esc(sel.buyer)}`); }
+    else { ppApplyTemplate(null); ppSetTplInfo(`Using: <b>Default template</b> (no saved template for ${esc(sel.buyer)} / this style)`); }
+  } catch (err) { ppSetTplInfo(`Using: <b>Default template</b> (saved templates could not be loaded)`); }
+}
+async function ppSaveTemplate(scope) {
+  if (typeof tcBlockIfGuest === "function" && tcBlockIfGuest("Saving a template")) return;
+  const msg = document.getElementById("ppTplMsg");
+  const sel = ppSelCtrl ? ppSelCtrl.getSel() : {};
+  const style = (sel.detail && sel.detail.styleName) || "";
+  if (!sel.buyer || (scope === "style" && !style)) { msg.textContent = "Select Buyer and IR first."; msg.className = "form-msg err show"; return; }
+  const label = scope === "buyer" ? `Buyer "${sel.buyer}"` : `Style "${style}" (${sel.buyer})`;
+  if (!confirm(`Save the current checkpoints and standard requirements as the template for ${label}?\nEvery future PP Meeting for it will load this template.`)) return;
+  try {
+    const res = await qaApi({ action: "savePPTemplate", scope, buyer: sel.buyer, style, template: ppCurrentTemplate() });
+    if (!res.ok) throw new Error(res.error || "Save failed");
+    ppSetTplInfo(`Using: <b>${scope === "buyer" ? "Buyer" : "Style"} template</b> — ${esc(scope === "buyer" ? sel.buyer : style)}`);
+    msg.textContent = `Template saved for ${label}.`; msg.className = "form-msg ok show";
+  } catch (err) { msg.textContent = err.message; msg.className = "form-msg err show"; }
+}
+function ppResetTemplate() {
+  if (!confirm("Reset all checkpoints and standard requirements to the default template? Marked statuses and remarks for matching checkpoints are kept.")) return;
+  ppApplyTemplate(null); ppSetTplInfo("Using: <b>Default template</b> (not saved)");
 }
 
 let ppSelCtrl = null;
@@ -2008,6 +2100,7 @@ function renderPPMeeting() {
     </div>
   `;
   addColorRow("pp");
+  ppAutosizeAll();
   ppProgress();
   ppSelCtrl = ppWireSelector((sel) => {
     refreshColorOptions("pp", sel.detail);
@@ -2015,6 +2108,7 @@ function renderPPMeeting() {
     const q = document.getElementById("ppPlannedQty");
     if (sel.detail && !q.value) q.value = sel.detail.totalQty || "";
     ppAutoNA();
+    if (sel.ir && sel.detail) ppLoadTemplates(sel);
   });
   loadPPMeetingEntries();
 }
@@ -2025,12 +2119,13 @@ function ppCollectReport() {
   const sections = {};
   document.querySelectorAll(".pp-t").forEach(t => {
     sections[t.dataset.sec] = Array.from(t.querySelectorAll("tbody tr")).map(tr => ({
-      item: tr.cells[0].textContent.trim(), standard: tr.cells[1].textContent.trim(),
+      item: tr.querySelector(".pp-it").value.trim(), standard: tr.querySelector(".pp-sd").value.trim(),
       status: tr.querySelector(".pp-st").value, remarks: tr.querySelector(".pp-rm").value.trim(),
-    }));
+    })).filter(r => r.item);
   });
   const all = Object.values(sections).flat();
   const cnt = s => all.filter(r => r.status === s).length;
+  const tests = all.filter(r => r.status === "Required").length;
   return {
     template: "JMF-QA-003 v2",
     approvals: { qaFile: v("ppa_qaFile"), trimsCard: v("ppa_trimsCard"), ppSample: v("ppa_ppSample"), packApproval: v("ppa_packApproval") },
@@ -2041,7 +2136,7 @@ function ppCollectReport() {
     sections: sections,
     actions: Array.from(document.querySelectorAll("#ppActTable tbody tr")).map(tr => ({ action: tr.querySelector(".pq-a").value.trim(), responsible: tr.querySelector(".pq-w").value.trim(), deadline: tr.querySelector(".pq-d").value })).filter(a => a.action),
     attendance: Array.from(document.querySelectorAll("#ppAttTable tbody tr")).map(tr => ({ department: tr.querySelector(".pa-d").value.trim(), name: tr.querySelector(".pa-n").value.trim(), present: tr.querySelector(".pa-p").checked, required: tr.dataset.req === "1" })).filter(a => a.name || a.required),
-    summary: { total: all.length, correct: cnt("Correct"), deviation: cnt("Deviation"), na: cnt("NA"), pending: cnt("") },
+    summary: { total: all.length, correct: cnt("Correct"), deviation: cnt("Deviation"), na: cnt("NA"), tests: tests, pending: cnt("") },
   };
 }
 function ppValidate(rep) {
@@ -2095,8 +2190,10 @@ async function savePPMeeting() {
     report: report,
   };
   await runSave(msg, async () => {
+    msg.textContent = "Translating comments to Bangla and saving…"; msg.className = "form-msg show";
+    entry.report.commentsBn = await ppGetBn(entry);
     const res = await qaApi({ action: "savePPMeeting", entry: entry });
-    if (res.ok) { try { ppMakePdf(entry); } catch (err) { console.error("PP PDF failed", err); } }
+    if (res.ok) { try { await ppMakePdf(entry); } catch (err) { console.error("PP PDF failed", err); } }
     return res;
   }, () => renderPPMeeting(), "PP Meeting report saved and PDF downloaded. Form cleared for the next entry.");
 }
@@ -2123,8 +2220,41 @@ function ppReportDetailHTML(r) {
 }
 
 // ---- PDF (jsPDF + autoTable) — same layout as the paper form, generated on Save and from Details ----
-function ppMakePdf(e) {
+// ---- Bangla for 14. General Comments: typed in English, translated automatically for the PDF ----
+async function ppGetBn(e) {
+  const c = e.comments || {}, have = Object.assign({}, (e.report && e.report.commentsBn) || {});
+  const need = Object.keys(c).filter(k => c[k] && String(c[k]).trim() && !have[k]);
+  if (!need.length) return have;
+  try {
+    const res = await qaApi({ action: "translateBn", texts: need.map(k => c[k]) });
+    if (res.ok) need.forEach((k, i) => { if (res.translations && res.translations[i]) have[k] = res.translations[i]; });
+  } catch (err) { console.error("Bangla translation failed", err); }
+  return have;
+}
+async function ppEnsureBnFont() {
+  if (!document.getElementById("ppBnFontCss")) {
+    const l = document.createElement("link"); l.id = "ppBnFontCss"; l.rel = "stylesheet";
+    l.href = "https://fonts.googleapis.com/css2?family=Noto+Sans+Bengali:wght@400;600&display=swap"; document.head.appendChild(l);
+  }
+  try { await Promise.race([document.fonts.load('24px "Noto Sans Bengali"', "অআক"), new Promise(r => setTimeout(r, 5000))]); } catch (err) {}
+}
+// jsPDF cannot shape Bangla, so each Bangla comment is drawn on a canvas (browser shapes it correctly) and placed in the PDF as an image.
+function ppBnImage(text, widthMm) {
+  const ppm = 9, W = Math.round(widthMm * ppm), fs = 3.4 * ppm, lh = fs * 1.6, pad = 5;
+  const c = document.createElement("canvas"), x = c.getContext("2d");
+  const font = `${fs}px "Noto Sans Bengali","Nirmala UI","Vrinda","Shonar Bangla","Noto Sans",sans-serif`;
+  x.font = font;
+  const lines = [];
+  String(text).split(/\n/).forEach(par => { let line = ""; par.split(/\s+/).forEach(w => { const t = line ? line + " " + w : w; if (x.measureText(t).width > W - 2 * pad && line) { lines.push(line); line = w; } else line = t; }); lines.push(line); });
+  c.width = W; c.height = Math.ceil(lines.length * lh + pad * 2);
+  x.font = font; x.fillStyle = "#111"; x.textBaseline = "top";
+  lines.forEach((l, i) => x.fillText(l, pad, pad + i * lh));
+  return { url: c.toDataURL("image/png"), w: widthMm, h: c.height / ppm };
+}
+async function ppMakePdf(e) {
   const { jsPDF } = window.jspdf;
+  const bn = await ppGetBn(e);
+  if (Object.keys(bn).length) await ppEnsureBnFont();
   const doc = new jsPDF({ unit: "mm", format: "a4" });
   const r = e.report || {}, W = 210, M = 10;
   const T = s => String(s == null ? "" : s).replace(/[\u2013\u2014]/g, "-").replace(/[\u2018\u2019]/g, "'").replace(/[\u201C\u201D]/g, '"').replace(/\u2265/g, ">=").replace(/\u00B7/g, "|").replace(/[^\x00-\xFF]/g, "?");
@@ -2155,14 +2285,20 @@ function ppMakePdf(e) {
   tbl(band("03. Mechanical comments", 2), Object.entries(mech).filter(([, t]) => t).map(([x, t]) => [{ content: T(x), styles: { fontStyle: "bold", cellWidth: 45 } }, T(t)]));
   PP_SECTIONS.forEach(sec => {
     const rows = (r.sections || {})[sec.id]; if (!rows || !rows.length) return;
-    tbl(band(sec.no + ". " + sec.title, 4).concat([["Checkpoint", "Standard requirement", "Status", "Remarks"]]),
+    tbl(band(sec.no + ". " + sec.title, 4).concat([sec.kind === "test" ? ["Test", "Requirement / standard", "Required?", "Method / remarks"] : ["Checkpoint", "Standard requirement", "Status", "Remarks"]]),
       rows.map(q => [T(q.item), T(q.standard), T(q.status), T(q.remarks)]),
       { columnStyles: { 0: { cellWidth: 38 }, 1: { cellWidth: 70 }, 2: { cellWidth: 20 } },
         didParseCell: d => { if (d.section === "body" && d.column.index === 2) { if (d.cell.raw === "Deviation") { d.cell.styles.textColor = [176, 0, 0]; d.cell.styles.fontStyle = "bold"; } else if (d.cell.raw === "Correct") d.cell.styles.textColor = [23, 97, 42]; } } });
   });
   if ((r.actions || []).length) tbl(band("Action plan for deviations", 3).concat([["Action", "Responsible", "Deadline"]]), r.actions.map(x => [T(x.action), T(x.responsible), T(x.deadline)]), { columnStyles: { 1: { cellWidth: 35 }, 2: { cellWidth: 25 } } });
   const gc = Object.entries(e.comments || {}).filter(([, v]) => v);
-  tbl(band("14. General comments", 2), gc.length ? gc.map(([x, v]) => [{ content: T(x), styles: { fontStyle: "bold", cellWidth: 38 } }, T(v)]) : [["-", ""]]);
+  const gcBody = [];
+  gc.forEach(([x, v]) => {
+    gcBody.push([{ content: T(x), styles: { fontStyle: "bold", cellWidth: 38 } }, T(v)]);
+    if (bn[x]) { try { const im = ppBnImage(bn[x], 150); gcBody.push([{ content: "Bangla (auto-translated)", styles: { fontSize: 6.5, textColor: [110, 110, 110] } }, { content: "", bn: im, styles: { minCellHeight: im.h + 1.6 } }]); } catch (err) { console.error("Bangla image failed", err); } }
+  });
+  tbl(band("14. General comments (English + Bangla)", 2), gcBody.length ? gcBody : [["-", ""]],
+    { didDrawCell: d => { if (d.section === "body" && d.cell.raw && d.cell.raw.bn) { const im = d.cell.raw.bn; doc.addImage(im.url, "PNG", d.cell.x + 1, d.cell.y + 0.8, im.w, im.h); } } });
   tbl(band("15. Attendance report", 4).concat([["Department", "Name", "Present", "Signature"]]), (r.attendance || []).map(x => [T(x.department), T(x.name), x.present ? "Yes" : "No", ""]), { bodyStyles: { minCellHeight: 9 }, columnStyles: { 2: { cellWidth: 20 }, 3: { cellWidth: 45 } } });
   const id = ["PPM", (e.buyer || "").toUpperCase(), e.ir, e.styleNo, (e.season || "").toUpperCase(), String(e.date || "").replace(/-/g, "")].filter(Boolean).join(" ");
   const n = doc.getNumberOfPages();
@@ -2171,8 +2307,22 @@ function ppMakePdf(e) {
 }
 function ppPrintReport(e) { if (e) ppMakePdf(e); }
 let ppDetailEntries = [];
+// Style Tracking: download the PP Meeting PDF for the selected IR (latest entry) without opening details.
+async function ppDownloadIrPdf(btn) {
+  const ir = typeof stSelected !== "undefined" && stSelected ? stSelected.ir : "";
+  if (!ir) return;
+  const label = btn ? btn.textContent : "";
+  if (btn) { btn.disabled = true; btn.textContent = "Preparing…"; }
+  try {
+    const res = await qaApi({ action: "listPPMeeting" });
+    const list = (res.entries || []).filter(x => String(x.ir || "").trim() === ir);
+    if (!list.length) { alert("No PP Meeting entry found for this IR."); return; }
+    await ppMakePdf(list[list.length - 1]);
+  } catch (err) { alert("Could not create the PDF: " + err.message); }
+  finally { if (btn) { btn.disabled = false; btn.textContent = label; } }
+}
 function ppPrintButton(e) {
-  if (!e || !e.report) return "";
+  if (!e) return "";
   ppDetailEntries.push(e);
   return `<button class="btn btn-primary" style="padding:4px 10px;font-size:11.5px" onclick="ppPrintReport(ppDetailEntries[${ppDetailEntries.length - 1}])">⬇ Download PDF</button>`;
 }
