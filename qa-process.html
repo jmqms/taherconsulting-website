@@ -6,6 +6,8 @@
 <title>QA Process — Taher Consulting</title>
 <link rel="icon" type="image/svg+xml" href="assets/favicon.svg">
 <script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.4/chart.umd.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf-autotable/3.8.2/jspdf.plugin.autotable.min.js"></script>
 <link rel="stylesheet" href="css/style.css">
 <style>
   body{background:var(--paper);}
@@ -1726,10 +1728,24 @@ const PP_ATTEND = [
   { d: "Merchandiser", req: true }, { d: "QA / QAD", req: true }, { d: "Quality Executive" }, { d: "Cutting" },
   { d: "Sewing / Line-chief" }, { d: "Finishing" }, { d: "Mechanical" }, { d: "IE" }, { d: "Planning" }, { d: "Development / Technical" },
 ];
-const PP_PLAN = [["Day output", "dayOutput"], ["Number of line", "lines"], ["Start cutting date", "startCut"], ["Start sewing date", "startSew"],
-  ["Inline date", "inlineDate"], ["Start finishing date", "startFin"], ["Pre-final inspection date", "preFinalDate"], ["Final inspection date", "finalDate"]];
+const PP_PLAN_TXT = [["Day output", "dayOutput"], ["Number of line", "lines"]];
+const PP_PLAN_DATES = [["Start cutting date", "startCut"], ["Start sewing date", "startSew"], ["Inline date", "inlineDate"],
+  ["Start finishing date", "startFin"], ["Pre-final inspection date", "preFinalDate"], ["Final inspection date", "finalDate"]];
 const PP_IE = [["Layout SMV", "smv"], ["No. of machine", "machines"], ["No. of operator", "operators"], ["No. of helper", "helpers"]];
-const PP_MECH_DEFAULT = "All machines cleaned/finished to avoid oil leakage. Bobbin/looper thread adjusted, correct needle timing. Feed dog not broken or set too high. Thread tension discs, throat plate and stitch balance set properly. Clean machines timely on a daily basis.";
+// 03. Mechanical comments — detailed, one box per topic (same style as 14. General Comments)
+const PP_MECH_FIELDS = [
+  ["General Comments", "Mechanical team to keep every machine in running condition throughout production."],
+  ["Machine Cleaning & Oil Leakage", "All machines must be cleaned and finished to avoid oil leakage during operation. Check daily and separate oil-leaking machines for repair."],
+  ["Thread, Bobbin & Looper", "Bobbin / looper thread to be adjusted properly. Thread tension discs to be set properly."],
+  ["Needle & Timing", "Proper timing of needle passing. No blunt needle on any machine; follow the needle replacement policy."],
+  ["Feed Dog & Presser Foot", "Check that the feed dog is not broken or set too high. Adjust feed dog height and pressure foot; fabric stretch must not be blocked."],
+  ["Throat Plate & Stitch Balance", "Throat plate setting and stitch balance to be proper."],
+  ["Daily Maintenance", "Clean the machines timely on a daily basis."],
+  ["Other Mechanical Remarks", ""],
+];
+
+const PP_LABELS = Object.fromEntries([].concat(PP_PLAN_TXT, PP_PLAN_DATES, PP_IE).map(([l, k]) => [k, l]));
+const ppLabel = k => PP_LABELS[k] || humanizeKey(k);
 const PP_SECTIONS = [
   { id: "fabric", no: "04", title: "Fabric & garment description", rows: [
     ["Construction", "Match approved fabric standard / bulk report"], ["Colour shade", "Match approved shade band"], ["Weight (GSM)", "Within approved tolerance"],
@@ -1768,7 +1784,6 @@ const PP_SECTIONS = [
     ["Minimum extend", "Maintain within spec"], ["Seam solidity / bursting", "No cracking in any operation; take care of neck stretch"] ] },
 ];
 
-let ppSelCtrl = null;
 const ppSecIds = () => PP_SECTIONS.map(s => s.id);
 
 function ppSectionHTML(s) {
@@ -1783,6 +1798,17 @@ function ppSectionHTML(s) {
     </table></div>`;
 }
 
+function ppDateField(l, k) {
+  return `<div class="field"><label>${esc(l)}</label>
+    <div style="display:flex;gap:10px;align-items:center"><input type="date" id="ppp_${k}" disabled style="flex:1">
+    <label style="display:flex;gap:5px;align-items:center;font-weight:600;white-space:nowrap"><input type="checkbox" id="ppp_${k}_tba" checked style="width:auto" onchange="ppTba('${k}')"> TBA</label></div></div>`;
+}
+function ppTba(k) {
+  const t = document.getElementById("ppp_" + k + "_tba").checked, d = document.getElementById("ppp_" + k);
+  d.disabled = t; if (t) d.value = "";
+}
+function ppPlanVal(k) { const t = document.getElementById("ppp_" + k + "_tba"); return t && t.checked ? "TBA" : (document.getElementById("ppp_" + k) || {}).value || ""; }
+
 function ppReportPanelsHTML() {
   const f = (arr, p) => arr.map(([l, k]) => `<div class="field"><label>${esc(l)}</label><input id="${p}_${k}" value="TBA"></div>`).join("");
   return `
@@ -1795,9 +1821,11 @@ function ppReportPanelsHTML() {
         <div class="field"><label>Wash / Dye</label><input id="ppWashDye" placeholder="NA"></div>
       </div>
     </div>
-    <div class="panel" style="margin-bottom:24px"><h3>01. Production Plan</h3><div class="form-grid">${f(PP_PLAN, "ppp")}</div></div>
+    <div class="panel" style="margin-bottom:24px"><h3>01. Production Plan</h3><div class="form-grid">${f(PP_PLAN_TXT, "ppp")}${PP_PLAN_DATES.map(([l, k]) => ppDateField(l, k)).join("")}</div>
+      <div style="font-size:12px;color:var(--ink-soft)">Pick a date, or keep TBA ticked if it is not decided yet.</div></div>
     <div class="panel" style="margin-bottom:24px"><h3>02. IE Comments</h3><div class="form-grid">${f(PP_IE, "ppi")}</div></div>
-    <div class="panel" style="margin-bottom:24px"><h3>03. Mechanical Comments</h3><textarea id="ppMech" rows="3">${esc(PP_MECH_DEFAULT)}</textarea></div>
+    <div class="panel" style="margin-bottom:24px"><h3>03. Mechanical Comments</h3>
+      <div class="form-grid">${PP_MECH_FIELDS.map(([l, d], i) => `<div class="field"${i === 0 ? ' style="grid-column:1/-1"' : ""}><label>${esc(l)}</label><textarea id="ppm_${i}" rows="2">${esc(d)}</textarea></div>`).join("")}</div></div>
     <div class="panel" style="margin:0 0 24px;position:sticky;top:48px;z-index:4;border-color:var(--gold)"><div id="ppProgress" style="font-size:13.5px"></div></div>
     ${PP_SECTIONS.map(ppSectionHTML).join("")}
     <div class="panel" style="margin-bottom:24px">
@@ -1807,8 +1835,10 @@ function ppReportPanelsHTML() {
         <button type="button" class="btn btn-ghost" onclick="ppAddAction()">+ Add action</button>
         <button type="button" class="btn btn-ghost" onclick="ppActionsFromDeviations()">Add from deviations</button>
       </div>
-    </div>
-    <div class="panel" style="margin-bottom:24px">
+    </div>`;
+}
+function ppAttendancePanelHTML() {
+  return `<div class="panel" style="margin-bottom:24px">
       <h3>15. Attendance</h3>
       <table class="qa-table" id="ppAttTable"><thead><tr><th style="width:28%">Department</th><th>Name</th><th style="width:15%">Present / signed</th><th style="width:40px"></th></tr></thead>
         <tbody>${PP_ATTEND.map(a => ppAttRowHTML(a.d, a.req)).join("")}</tbody></table>
@@ -1872,6 +1902,55 @@ function ppAutoNA() {
   ppProgress();
 }
 
+let ppSelCtrl = null;
+function ppSelectorHTML() {
+  return `<div class="panel" style="margin-bottom:24px">
+      <h3>Select Style</h3>
+      <div class="form-grid">
+        <div class="field"><label>Buyer</label><select id="ppBuyer"><option value="">Loading…</option></select></div>
+        <div class="field"><label>IR No</label><select id="ppIr"><option value="">Select Buyer first</option></select></div>
+      </div>
+      <div id="ppDetails" style="color:var(--ink-soft);margin-top:8px">Select Buyer → IR to see style details.</div>
+    </div>`;
+}
+// Style details with the Production SBU (taken from the IR) shown first; the same SBU is saved and printed in the PDF.
+function ppDetailsHTML(sel) {
+  if (!sel.detail) return styleDetailsHTML(null);
+  const alloc = sel.detail.allocatedSbu ? `  (Allocated: ${sel.detail.allocatedSbu})` : "";
+  const html = styleDetailsHTML(Object.assign({}, sel.detail, { allocatedSbu: "" }));
+  return html.replace('<div class="sd-grid">', `<div class="sd-grid"><div class="sd-row"><span>Production SBU</span><b>${esc((sel.sbu || "—") + alloc)}</b></div>`);
+}
+function ppWireSelector(onChange) {
+  const bEl = document.getElementById("ppBuyer"), iEl = document.getElementById("ppIr"), dEl = document.getElementById("ppDetails");
+  const sel = { sbu: "", buyer: "", ir: "", detail: null, manual: false };
+  const ready = fetchBuyers("").then(b => { bEl.innerHTML = `<option value="">Select Buyer…</option>` + b.map(x => `<option value="${esc(x)}">${esc(x)}</option>`).join(""); });
+  async function loadIrs() {
+    iEl.innerHTML = `<option value="">Loading…</option>`;
+    const irs = sel.buyer ? await fetchIrs("", sel.buyer) : [];   // every IR of this buyer, any SBU
+    iEl.innerHTML = `<option value="">Select IR…</option>` + irs.map(x => `<option value="${esc(x)}">${esc(x)}</option>`).join("");
+  }
+  async function loadDetail() {
+    sel.detail = null;
+    if (!sel.ir) { sel.sbu = ""; dEl.textContent = "Select IR to see style details."; onChange(sel); return; }
+    dEl.textContent = "Loading…";
+    const map = await ovLoadIrMap();
+    sel.sbu = (map[sel.ir] || {}).sbu || "";
+    sel.detail = await fetchOrderDetail(sel.sbu, sel.buyer, sel.ir);
+    dEl.innerHTML = ppDetailsHTML(sel);
+    onChange(sel);
+  }
+  bEl.addEventListener("change", async () => {
+    sel.buyer = bEl.value; sel.ir = ""; sel.sbu = ""; sel.detail = null;
+    dEl.textContent = "Select IR to see style details.";
+    onChange(sel); await loadIrs();
+  });
+  iEl.addEventListener("change", () => { sel.ir = iEl.value; loadDetail(); });
+  return {
+    getSel: () => sel,
+    setSel: async (p) => { await ready; bEl.value = p.buyer || ""; sel.buyer = bEl.value; await loadIrs(); iEl.value = p.ir || ""; sel.ir = iEl.value; await loadDetail(); },
+  };
+}
+
 function renderPPMeeting() {
   colorDetail.pp = null;
   const el = tcEl();
@@ -1880,7 +1959,7 @@ function renderPPMeeting() {
       <div class="eyebrow">Quality Process</div>
       <h1>PP Meeting</h1>
     </div>
-    ${styleSelectorHTML("pp")}
+    ${ppSelectorHTML()}
     <div class="panel" style="margin-bottom:24px">
       <h3>PP Meeting Information</h3>
       <div class="form-grid">
@@ -1914,7 +1993,10 @@ function renderPPMeeting() {
           <div class="field"${i === 0 ? ' style="grid-column:1/-1"' : ""}><label>${esc(f)}</label><textarea id="ppc_${i}" rows="2"></textarea></div>
         `).join("")}
       </div>
-      <button class="btn btn-primary" onclick="savePPMeeting()">Save Entry →</button>
+    </div>
+    ${ppAttendancePanelHTML()}
+    <div class="panel" style="margin-bottom:24px">
+      <button class="btn btn-primary" onclick="savePPMeeting()">Save Entry &amp; Generate PDF →</button>
       <div id="ppMsg" class="form-msg"></div>
     </div>
     <div class="panel">
@@ -1927,7 +2009,7 @@ function renderPPMeeting() {
   `;
   addColorRow("pp");
   ppProgress();
-  ppSelCtrl = wireStyleSelector("pp", (sel) => {
+  ppSelCtrl = ppWireSelector((sel) => {
     refreshColorOptions("pp", sel.detail);
     document.getElementById("ppEmb").value = (sel.detail && sel.detail.embellishmentCategory) || "";
     const q = document.getElementById("ppPlannedQty");
@@ -1953,7 +2035,9 @@ function ppCollectReport() {
     template: "JMF-QA-003 v2",
     approvals: { qaFile: v("ppa_qaFile"), trimsCard: v("ppa_trimsCard"), ppSample: v("ppa_ppSample"), packApproval: v("ppa_packApproval") },
     fabrication: v("ppFabrication"), washDye: v("ppWashDye"),
-    plan: obj(PP_PLAN, "ppp"), ie: obj(PP_IE, "ppi"), mechanical: v("ppMech"),
+    plan: Object.assign(obj(PP_PLAN_TXT, "ppp"), Object.fromEntries(PP_PLAN_DATES.map(([, k]) => [k, ppPlanVal(k)]))),
+    ie: obj(PP_IE, "ppi"),
+    mechanical: Object.fromEntries(PP_MECH_FIELDS.map(([l], i) => [l, v("ppm_" + i)])),
     sections: sections,
     actions: Array.from(document.querySelectorAll("#ppActTable tbody tr")).map(tr => ({ action: tr.querySelector(".pq-a").value.trim(), responsible: tr.querySelector(".pq-w").value.trim(), deadline: tr.querySelector(".pq-d").value })).filter(a => a.action),
     attendance: Array.from(document.querySelectorAll("#ppAttTable tbody tr")).map(tr => ({ department: tr.querySelector(".pa-d").value.trim(), name: tr.querySelector(".pa-n").value.trim(), present: tr.querySelector(".pa-p").checked, required: tr.dataset.req === "1" })).filter(a => a.name || a.required),
@@ -1961,6 +2045,8 @@ function ppCollectReport() {
   };
 }
 function ppValidate(rep) {
+  const nd = PP_PLAN_DATES.find(([, k]) => !rep.plan[k]);
+  if (nd) return `Production Plan: pick a date for "${nd[0]}" or tick TBA.`;
   if (rep.summary.pending) return `${rep.summary.pending} checkpoint(s) are not marked yet. Mark every one Correct, Deviation or NA.`;
   for (const [id, rows] of Object.entries(rep.sections)) {
     const bad = rows.find(r => r.status === "Deviation" && !r.remarks);
@@ -2008,18 +2094,24 @@ async function savePPMeeting() {
     comments: comments,
     report: report,
   };
-  await runSave(msg, () => qaApi({ action: "savePPMeeting", entry: entry }), () => renderPPMeeting(), "PP Meeting report saved. Form cleared for the next entry.");
+  await runSave(msg, async () => {
+    const res = await qaApi({ action: "savePPMeeting", entry: entry });
+    if (res.ok) { try { ppMakePdf(entry); } catch (err) { console.error("PP PDF failed", err); } }
+    return res;
+  }, () => renderPPMeeting(), "PP Meeting report saved and PDF downloaded. Form cleared for the next entry.");
 }
 
 // ---- Read-only view of a saved report (See Details) ----
 function ppReportDetailHTML(r) {
   if (!r || typeof r !== "object") return "—";
   const badge = s => `<span style="font-weight:${s === "Deviation" ? 700 : 500};color:${s === "Correct" ? "var(--pass)" : s === "Deviation" ? "var(--reject)" : "var(--ink-soft)"}">${esc(s || "—")}</span>`;
-  const kv = o => Object.entries(o || {}).map(([k, v]) => `${esc(humanizeKey(k))}: <b>${esc(v || "—")}</b>`).join(" &nbsp;·&nbsp; ");
+  const kv = o => Object.entries(o || {}).map(([k, v]) => `${esc(ppLabel(k))}: <b>${esc(v || "—")}</b>`).join(" &nbsp;·&nbsp; ");
   const s = r.summary || {};
   let h = `<div style="margin-bottom:8px"><b>Checkpoints ${s.total || 0}</b> — Correct ${s.correct || 0}, <span style="color:var(--reject)">Deviation ${s.deviation || 0}</span>, NA ${s.na || 0}</div>`;
   h += `<div style="margin-bottom:6px">${kv(r.approvals)}</div><div style="margin-bottom:6px">${kv(r.plan)}</div><div style="margin-bottom:10px">${kv(r.ie)}</div>`;
-  if (r.mechanical) h += `<div style="margin-bottom:10px"><b>Mechanical:</b> ${esc(r.mechanical)}</div>`;
+  const mech = typeof r.mechanical === "string" ? (r.mechanical ? { "Mechanical comments": r.mechanical } : {}) : (r.mechanical || {});
+  const mrows = Object.entries(mech).filter(([, t]) => t);
+  if (mrows.length) h += `<div style="margin-bottom:10px"><b>03. Mechanical comments</b><br>${mrows.map(([k, t]) => `<b>${esc(k)}:</b> ${esc(t)}`).join("<br>")}</div>`;
   PP_SECTIONS.forEach(sec => {
     const rows = (r.sections || {})[sec.id]; if (!rows || !rows.length) return;
     h += `<table class="qa-table" style="margin:8px 0"><thead><tr><th colspan="3" style="background:var(--panel-soft,#f6f5f1)">${sec.no}. ${esc(sec.title)}</th></tr></thead><tbody>${
@@ -2030,42 +2122,59 @@ function ppReportDetailHTML(r) {
   return h;
 }
 
-// ---- Print / PDF (Excel-like A4 layout, same as the paper form) ----
-function ppPrintReport(e) {
-  if (!e) return;
-  const r = e.report || {};
-  const x = esc;
-  const kvRow = (pairs) => `<tr>${pairs.map(([k, v]) => `<td class="k">${x(k)}</td><td>${x(v || "")}</td>`).join("")}</tr>`;
+// ---- PDF (jsPDF + autoTable) — same layout as the paper form, generated on Save and from Details ----
+function ppMakePdf(e) {
+  const { jsPDF } = window.jspdf;
+  const doc = new jsPDF({ unit: "mm", format: "a4" });
+  const r = e.report || {}, W = 210, M = 10;
+  const T = s => String(s == null ? "" : s).replace(/[\u2013\u2014]/g, "-").replace(/[\u2018\u2019]/g, "'").replace(/[\u201C\u201D]/g, '"').replace(/\u2265/g, ">=").replace(/\u00B7/g, "|").replace(/[^\x00-\xFF]/g, "?");
+  const DARK = [47, 63, 76], LIGHT = [226, 231, 235];
   const colors = (e.colors || []).map(c => [c.color, c.fiber, c.fabric].filter(Boolean).join(" / ")).join("; ");
-  let h = `<!doctype html><html><head><meta charset="utf-8"><title>PPM ${x(e.buyer)} ${x(e.ir)} ${x(e.styleNo)}</title><style>
-    @page{size:A4;margin:9mm}body{font:10.5px/1.35 Arial,sans-serif;color:#111}h1{font-size:17px;margin:0}h2{font-size:11.5px;background:#2f3f4c;color:#fff;margin:10px 0 0;padding:3px 6px}
-    table{width:100%;border-collapse:collapse}td,th{border:1px solid #888;padding:2px 5px;vertical-align:top;text-align:left}th{background:#e2e7eb}td.k{background:#f1f3f5;width:14%;font-weight:600}
-    .dev{color:#b00;font-weight:700}.top{display:flex;justify-content:space-between;border-bottom:2px solid #111;padding-bottom:6px;margin-bottom:6px}tr{break-inside:avoid}</style></head><body>
-    <div class="top"><div><h1>PRE-PRODUCTION Meeting Report</h1>JM Fabrics Limited · New Asia Group</div><div style="border:1.5px solid #111;padding:3px 8px">JMF QA-Dept : 003<br>Version No : 002<br>Effective Date : 01-11-17<br>Revision Date : 19.03.2019</div></div>
-    <table>${kvRow([["Date", e.date], ["Buyer", e.buyer], ["Season", e.season], ["Style", e.styleNo]])}${kvRow([["IR No", e.ir], ["SBU", e.sbu], ["Item", e.item], ["Order qty", e.plannedQty]])}
-    ${kvRow([["Fabrication", r.fabrication], ["Embellishment", e.embellishmentType], ["Wash / Dye", r.washDye], ["Order type", e.orderType]])}
-    <tr><td class="k">Colours</td><td colspan="7">${x(colors)}</td></tr>
-    ${kvRow([["QA file", (r.approvals || {}).qaFile], ["Trims card", (r.approvals || {}).trimsCard], ["PP sample", (r.approvals || {}).ppSample], ["Packing appr.", (r.approvals || {}).packApproval]])}</table>
-    <h2>01. Production plan · 02. IE comments</h2><table>${kvRow(Object.entries(r.plan || {}).slice(0, 4).map(([k, v]) => [humanizeKey(k), v]))}${kvRow(Object.entries(r.plan || {}).slice(4).map(([k, v]) => [humanizeKey(k), v]))}${kvRow(Object.entries(r.ie || {}).map(([k, v]) => [humanizeKey(k), v]))}</table>
-    <h2>03. Mechanical comments</h2><table><tr><td>${x(r.mechanical || "")}</td></tr></table>`;
+  doc.setFont("helvetica", "bold"); doc.setFontSize(15); doc.text("PRE-PRODUCTION Meeting Report", M, 14);
+  doc.setFont("helvetica", "normal"); doc.setFontSize(9); doc.text("JM Fabrics Limited  |  New Asia Group", M, 19.5);
+  doc.setFontSize(7.5); doc.rect(W - M - 46, 6, 46, 16);
+  ["JMF QA-Dept : 003", "Version No : 002", "Effective Date : 01-11-17", "Revision Date : 19.03.2019"].forEach((t, i) => doc.text(t, W - M - 44, 10.5 + i * 3.6));
+  let y = 26;
+  const k = (l, v) => [{ content: T(l), styles: { fontStyle: "bold", fillColor: LIGHT } }, T(v)];
+  const a = r.approvals || {};
+  doc.autoTable({ startY: y, theme: "grid", margin: { left: M, right: M }, styles: { fontSize: 8, cellPadding: 1.2 },
+    body: [
+      [...k("Date", e.date), ...k("Buyer", e.buyer), ...k("Season", e.season), ...k("Style", e.styleNo)],
+      [...k("IR No", e.ir), ...k("Production SBU", e.sbu), ...k("Item", e.item), ...k("Order qty", e.plannedQty)],
+      [...k("Fabrication", r.fabrication), ...k("Embellishment", e.embellishmentType), ...k("Wash / Dye", r.washDye), ...k("Order type", e.orderType)],
+      [...k("QA file", a.qaFile), ...k("Trims card", a.trimsCard), ...k("PP sample", a.ppSample), ...k("Packing appr.", a.packApproval)],
+      [k("Colours", colors)[0], { content: T(colors), colSpan: 7 }],
+    ] });
+  const band = (title, n) => [[{ content: T(title), colSpan: n, styles: { fillColor: DARK, textColor: 255, fontStyle: "bold" } }]];
+  const tbl = (head, body, extra) => { doc.autoTable(Object.assign({ startY: doc.lastAutoTable.finalY + 3, theme: "grid", margin: { left: M, right: M }, styles: { fontSize: 7.8, cellPadding: 1.1, overflow: "linebreak" }, headStyles: { fillColor: LIGHT, textColor: 20 }, head: head, body: body }, extra || {})); };
+  const plan = Object.entries(r.plan || {}).map(([x, v]) => [T(ppLabel(x)), T(v)]);
+  tbl(band("01. Production plan", 4).concat([["Item", "Value", "Item", "Value"]]), Array.from({ length: Math.ceil(plan.length / 2) }, (_, i) => [...plan[i * 2], ...(plan[i * 2 + 1] || ["", ""])]));
+  const ie = Object.entries(r.ie || {}).map(([x, v]) => [T(ppLabel(x)), T(v)]);
+  tbl(band("02. IE comments", 4), Array.from({ length: Math.ceil(ie.length / 2) }, (_, i) => [...ie[i * 2], ...(ie[i * 2 + 1] || ["", ""])]));
+  const mech = typeof r.mechanical === "string" ? { "Mechanical comments": r.mechanical } : (r.mechanical || {});
+  tbl(band("03. Mechanical comments", 2), Object.entries(mech).filter(([, t]) => t).map(([x, t]) => [{ content: T(x), styles: { fontStyle: "bold", cellWidth: 45 } }, T(t)]));
   PP_SECTIONS.forEach(sec => {
-    const rows = (r.sections || {})[sec.id]; if (!rows) return;
-    h += `<h2>${sec.no}. ${x(sec.title)}</h2><table><tr><th style="width:20%">Checkpoint</th><th style="width:36%">Standard requirement</th><th style="width:10%">Status</th><th>Remarks</th></tr>${
-      rows.map(q => `<tr><td>${x(q.item)}</td><td>${x(q.standard)}</td><td class="${q.status === "Deviation" ? "dev" : ""}">${x(q.status)}</td><td>${x(q.remarks)}</td></tr>`).join("")}</table>`;
+    const rows = (r.sections || {})[sec.id]; if (!rows || !rows.length) return;
+    tbl(band(sec.no + ". " + sec.title, 4).concat([["Checkpoint", "Standard requirement", "Status", "Remarks"]]),
+      rows.map(q => [T(q.item), T(q.standard), T(q.status), T(q.remarks)]),
+      { columnStyles: { 0: { cellWidth: 38 }, 1: { cellWidth: 70 }, 2: { cellWidth: 20 } },
+        didParseCell: d => { if (d.section === "body" && d.column.index === 2) { if (d.cell.raw === "Deviation") { d.cell.styles.textColor = [176, 0, 0]; d.cell.styles.fontStyle = "bold"; } else if (d.cell.raw === "Correct") d.cell.styles.textColor = [23, 97, 42]; } } });
   });
-  if ((r.actions || []).length) h += `<h2>Action plan</h2><table><tr><th>Action</th><th style="width:18%">Responsible</th><th style="width:12%">Deadline</th></tr>${r.actions.map(a => `<tr><td>${x(a.action)}</td><td>${x(a.responsible)}</td><td>${x(a.deadline)}</td></tr>`).join("")}</table>`;
-  h += `<h2>14. General comments</h2><table>${Object.entries(e.comments || {}).filter(([, v]) => v).map(([k, v]) => `<tr><td class="k">${x(k)}</td><td>${x(v)}</td></tr>`).join("") || "<tr><td>—</td></tr>"}</table>`;
-  h += `<h2>15. Attendance report</h2><table><tr><th>Department</th><th>Name</th><th style="width:16%">Signature</th></tr>${(r.attendance || []).map(a => `<tr><td>${x(a.department)}</td><td>${x(a.name)}</td><td style="height:22px">${a.present ? "✓ present" : ""}</td></tr>`).join("")}</table>
-    <p style="text-align:right;font-weight:700;margin-top:8px">PPM ${x((e.buyer || "").toUpperCase())} ${x(e.ir)} ${x(e.styleNo)} ${x(e.season)} ${x(String(e.date || "").replace(/-/g, ""))}</p></body></html>`;
-  const w = window.open("", "_blank");
-  if (!w) { alert("Allow pop-ups to print the report."); return; }
-  w.document.write(h); w.document.close(); w.focus(); setTimeout(() => w.print(), 300);
+  if ((r.actions || []).length) tbl(band("Action plan for deviations", 3).concat([["Action", "Responsible", "Deadline"]]), r.actions.map(x => [T(x.action), T(x.responsible), T(x.deadline)]), { columnStyles: { 1: { cellWidth: 35 }, 2: { cellWidth: 25 } } });
+  const gc = Object.entries(e.comments || {}).filter(([, v]) => v);
+  tbl(band("14. General comments", 2), gc.length ? gc.map(([x, v]) => [{ content: T(x), styles: { fontStyle: "bold", cellWidth: 38 } }, T(v)]) : [["-", ""]]);
+  tbl(band("15. Attendance report", 4).concat([["Department", "Name", "Present", "Signature"]]), (r.attendance || []).map(x => [T(x.department), T(x.name), x.present ? "Yes" : "No", ""]), { bodyStyles: { minCellHeight: 9 }, columnStyles: { 2: { cellWidth: 20 }, 3: { cellWidth: 45 } } });
+  const id = ["PPM", (e.buyer || "").toUpperCase(), e.ir, e.styleNo, (e.season || "").toUpperCase(), String(e.date || "").replace(/-/g, "")].filter(Boolean).join(" ");
+  const n = doc.getNumberOfPages();
+  for (let p = 1; p <= n; p++) { doc.setPage(p); doc.setFontSize(7.5); doc.setFont("helvetica", "bold"); doc.text(T(id) + "; Page " + p + " of " + n, W - M, 291, { align: "right" }); }
+  doc.save(id.replace(/[\/\\:*?"<>|]+/g, "-").replace(/\s+/g, "_") + ".pdf");
 }
+function ppPrintReport(e) { if (e) ppMakePdf(e); }
 let ppDetailEntries = [];
 function ppPrintButton(e) {
   if (!e || !e.report) return "";
   ppDetailEntries.push(e);
-  return `<button class="btn btn-primary" style="padding:4px 10px;font-size:11.5px" onclick="ppPrintReport(ppDetailEntries[${ppDetailEntries.length - 1}])">🖨 Print / PDF</button>`;
+  return `<button class="btn btn-primary" style="padding:4px 10px;font-size:11.5px" onclick="ppPrintReport(ppDetailEntries[${ppDetailEntries.length - 1}])">⬇ Download PDF</button>`;
 }
 
 async function loadPPMeetingEntries() {
