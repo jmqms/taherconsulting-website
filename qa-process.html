@@ -3208,6 +3208,8 @@ async function renderTestingTracking() {
         <div class="field" style="margin:0"><label>From Date</label><input type="date" id="ttFrom"></div>
         <div class="field" style="margin:0"><label>To Date</label><input type="date" id="ttTo"></div>
         <button class="btn btn-ghost" id="ttRefresh">↻ Refresh</button>
+        <button class="btn btn-ghost" id="ttXls" title="Download the rows shown below as an Excel-readable file">⬇ Excel</button>
+        <button class="btn btn-primary" id="ttPdf" title="Download the rows shown below as a PDF to send">⬇ PDF</button>
       </div>
     </div>
     <div class="stat-grid" id="ttStats"></div>
@@ -3220,6 +3222,8 @@ async function renderTestingTracking() {
   ["ttStatus", "ttSection", "ttSbu", "ttAging", "ttFrom", "ttTo"].forEach(id => document.getElementById(id).addEventListener("change", ttDraw));
   ["ttBuyer", "ttIr", "ttStyle"].forEach(id => document.getElementById(id).addEventListener("input", ttDraw));
   document.getElementById("ttRefresh").addEventListener("click", renderTestingTracking);
+  document.getElementById("ttXls").addEventListener("click", ttDownloadCsv);
+  document.getElementById("ttPdf").addEventListener("click", ttDownloadPdf);
   try {
     const res = await qaApi({ action: "listTestRequests" });
     if (!res.ok) throw new Error(res.error || "Failed to load");
@@ -3271,6 +3275,7 @@ function ttDraw() {
   // open requests first, oldest (most overdue) on top; then closed, newest first
   rows.sort((a, b) => ((a.status === "Closed") - (b.status === "Closed")) ||
     (a.status !== "Closed" ? (tsAge(b) || 0) - (tsAge(a) || 0) : (String(b.reportDate || "") > String(a.reportDate || "") ? 1 : -1)));
+  ttRows = rows;
   document.getElementById("ttBody").innerHTML = rows.map(r => {
     const closed = r.status === "Closed";
     return `<tr>
@@ -3280,6 +3285,57 @@ function ttDraw() {
       <td><span class="status-pill ${closed ? (r.result === "Fail" ? "Open" : "Done") : "In-Progress"}">${closed ? "Closed · " + esc(r.result) : "Open"}</span></td>
       <td><button class="btn ${closed ? "btn-ghost" : "btn-primary"}" style="padding:4px 10px;font-size:11.5px" onclick="ttOpenClose('${esc(r.id)}')">${closed ? "View" : "Enter Result"}</button></td></tr>`;
   }).join("") || `<tr><td colspan="13" style="text-align:center;color:var(--ink-soft)">No requests match.</td></tr>`;
+}
+
+// ---------- Testing Tracking: download the rows currently shown (Excel / PDF) to send for follow-up ----------
+let ttRows = [];
+function ttRowData_(r) {
+  const age = tsAge(r), over = age !== null && age > TS_SLA_DAYS ? age - TS_SLA_DAYS : 0, closed = r.status === "Closed";
+  return {
+    login: String(r.logInDate || "").slice(0, 10), section: r.section || "", sbu: r.sbu || "", buyer: r.buyer || "", ir: r.ir || "", style: r.styleNo || "",
+    color: r.color || "", submission: r.submission || "", testOn: r.testOn || "", option: r.testOption || "", tests: (r.requirements || []).join("; "),
+    cycle: r.testCycle === undefined ? "" : r.testCycle, by: r.submittedBy || "", age: age === null ? "" : age, over: over,
+    status: closed ? "Closed" : "Open", result: closed ? (r.result || "") : "", trf: r.trpNo || "", reportDate: String(r.reportDate || "").slice(0, 10)
+  };
+}
+function ttFilterLabel_() {
+  const g = id => { const e = document.getElementById(id); return e ? e.value : ""; };
+  const parts = ["Status: " + (g("ttStatus") || "All")];
+  [["ttSection", "Section"], ["ttSbu", "SBU"], ["ttBuyer", "Buyer"], ["ttIr", "IR"], ["ttStyle", "Style"], ["ttFrom", "From"], ["ttTo", "To"]].forEach(([id, l]) => { if (g(id)) parts.push(l + ": " + g(id)); });
+  if (g("ttAging") === "over") parts.push("Overdue only");
+  return parts.join("  |  ");
+}
+function ttDownloadCsv() {
+  if (!ttRows.length) return alert("No rows to download.");
+  const head = ["Login Date", "Section", "SBU", "Buyer", "IR", "Style", "Color", "Submission", "Test on", "Options", "Test Requirements", "Test Cycle", "Submitted by", "Aging (days)", "Overdue by (days)", "Status", "Result", "TRF No", "Report Date"];
+  const q = v => '"' + String(v == null ? "" : v).replace(/"/g, '""') + '"';
+  const lines = [head.map(q).join(",")].concat(ttRows.map(r => { const d = ttRowData_(r); return [d.login, d.section, d.sbu, d.buyer, d.ir, d.style, d.color, d.submission, d.testOn, d.option, d.tests, d.cycle, d.by, d.age, d.over, d.status, d.result, d.trf, d.reportDate].map(q).join(","); }));
+  const blob = new Blob(["\uFEFF" + lines.join("\r\n")], { type: "text/csv;charset=utf-8" });
+  const a = document.createElement("a"); a.href = URL.createObjectURL(blob);
+  a.download = "Testing_Tracking_" + ovYmd(new Date()) + ".csv"; document.body.appendChild(a); a.click();
+  setTimeout(() => { URL.revokeObjectURL(a.href); a.remove(); }, 500);
+}
+function ttDownloadPdf() {
+  if (!ttRows.length) return alert("No rows to download.");
+  const { jsPDF } = window.jspdf, doc = new jsPDF({ unit: "mm", format: "a4", orientation: "landscape", compress: true });
+  const T = s => String(s == null ? "" : s).replace(/[\u2013\u2014]/g, "-").replace(/[\u2018\u2019]/g, "'").replace(/[\u201C\u201D]/g, '"').replace(/[^\x00-\xFF]/g, "?");
+  const nOver = ttRows.filter(r => r.status !== "Closed" && (tsAge(r) || 0) > TS_SLA_DAYS).length;
+  doc.setFont("helvetica", "bold"); doc.setFontSize(14); doc.text("Testing Tracking - Pending Test Report", 10, 12);
+  doc.setFont("helvetica", "normal"); doc.setFontSize(8.5);
+  doc.text(T("J.M. Fabrics Limited  |  Date: " + ovYmd(new Date()) + "  |  " + ttRows.length + " request(s), " + nOver + " overdue (SLA " + TS_SLA_DAYS + " days)"), 10, 17.5);
+  doc.setFontSize(7.5); doc.setTextColor(100); doc.text(T(ttFilterLabel_()), 10, 22); doc.setTextColor(0);
+  const body = ttRows.map((r, i) => { const d = ttRowData_(r);
+    return [i + 1, d.login, T(d.section), T(d.sbu), T(d.buyer), T(d.ir), T(d.style), T(d.color + (d.submission ? "\n" + d.submission : "")), T(d.testOn + (d.option ? "\n" + d.option : "")), T((r.requirements || []).length), T(d.by),
+      d.age === "" ? "-" : d.age + " d" + (d.over ? "\nOverdue +" + d.over : ""), d.status === "Closed" ? "Closed\n" + T(d.result) : "Open"]; });
+  doc.autoTable({ startY: 25, margin: { left: 8, right: 8, bottom: 12 }, theme: "grid", head: [["#", "Login", "Section", "SBU", "Buyer", "IR", "Style", "Color", "Test on", "Tests", "Submitted by", "Aging", "Status"]], body: body,
+    styles: { fontSize: 7.2, cellPadding: 1.1, overflow: "linebreak", valign: "middle" }, headStyles: { fillColor: [47, 63, 76], textColor: 255 },
+    columnStyles: { 0: { cellWidth: 7 }, 1: { cellWidth: 17 }, 3: { cellWidth: 13 }, 5: { cellWidth: 17 }, 9: { cellWidth: 11, halign: "center" }, 11: { cellWidth: 18 }, 12: { cellWidth: 17 } },
+    didParseCell: d => { if (d.section === "body") {
+      if (d.column.index === 11 && /Overdue/.test(String(d.cell.raw))) { d.cell.styles.textColor = [176, 0, 0]; d.cell.styles.fontStyle = "bold"; }
+      if (d.column.index === 12) { const v = String(d.cell.raw); if (/Fail/.test(v)) d.cell.styles.textColor = [176, 0, 0]; else if (/Pass/.test(v)) d.cell.styles.textColor = [23, 97, 42]; else if (v === "Open") d.cell.styles.textColor = [180, 83, 9]; } } } });
+  const n = doc.getNumberOfPages();
+  for (let p = 1; p <= n; p++) { doc.setPage(p); doc.setFontSize(7); doc.setTextColor(110); doc.text("Page " + p + " of " + n, 289, 204, { align: "right" }); }
+  doc.save("Testing_Tracking_" + ovYmd(new Date()) + ".pdf");
 }
 
 // ---------- Report Log: section-wise log of every test entry + search + details ----------
