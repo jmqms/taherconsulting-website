@@ -2267,7 +2267,7 @@ async function ppEnsureBnFont() {
 }
 // jsPDF cannot shape Bangla, so each Bangla comment is drawn on a canvas (browser shapes it correctly) and placed in the PDF as an image.
 function ppBnImage(text, widthMm) {
-  const ppm = 9, W = Math.round(widthMm * ppm), fs = 3.4 * ppm, lh = fs * 1.6, pad = 5;
+  const ppm = 6, W = Math.round(widthMm * ppm), fs = 3.4 * ppm, lh = fs * 1.6, pad = 5;
   const c = document.createElement("canvas"), x = c.getContext("2d");
   const font = `${fs}px "Noto Sans Bengali","Nirmala UI","Vrinda","Shonar Bangla","Noto Sans",sans-serif`;
   x.font = font;
@@ -2282,7 +2282,7 @@ async function ppMakePdf(e) {
   const { jsPDF } = window.jspdf;
   const bn = await ppGetBn(e);
   if (Object.keys(bn).length) await ppEnsureBnFont();
-  const doc = new jsPDF({ unit: "mm", format: "a4" });
+  const doc = new jsPDF({ unit: "mm", format: "a4", compress: true });
   const r = e.report || {}, W = 210, M = 10;
   const T = s => String(s == null ? "" : s).replace(/[\u2013\u2014]/g, "-").replace(/[\u2018\u2019]/g, "'").replace(/[\u201C\u201D]/g, '"').replace(/\u2265/g, ">=").replace(/\u00B7/g, "|").replace(/[^\x00-\xFF]/g, "?");
   const DARK = [47, 63, 76], LIGHT = [226, 231, 235];
@@ -2325,7 +2325,7 @@ async function ppMakePdf(e) {
     if (bn[x]) { try { const im = ppBnImage(bn[x], 150); gcBody.push([{ content: "Bangla (auto-translated)", styles: { fontSize: 6.5, textColor: [110, 110, 110] } }, { content: "", bn: im, styles: { minCellHeight: im.h + 1.6 } }]); } catch (err) { console.error("Bangla image failed", err); } }
   });
   tbl(band("14. General comments (English + Bangla)", 2), gcBody.length ? gcBody : [["-", ""]],
-    { didDrawCell: d => { if (d.section === "body" && d.cell.raw && d.cell.raw.bn) { const im = d.cell.raw.bn; doc.addImage(im.url, "PNG", d.cell.x + 1, d.cell.y + 0.8, im.w, im.h); } } });
+    { didDrawCell: d => { if (d.section === "body" && d.cell.raw && d.cell.raw.bn) { const im = d.cell.raw.bn; doc.addImage(im.url, "PNG", d.cell.x + 1, d.cell.y + 0.8, im.w, im.h, undefined, "FAST"); } } });
   tbl(band("15. Attendance report", 4).concat([["Department", "Name", "Present", "Signature"]]), (r.attendance || []).map(x => [T(x.department), T(x.name), x.present ? "Yes" : "No", ""]), { bodyStyles: { minCellHeight: 9 }, columnStyles: { 2: { cellWidth: 20 }, 3: { cellWidth: 45 } } });
   const id = ["PPM", (e.buyer || "").toUpperCase(), e.ir, e.styleNo, (e.season || "").toUpperCase(), String(e.date || "").replace(/-/g, "")].filter(Boolean).join(" ");
   const n = doc.getNumberOfPages();
@@ -3014,6 +3014,33 @@ function refreshTsColor(detail) {
   const was = sel.value === "__custom__";
   sel.innerHTML = colorOptionsHTML(colorDetail.ts, sel.value);
   if (custom) custom.style.display = was ? "" : "none";
+  tsUpdateSubmission();
+}
+// ---- Auto Submission number (Printing / Embroidery): count earlier requests of the same section + IR + colour ----
+let tsSubCache = [];
+function tsLoadSubCache() {
+  qaApi({ action: "listTestRequests" }).then(res => { if (res && res.ok) { tsSubCache = res.entries || []; tsUpdateSubmission(); } }).catch(() => {});
+}
+function tsCurColor_() {
+  const cs = document.getElementById("tsColor"); if (!cs) return "";
+  return (cs.value === "__custom__" ? (document.getElementById("tsColorCustom") || {}).value : cs.value) || "";
+}
+function tsPrevSubs_(ir, color) {
+  const nz = v => String(v == null ? "" : v).trim().toLowerCase();
+  return tsSubCache.filter(r => nz(r.section) === nz(tsSection) && nz(r.ir) === nz(ir) && nz(r.color) === nz(color));
+}
+function tsUpdateSubmission() {
+  const sel = document.getElementById("tsSubmission"), hint = document.getElementById("tsSubHint");
+  if (!sel || !hint || !tsIsPE()) return;
+  const ir = tsSelCtrl ? tsSelCtrl.getSel().ir : "", color = tsCurColor_();
+  if (!ir || !color || color === "__custom__") { hint.style.color = "var(--ink-soft)"; hint.textContent = "Select IR and Color — Submission is set automatically."; return; }
+  const prev = tsPrevSubs_(ir, color);
+  const n = Math.min(prev.length + 1, TS_SUBMISSIONS.length);
+  sel.value = TS_SUBMISSIONS[n - 1];
+  if (prev.length) {
+    hint.style.color = "#b45309";
+    hint.textContent = "⚠ This IR + Color was already submitted " + prev.length + " time(s): " + prev.map(r => (r.submission || "?") + " (" + (r.logInDate || "-") + ")").join(", ") + " → this one is " + TS_SUBMISSIONS[n - 1] + ".";
+  } else { hint.style.color = "#15803d"; hint.textContent = "✓ First submission for this IR + Color."; }
 }
 function tsPickSection(name) {
   tsSection = name;
@@ -3076,7 +3103,7 @@ function renderTestingNew() {
           <input id="tsColorCustom" placeholder="Type color name" style="display:none;margin-top:6px">
         </div>
         ${tsIsPE() ? `<div class="field"><label>GSM</label><input id="tsGsm" type="number" min="0" step="any"></div>
-        <div class="field"><label>Submission</label><select id="tsSubmission">${TS_SUBMISSIONS.map(o => `<option>${esc(o)}</option>`).join("")}</select></div>` : `<div class="field"><label>Size</label><input id="tsSize"></div>`}
+        <div class="field"><label>Submission</label><select id="tsSubmission">${TS_SUBMISSIONS.map(o => `<option>${esc(o)}</option>`).join("")}</select><div id="tsSubHint" style="font-size:12px;margin-top:5px;color:var(--ink-soft)">Select IR and Color — Submission is set automatically.</div></div>` : `<div class="field"><label>Size</label><input id="tsSize"></div>`}
         <div class="field"><label>Fiber / Fabric Composition</label><input id="tsFiber" placeholder="e.g. 92% Cotton 8% Elastane"></div>
         <div class="field"><label>Fabric Type</label><input id="tsFabric" placeholder="e.g. Single Jersey"></div>
         <div class="field"><label>Test on</label><select id="tsTestOn">${TS_TEST_ON.map(o => `<option>${esc(o)}</option>`).join("")}</select></div>
@@ -3103,7 +3130,10 @@ function renderTestingNew() {
   tsSelCtrl = tsIsPE() ? tsWirePE() : wireStyleSelector("ts", (sel) => refreshTsColor(sel.detail));
   document.getElementById("tsColor").addEventListener("change", () => {
     document.getElementById("tsColorCustom").style.display = document.getElementById("tsColor").value === "__custom__" ? "" : "none";
+    tsUpdateSubmission();
   });
+  document.getElementById("tsColorCustom").addEventListener("input", tsUpdateSubmission);
+  if (tsIsPE()) tsLoadSubCache();
   document.getElementById("tsAll").addEventListener("change", (e) => {
     document.querySelectorAll(".ts-req").forEach(c => c.checked = e.target.checked);
   });
@@ -3139,6 +3169,10 @@ async function saveTestRequest() {
     testOption: document.getElementById("tsOption").value === "Others" ? "Others: " + (document.getElementById("tsOptionOther").value.trim() || "—") : document.getElementById("tsOption").value,
     requirements: reqs, submittedBy: document.getElementById("tsBy").value
   };
+  if (tsIsPE() && entry.submission) {
+    const dup = tsPrevSubs_(entry.ir, entry.color).filter(r => r.submission === entry.submission);
+    if (dup.length && !confirm("'" + entry.submission + "' already exists for this IR + Color (" + entry.section + ").\n\nSubmit again anyway?")) return;
+  }
   tsSubmitting = true;
   const btn = document.getElementById("tsSubmitBtn");
   if (btn) { btn.disabled = true; btn.textContent = "Submitting…"; }
