@@ -1128,6 +1128,22 @@ async function generatePdfReport(srcData){
       doc.setFont('helvetica','bold'); doc.setFontSize(11); doc.setTextColor(20,20,20);
       doc.text(text, margin, ctx.y); ctx.y += 5.5;
     }
+    // Colour-coded result cells: Pass / Yes = green, Fail = red, N/A / No = grey.
+    const RES_STYLE_ = {
+      pass: { color:[22,120,66],  fill:[228,244,234] },
+      yes:  { color:[22,120,66],  fill:[228,244,234] },
+      fail: { color:[190,40,40],  fill:[252,232,230] },
+      'n/a':{ color:[110,110,110],fill:[238,238,238] },
+      no:   { color:[110,110,110],fill:[238,238,238] }
+    };
+    function colorCols_(cols){
+      return function(data){
+        if (data.section !== 'body' || cols.indexOf(data.column.index) < 0) return;
+        const st = RES_STYLE_[String(data.cell.raw == null ? '' : data.cell.raw).trim().toLowerCase()];
+        if (!st) return;
+        data.cell.styles.textColor = st.color; data.cell.styles.fillColor = st.fill; data.cell.styles.fontStyle = 'bold';
+      };
+    }
     function table(opts){
       ensureRoom(14);
       doc.autoTable(Object.assign({ startY: ctx.y, margin: { left: margin, right: margin }, styles: { fontSize: 8.5, cellPadding: 1.6 } }, opts));
@@ -1235,12 +1251,14 @@ async function generatePdfReport(srcData){
     doc.setDrawColor(150); doc.setLineWidth(0.5); doc.line(margin, ctx.y, pageW-margin, ctx.y);
     doc.setLineWidth(0.2); doc.setTextColor(20,20,20); ctx.y += 6;
 
+    const topActual_ = Number(h.actualOrderQty) || Number(h.orderQty) || (S.colorQty || []).reduce((t,c)=>t+(Number(c.qty)||0),0);
     table({ theme:'plain', body:[
       ['SBU', h.sbu||'-', 'Buyer', h.buyer||'-'],
       ['IR No', h.ir||'-', 'Style', h.styleName||'-'],
       ['Season', h.season||'-', 'Item / Dept', [h.item,h.productDept].filter(Boolean).join(' / ')||'-'],
       ['Date', h.date||'-', 'Inspector', h.inspectorName||'-'],
       ['Factory', h.factoryName||'J.M. FABRICS LTD.', 'PO No', h.poNo||'-'],
+      [ { content:'Total Actual Order Qty:  ' + (topActual_ ? topActual_.toLocaleString() : '-'), colSpan:4, styles:{fontStyle:'bold', fontSize:11, textColor:[20,70,130]} } ],
     ], columnStyles:{0:{fontStyle:'bold',cellWidth:26},2:{fontStyle:'bold',cellWidth:26}} });
 
     const dt = defectTotals(S.defects);
@@ -1626,10 +1644,14 @@ async function generatePdfReport(srcData){
     if (S.allQtyCheck.result || S.allQtyCheck.comments){
       table({ theme:'plain', body:[['All Qty/Cartons Available', S.allQtyCheck.result||'-', S.allQtyCheck.comments||'']] });
     }
-    const pdfColors_ = (S.colorQty || []).filter(c => c.color);
+    const pdfColors_ = (S.colorQty || []).filter(c => c.color || c.readyQty || c.cartonQty);
     if (pdfColors_.length){
+      heading('Quantity \u2014 Colour-wise Status');
+      const sum_ = k => pdfColors_.reduce((t,c)=>t+(Number(c[k])||0),0);
       table({ theme:'grid', head:[['Color','Actual Order Qty','Order Qty Ready','Color wise Carton Qty']],
-        body: pdfColors_.map(c=>[c.color, c.qty, c.readyQty||'-', c.cartonQty||'-']) });
+        body: pdfColors_.map(c=>[c.color || '-', c.qty===''||c.qty==null ? '-' : c.qty, c.readyQty||'-', c.cartonQty||'-'])
+          .concat([[ { content:'TOTAL', styles:{fontStyle:'bold'} }, { content:String(sum_('qty')), styles:{fontStyle:'bold'} },
+                     { content:String(sum_('readyQty')), styles:{fontStyle:'bold'} }, { content:String(sum_('cartonQty')), styles:{fontStyle:'bold'} } ]]) });
     }
     // ---------------- 02 sample overview -------------------------------------
     heading('02. Sample Selection & AQL Plan');
@@ -1652,7 +1674,7 @@ async function generatePdfReport(srcData){
     heading('03. Quantity & Packing Checkpoints \u2014 Section Result: ' + packingResult);
     table({ theme:'grid', head:[['Checkpoint','Result','Comments']],
       body: S.packingCheckpoints.map(c=>[c.label,c.result||'-',c.comments||'']),
-      columnStyles:{0:{cellWidth:80}} });
+      columnStyles:{0:{cellWidth:80}}, didParseCell: colorCols_([1]) });
     if (S.cartonDims.some(r=>r.poNumber||r.cartonNo||r.dims)){
       table({ theme:'grid', head:[['PO Number','Carton No.','Dimensions / Weight','Comments']],
         body: S.cartonDims.map(r=>[r.poNumber,r.cartonNo,r.dims,r.comments]) });
@@ -1661,7 +1683,7 @@ async function generatePdfReport(srcData){
     heading('04. On-Site Checkpoints & Tests \u2014 Section Result: ' + testsResult);
     table({ theme:'grid', head:[['Group','Checkpoint / Test','Applicable','Result','Comments / Report #']],
       body: S.testCheckpoints.map(c=>[c.group,c.label,c.applicable||'-',c.result||'-', c.isReport?c.testReportNumber:c.comments]),
-      columnStyles:{1:{cellWidth:60}} });
+      columnStyles:{1:{cellWidth:60}}, didParseCell: colorCols_([2,3]) });
     // ---------------- 05 workmanship ------------------------------------------
     heading('05. Workmanship \u2014 AQL Result: ' + (aql.result||'N/A'));
     table({ theme:'grid', head:[['','Critical','Major','Minor']],
@@ -1698,7 +1720,12 @@ async function generatePdfReport(srcData){
       ['3. Workmanship (AQL)', aql.result||'N/A'],
       ['4. Measurements', measResult||'N/A'],
       ['Overall', overall],
-    ]});
+    ], didParseCell: function(data){
+      if (data.section !== 'body' || data.column.index !== 1) return;
+      const v = String(data.cell.raw || '').trim().toUpperCase();
+      const st = RES_STYLE_[v === 'PASS' ? 'pass' : v === 'FAIL' ? 'fail' : (v === 'N/A' ? 'n/a' : '')];
+      if (st){ data.cell.styles.textColor = st.color; data.cell.styles.fillColor = st.fill; data.cell.styles.fontStyle = 'bold'; }
+    }});
     table({ theme:'grid', head:[['Role','Name','Signature / Date']],
       body: S.signOff.map(s=>[s.role,s.name||'-',s.signature||'-']) });
     if (S.remarks){
