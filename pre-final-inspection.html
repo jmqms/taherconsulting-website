@@ -1258,8 +1258,8 @@ async function generatePdfReport(srcData){
       ['Season', h.season||'-', 'Item / Dept', [h.item,h.productDept].filter(Boolean).join(' / ')||'-'],
       ['Date', h.date||'-', 'Inspector', h.inspectorName||'-'],
       ['Factory', h.factoryName||'J.M. FABRICS LTD.', 'PO No', h.poNo||'-'],
-      [ { content:'Total Actual Order Qty:  ' + (topActual_ ? topActual_.toLocaleString() : '-'), colSpan:4, styles:{fontStyle:'bold', fontSize:11, textColor:[20,70,130]} } ],
-    ], columnStyles:{0:{fontStyle:'bold',cellWidth:26},2:{fontStyle:'bold',cellWidth:26}} });
+      ['Total Actual Order Qty', topActual_ ? topActual_.toLocaleString() : '-', '', ''],
+    ], columnStyles:{0:{fontStyle:'bold',cellWidth:42},2:{fontStyle:'bold',cellWidth:26}} });
 
     const dt = defectTotals(S.defects);
 
