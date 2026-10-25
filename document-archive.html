@@ -125,7 +125,7 @@ function tcBlockIfGuest(actionLabel) {
   <div class="main-tabs" id="mainTabs">
     <button data-tab="upload" class="active">1. Upload Documents</button>
     <button data-tab="master">2. Documents Master List</button>
-    <button data-tab="documents">3. Documents</button>
+    <button data-tab="documents">3. Documents (Library)</button>
   </div>
 
   <!-- ============ TAB 1: Documents (library) ============ -->
@@ -153,7 +153,7 @@ function tcBlockIfGuest(actionLabel) {
         <button class="btn btn-ghost" id="mlXls">&#11015; Download Excel</button>
         <span class="ml-count" id="mlCount"></span>
       </div>
-      <div class="tbl-wrap"><table class="ml"><thead><tr><th>SL</th><th>Doc No</th><th>Document Title</th><th>Section</th><th>Version No</th><th>Effective Date</th><th>Revision Date</th><th>Rev.</th><th>File</th></tr></thead><tbody id="mlBody"></tbody></table></div>
+      <div class="tbl-wrap"><table class="ml"><thead><tr><th>SL</th><th>Doc No</th><th>Document Title</th><th>Section</th><th>Version No</th><th>Effective Date</th><th>Revision Date</th><th>Rev. (Upload)</th><th>File</th></tr></thead><tbody id="mlBody"></tbody></table></div>
     </div>
   </div>
 
@@ -401,7 +401,7 @@ function renderMaster() {
 function mlStamp() { return new Date().toISOString().slice(0, 10); }
 document.getElementById("mlXls").addEventListener("click", () => {
   const rows = masterRows(); if (!rows.length) return alert("No documents to download.");
-  const head = ["SL", "Category", "Doc No", "Document Title", "Section", "Version No", "Effective Date", "Revision Date", "Rev. (upload)", "Uploaded By", "Uploaded On", "File Link"];
+  const head = ["SL", "Category", "Doc No", "Document Title", "Section", "Version No", "Effective Date", "Revision Date", "Rev. (Upload)", "Uploaded By", "Uploaded On", "File Link"];
   const q = v => '"' + String(v == null ? "" : v).replace(/"/g, '""') + '"';
   const lines = [head.map(q).join(",")].concat(rows.map(d => [d.documentSl, d.category, d.docNo, d.title, d.section, d.versionNo, fmtDate(d.effectiveDate), fmtDate(d.revisionDate), "v" + d.version, d.uploadedBy, fmtDate(d.createdAt), d.fileUrl].map(q).join(",")));
   const blob = new Blob(["\uFEFF" + lines.join("\r\n")], { type: "text/csv;charset=utf-8" });
@@ -423,9 +423,9 @@ document.getElementById("mlPdf").addEventListener("click", () => {
     if (d.category !== last) { body.push([{ content: T(d.category), colSpan: 8, styles: { fontStyle: "bold", fillColor: [226, 231, 235] } }]); last = d.category; }
     body.push([T(d.documentSl || "-"), T(d.docNo || "-"), T(d.title), T(d.section || "-"), T(d.versionNo || "-"), T(fmtDate(d.effectiveDate) || "-"), T(fmtDate(d.revisionDate) || "-"), "v" + d.version]);
   });
-  doc.autoTable({ startY: 27, margin: { left: 10, right: 10, bottom: 12 }, theme: "grid", head: [["SL", "Doc No", "Document Title", "Section", "Version No", "Effective Date", "Revision Date", "Rev."]], body,
+  doc.autoTable({ startY: 27, margin: { left: 10, right: 10, bottom: 12 }, theme: "grid", head: [["SL", "Doc No", "Document Title", "Section", "Version No", "Effective Date", "Revision Date", "Rev. (Upload)"]], body,
     styles: { fontSize: 8, cellPadding: 1.6, overflow: "linebreak" }, headStyles: { fillColor: [47, 63, 76], textColor: 255 },
-    columnStyles: { 0: { cellWidth: 14 }, 1: { cellWidth: 36 }, 3: { cellWidth: 26 }, 4: { cellWidth: 24 }, 5: { cellWidth: 28 }, 6: { cellWidth: 28 }, 7: { cellWidth: 14 } } });
+    columnStyles: { 0: { cellWidth: 14 }, 1: { cellWidth: 36 }, 3: { cellWidth: 26 }, 4: { cellWidth: 24 }, 5: { cellWidth: 28 }, 6: { cellWidth: 28 }, 7: { cellWidth: 24 } } });
   const n = doc.getNumberOfPages();
   for (let p = 1; p <= n; p++) { doc.setPage(p); doc.setFontSize(7.5); doc.setTextColor(110); doc.text("Page " + p + " of " + n, 287, 204, { align: "right" }); }
   doc.save("Documents_Master_List_" + mlStamp() + ".pdf");
