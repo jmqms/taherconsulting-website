@@ -210,6 +210,7 @@ function tcInitModuleAuth(opts) {
   function applySession(session) {
     try { sessionStorage.setItem(sessionKey, JSON.stringify(session)); } catch (e) {}
     window.TC_MODULE_SESSION = session;
+    try { window.dispatchEvent(new Event("tc-module-session")); } catch (e) {}
     window.TC_IS_GUEST = window.TC_IS_GUEST || /guest|visitor/i.test((session.role || "") + " " + (session.designation || ""));
     hideOverlay();
     addLogoutControl(session);
