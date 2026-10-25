@@ -44,7 +44,7 @@ td{padding:9px 10px;border-top:1px solid var(--line);vertical-align:top}
 .muted{color:var(--soft)}
 .row{display:flex;gap:10px;flex-wrap:wrap;align-items:center;justify-content:space-between}
 @media(max-width:600px){.wrap{padding:16px 12px}}
-.pill.Pending{background:#fdf3dc;color:#8a5a00}.pill.Approved{background:#e1f3e8;color:#1E6B4A}.pill.Rejected{background:#fdecea;color:#b3261e}.pill.Used{background:#eee;color:#555}
+.pill.Pending{background:#fdf3dc;color:#8a5a00}.pill.Approved{background:#e1f3e8;color:#1E6B4A}.pill.Rejected{background:#fdecea;color:#b3261e}.pill.Done{background:#e1f3e8;color:#1E6B4A}.pill.Used{background:#eee;color:#555}
 .btn.sm{height:32px;padding:0 12px;font-size:12.5px}.btn.bad{background:#fff;color:#b3261e;border:1.5px solid #e3b4af}
 </style>
 </head>
@@ -70,7 +70,7 @@ td{padding:9px 10px;border-top:1px solid var(--line);vertical-align:top}
   <div class="tiles" id="tiles"></div>
   <div class="panel">
     <div class="filters">
-      <div class="field"><label>Status</label><select id="fStatus"><option>Pending</option><option>Approved</option><option>Rejected</option><option>Used</option><option value="">All</option></select></div>
+      <div class="field"><label>Status</label><select id="fStatus"><option>Pending</option><option>Approved</option><option>Done</option><option>Rejected</option><option>Used</option><option value="">All</option></select></div>
       <div class="field"><label>Module</label><select id="fModule"><option value="">All modules</option></select></div>
       <div class="field"><label>User / Report</label><input id="fText" placeholder="Name, IR, style&hellip;"></div>
     </div>
@@ -80,7 +80,7 @@ td{padding:9px 10px;border-top:1px solid var(--line);vertical-align:top}
 
 <script>
 const API = "https://script.google.com/macros/s/AKfycbx7Cwnp8hoKuxcQ57TlllwBaA7zr9S2bcFVi9-mzyyY8RhRL3YiUpbJMFohLmQZkf1a/exec";
-const MODS = { prefinal: "Pre-Final Inspection", final: "Final Inspection", "1stbundle": "1st Bundle Inspection", "1stcarton": "1st Carton Inspection", sewinginline: "Sewing Inline Inspection", finishinginline: "Finishing Inline Inspection", qc: "QC Inspection" };
+const MODS = { prefinal: "Pre-Final Inspection", final: "Final Inspection", "1stbundle": "1st Bundle Inspection", "1stcarton": "1st Carton Inspection", sewinginline: "Sewing Inline Inspection", finishinginline: "Finishing Inline Inspection", qc: "QC Inspection", qaprocess: "QA Process (mistake report)" };
 let CREDS = null, ROWS = [];
 const $ = id => document.getElementById(id);
 const esc = s => String(s == null ? "" : s).replace(/[&<>"']/g, c => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
@@ -110,16 +110,23 @@ async function load(u, p, first) {
   }
   btn.disabled = false; btn.textContent = "Open Edit Requests";
 }
+function actions(r) {
+  const b = (d, cls, t, tip) => `<button class="btn sm ${cls}" data-d="${d}" data-id="${esc(r.id)}" title="${esc(tip || "")}">${t}</button> `;
+  const mistake = r.module === "qaprocess";   // entry-correction request (no in-place edit page)
+  if (r.status === "Pending") return b("Approved", "", mistake ? "Approve user to correct" : "Approve") + (mistake ? b("Done", "", "Mark Done", "I corrected it myself") : "") + b("Rejected", "bad", "Reject");
+  if (r.status === "Approved" && mistake) return b("Done", "", "Mark Done");
+  return "";
+}
 function draw() {
   const st = $("fStatus").value, m = $("fModule").value, q = $("fText").value.trim().toLowerCase();
   const cnt = s => ROWS.filter(r => r.status === s).length;
-  $("tiles").innerHTML = [["Pending", cnt("Pending")], ["Approved (waiting for user)", cnt("Approved")], ["Rejected", cnt("Rejected")], ["Used", cnt("Used")]].map(([l, n]) => `<div class="tile"><div class="n">${n}</div><div class="l">${l}</div></div>`).join("");
+  $("tiles").innerHTML = [["Pending", cnt("Pending")], ["Approved (waiting for user)", cnt("Approved")], ["Done (corrected)", cnt("Done")], ["Rejected", cnt("Rejected")], ["Used", cnt("Used")]].map(([l, n]) => `<div class="tile"><div class="n">${n}</div><div class="l">${l}</div></div>`).join("");
   const rows = ROWS.filter(r => (!st || r.status === st) && (!m || r.module === m) && (!q || [r.requestedBy, r.report, r.reason].join(" ").toLowerCase().indexOf(q) >= 0));
   $("cnt").textContent = rows.length + " request(s)";
   $("tbl").innerHTML = `<tr><th>Requested</th><th>Module</th><th>Report</th><th>By</th><th>Reason</th><th>Status</th><th>Decision</th><th></th></tr>` +
     (rows.map(r => `<tr><td style="white-space:nowrap">${esc(r.requestedAt)}</td><td>${esc(MODS[r.module] || r.module)}</td><td>${esc(r.report)}</td><td>${esc(r.requestedBy)}</td><td style="max-width:280px">${esc(r.reason)}</td>
       <td><span class="pill ${esc(r.status)}">${esc(r.status)}</span></td><td class="muted" style="white-space:nowrap">${r.decidedBy ? esc(r.decidedBy) + "<br>" + esc(r.decidedAt) : ""}${r.usedAt ? "<br>used " + esc(r.usedAt) : ""}</td>
-      <td style="white-space:nowrap">${r.status === "Pending" ? `<button class="btn sm" data-d="Approved" data-id="${esc(r.id)}">Approve</button> <button class="btn sm bad" data-d="Rejected" data-id="${esc(r.id)}">Reject</button>` : ""}</td></tr>`).join("") || `<tr><td colspan="8" class="muted" style="text-align:center;padding:18px">No requests.</td></tr>`);
+      <td style="white-space:nowrap">${actions(r)}</td></tr>`).join("") || `<tr><td colspan="8" class="muted" style="text-align:center;padding:18px">No requests.</td></tr>`);
   $("tbl").querySelectorAll("[data-d]").forEach(b => b.onclick = async () => {
     if (b.dataset.d === "Rejected" && !confirm("Reject this edit request?")) return;
     b.disabled = true;

@@ -81,6 +81,7 @@
     .color-row.pp{grid-template-columns:1fr;}
   }
 </style>
+<script src="js/edit-guard.js"></script>
 </head>
 <body>
 <div id="tc-guard-bar" style="background:#1B211D;color:#F1F0EA;font-family:'IBM Plex Mono',monospace;font-size:12.5px;letter-spacing:.04em;padding:10px 20px;display:flex;justify-content:space-between;align-items:center;position:sticky;top:0;z-index:9999">
@@ -3583,6 +3584,11 @@ renderOverview();
     displayLabel: "QA Process",
     theme: { icon: "📋", accent: "#2F6E52", iconBg: "#E5F0E9", bg: "#0F1F18" }
   });
+  if (window.TCEG && !new URLSearchParams(location.search).get("embed")) {
+    TCEG.correctionWidget({ moduleKey: "qaprocess", areas: []
+      .concat((typeof PROCESS_STAGES !== "undefined" ? PROCESS_STAGES : []), (typeof QA_STAGES !== "undefined" ? QA_STAGES : []))
+      .map(x => ({ id: x.id, label: x.label })).concat([{ id: "orderinfo", label: "Order / Style complexity entry" }, { id: "other", label: "Other" }]) });
+  }
 </script>
 </body>
 </html>
