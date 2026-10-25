@@ -149,6 +149,7 @@ body.pdf-mode .rep-table th, body.pdf-mode .field-label{color:#555;}
 .pair-grid .pair .hint{font-size:10px;color:var(--muted-2);display:block;font-weight:400;margin-top:1px;}
 input[readonly]{background:var(--panel-2);color:var(--muted);}
 </style>
+<script src="js/edit-guard.js"></script>
 </head>
 <body>
 
@@ -2527,6 +2528,14 @@ function redrawDefects_(){
 
 /* ============================= RENDER: LOG ============================= */
 
+// Edit button of a log row: drafts can be resumed by anyone; a SUBMITTED report is locked for everyone except an
+// administrator, unless an administrator approved an edit request for it (works once).
+function editCell_(r){
+  const G = window.TCEG;
+  if (r.status === 'Draft' || !G || G.canEdit(r.id)) return `<button class="btn ghost small" data-edit="${r.id}">${r.status==='Draft'?'Resume':(G && G.isAdmin() ? 'Edit' : 'Edit (approved)')}</button>`;
+  const label = [r.header.inspectionType, r.header.ir || r.header.styleName, r.header.date].filter(Boolean).join(' \u00B7 ');
+  return G.requestButton(r.id, label);
+}
 function renderLog(){
   const rows = state.reports.slice().sort((a,b)=> new Date(b.header.date)-new Date(a.header.date)).map(r => `
     <tr>
@@ -2539,9 +2548,9 @@ function renderLog(){
       <td><span class="badge ${r.result==='PASS'?'pass':r.result==='FAIL'?'fail':''}">${esc(r.result||'PENDING')}</span></td>
       <td class="actions-cell">
         <button class="btn ghost small" data-view="${r.id}">View</button>
-        <button class="btn ghost small" data-edit="${r.id}">${r.status==='Draft'?'Resume':'Edit'}</button>
+        ${editCell_(r)}
         <button class="btn ghost small" data-download-pdf-saved="${r.id}">PDF</button>
-        <button class="btn danger small" data-delete="${r.id}">Delete</button>
+        ${(window.TCEG && TCEG.isAdmin()) ? `<button class="btn danger small" data-delete="${r.id}">Delete</button>` : ''}
       </td>
     </tr>`).join('');
   return `
@@ -2867,6 +2876,8 @@ function bindEvents(){
   document.querySelectorAll('[data-view]').forEach(el => el.onclick = () => { state.viewingId = el.dataset.view; render(); });
   document.querySelectorAll('[data-edit]').forEach(el => el.onclick = () => {
     if (tcBlockIfGuest('Editing a report')) return;
+    const rr = state.reports.find(x=>x.id===el.dataset.edit);
+    if (rr && rr.status !== 'Draft' && window.TCEG && !TCEG.canEdit(rr.id)){ alert('This report is locked. Use "Request Edit" in the Reports Log.'); return; }
     loadReportIntoForm_(el.dataset.edit);
   });
   document.querySelectorAll('[data-download-pdf-saved]').forEach(el => el.onclick = () => {
@@ -2874,6 +2885,7 @@ function bindEvents(){
   });
   document.querySelectorAll('[data-delete]').forEach(el => el.onclick = () => {
     if (tcBlockIfGuest('Deleting a report')) return;
+    if (!(window.TCEG && TCEG.isAdmin())){ alert('Only an administrator can delete a report.'); return; }
     if (!confirm('Delete this report? This cannot be undone.')) return;
     state.reports = state.reports.filter(x=>x.id!==el.dataset.delete);
     persistReports();
@@ -2913,6 +2925,9 @@ function resetEntryForm_(){
 }
 
 async function saveCurrentReport_(isFinal){
+  const prevRec_ = state.editingId ? state.reports.find(r => r.id === state.editingId) : null;
+  if (prevRec_ && prevRec_.status !== 'Draft' && window.TCEG && !TCEG.canEdit(prevRec_.id)){ alert('This report is locked. Ask an administrator for an edit (Reports Log > Request Edit).'); return; }
+  if (prevRec_ && prevRec_.status !== 'Draft' && !isFinal){ alert('A submitted report cannot be turned back into a draft. Please submit it again.'); return; }
   const { overall, aql } = computeOverallResult_();
 
   const record = Object.assign({}, JSON.parse(JSON.stringify(emptyReportState())), JSON.parse(JSON.stringify({
@@ -2934,6 +2949,7 @@ async function saveCurrentReport_(isFinal){
     state.reports.push(record);
   }
   persistReports();
+  if (prevRec_ && prevRec_.status !== 'Draft' && isFinal && window.TCEG) TCEG.consume(prevRec_.id);
 
   if (isFinal){
     showToast('Report submitted — overall result: ' + record.result + '. Preparing PDF…');
@@ -2959,6 +2975,7 @@ async function saveCurrentReport_(isFinal){
   if (ir) state.header.ir = ir;
 })();
 
+if (window.TCEG) TCEG.init('final', () => render());
 loadReports().then(() => {
   // Opened from QA Inspection / Style Tracking "PDF" link: load that report and download its PDF
   const pdfId = new URLSearchParams(window.location.search).get('pdf');

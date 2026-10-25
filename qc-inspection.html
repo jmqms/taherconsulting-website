@@ -277,6 +277,7 @@
   }
   .group-badge.active{opacity:1;box-shadow:0 0 0 1px currentColor inset;}
 </style>
+<script src="js/edit-guard.js"></script>
 </head>
 <body>
 <div id="tc-guard-bar" style="background:#1B211D;color:#F1F0EA;font-family:'IBM Plex Mono',monospace;font-size:12.5px;letter-spacing:.04em;padding:10px 20px;display:flex;justify-content:space-between;align-items:center;position:sticky;top:0;z-index:9999">
@@ -1131,7 +1132,7 @@ function renderLog(){
       <td class="actions-cell">
         <button class="btn ghost small" data-view-report="${r.id}">View</button>
         <button class="btn ghost small" data-export-report="${r.id}">CSV</button>
-        <button class="btn danger small" data-del-report="${r.id}">Delete</button>
+        ${(window.TCEG && TCEG.isAdmin()) ? `<button class="btn danger small" data-del-report="${r.id}">Delete</button>` : ''}
       </td>
     </tr>`;
   }).join('');
@@ -1483,6 +1484,7 @@ function bindEvents(){
   document.querySelectorAll('[data-view-report]').forEach(el=> el.addEventListener('click', ()=>{ state.viewingReportId = el.dataset.viewReport; render(); }));
   document.querySelectorAll('[data-export-report]').forEach(el=> el.addEventListener('click', ()=> exportReportCSV(el.dataset.exportReport)));
   document.querySelectorAll('[data-del-report]').forEach(el=> el.addEventListener('click', ()=>{
+    if(!(window.TCEG && TCEG.isAdmin())){ alert('Only an administrator can delete a report.'); return; }
     if(confirm('Delete this report permanently?')){
       state.reports = state.reports.filter(r=>r.id!==el.dataset.delReport);
       persistReports();
@@ -1594,6 +1596,7 @@ async function saveReport(){
 }
 
 /* ============================= INIT ============================= */
+if (window.TCEG) TCEG.init('qc', ()=>render());
 loadReports();
 </script>
 </body>

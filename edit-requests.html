@@ -1,0 +1,132 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Edit Requests — Taher Consulting</title>
+<meta name="robots" content="noindex,nofollow">
+<style>
+:root{--bg:#F4F3EE;--panel:#fff;--ink:#1B211D;--soft:#5b655f;--line:#dcdad0;--accent:#1E6B4A;--gold:#A9832F;--bad:#B84226;--warn:#B7791F}
+*{box-sizing:border-box}
+body{margin:0;background:var(--bg);color:var(--ink);font:14px/1.5 'Segoe UI',system-ui,-apple-system,Arial,sans-serif}
+.top{background:#1B211D;color:#F1F0EA;padding:12px 20px;display:flex;justify-content:space-between;align-items:center;font-size:12.5px;letter-spacing:.04em}
+.top a{color:#F1F0EA;text-decoration:none}
+.wrap{max-width:1180px;margin:0 auto;padding:22px 16px 60px}
+h1{font-size:24px;margin:0 0 4px}
+.sub{color:var(--soft);margin:0 0 20px}
+.panel{background:var(--panel);border:1px solid var(--line);border-radius:12px;padding:18px;margin-bottom:18px}
+.panel h2{font-size:15px;margin:0 0 12px}
+.signin{max-width:400px;margin:60px auto}
+label{display:block;font-weight:600;font-size:13px;margin:0 0 6px}
+input,select{width:100%;height:42px;padding:0 12px;border:1.5px solid #d4d6de;border-radius:10px;font:inherit;background:#fff}
+input:focus,select:focus{outline:none;border-color:var(--accent)}
+.field{margin-bottom:16px;position:relative}
+.pw input{padding-right:70px}
+.pw button{position:absolute;right:6px;bottom:5px;border:none;background:none;color:var(--soft);font-weight:700;font-size:12px;letter-spacing:.06em;text-transform:uppercase;padding:8px 10px;cursor:pointer;border-radius:8px}
+.pw button:hover{background:#f0f0ee;color:var(--ink)}
+.btn{height:42px;padding:0 18px;border:none;border-radius:10px;background:var(--accent);color:#fff;font:inherit;font-weight:700;cursor:pointer}
+.btn.ghost{background:#fff;color:var(--ink);border:1.5px solid #d4d6de}
+.btn:disabled{opacity:.6;cursor:default}
+.err{background:#fdecea;color:#b3261e;border:1px solid #f3b8b3;border-radius:10px;padding:10px 12px;margin-bottom:14px;display:none}
+.filters{display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:12px;align-items:end}
+.filters .field{margin:0}
+.tiles{display:grid;grid-template-columns:repeat(auto-fit,minmax(170px,1fr));gap:12px;margin-bottom:18px}
+.tile{background:var(--panel);border:1px solid var(--line);border-radius:12px;padding:14px 16px}
+.tile .n{font-size:28px;font-weight:700;line-height:1.1}
+.tile .l{color:var(--soft);font-size:12.5px;margin-top:4px}
+table{width:100%;border-collapse:collapse;font-size:13px}
+th{text-align:left;background:#f1f0ea;font-size:11.5px;letter-spacing:.05em;text-transform:uppercase;color:var(--soft);padding:9px 10px;white-space:nowrap}
+td{padding:9px 10px;border-top:1px solid var(--line);vertical-align:top}
+.scroll{overflow-x:auto}
+.pill{display:inline-block;padding:2px 9px;border-radius:99px;font-size:11.5px;font-weight:700}
+.pill.Success{background:#e1f3e8;color:#1E6B4A}.pill.Failed{background:#fdecea;color:#b3261e}.pill.Guest{background:#eee;color:#555}
+.chip{display:inline-block;background:#f1f0ea;border-radius:6px;padding:1px 7px;margin:0 4px 3px 0;font-size:12px}
+.muted{color:var(--soft)}
+.row{display:flex;gap:10px;flex-wrap:wrap;align-items:center;justify-content:space-between}
+@media(max-width:600px){.wrap{padding:16px 12px}}
+.pill.Pending{background:#fdf3dc;color:#8a5a00}.pill.Approved{background:#e1f3e8;color:#1E6B4A}.pill.Rejected{background:#fdecea;color:#b3261e}.pill.Used{background:#eee;color:#555}
+.btn.sm{height:32px;padding:0 12px;font-size:12.5px}.btn.bad{background:#fff;color:#b3261e;border:1.5px solid #e3b4af}
+</style>
+</head>
+<body>
+<div class="top"><span>TAHER CONSULTING &middot; ADMIN</span><a href="dashboard.html">&larr; Back to Dashboard</a></div>
+
+<div class="wrap" id="signinView">
+  <form class="panel signin" id="signinForm" autocomplete="off">
+    <h1>Edit Requests</h1>
+    <p class="sub">Administrators only. Sign in with your main portal administrator ID.</p>
+    <div class="err" id="siErr"></div>
+    <div class="field"><label for="siUser">User ID</label><input id="siUser" placeholder="Enter ID" autocapitalize="off"></div>
+    <div class="field pw"><label for="siPass">Password</label><input id="siPass" type="password" placeholder="Enter password"><button type="button" id="siToggle">Show</button></div>
+    <button class="btn" id="siBtn" style="width:100%">Open Edit Requests</button>
+  </form>
+</div>
+
+<div class="wrap" id="mainView" style="display:none">
+  <div class="row" style="margin-bottom:16px">
+    <div><h1>Edit Requests</h1><p class="sub" style="margin:0">Users cannot edit a submitted report. They ask here; once you approve, they can edit that one report and submit it again &mdash; after that it locks again.</p></div>
+    <div style="display:flex;gap:8px"><button class="btn ghost" id="btnRefresh">Refresh</button></div>
+  </div>
+  <div class="tiles" id="tiles"></div>
+  <div class="panel">
+    <div class="filters">
+      <div class="field"><label>Status</label><select id="fStatus"><option>Pending</option><option>Approved</option><option>Rejected</option><option>Used</option><option value="">All</option></select></div>
+      <div class="field"><label>Module</label><select id="fModule"><option value="">All modules</option></select></div>
+      <div class="field"><label>User / Report</label><input id="fText" placeholder="Name, IR, style&hellip;"></div>
+    </div>
+  </div>
+  <div class="panel"><h2>Requests <span class="muted" style="font-weight:400" id="cnt"></span></h2><div class="scroll"><table id="tbl"></table></div></div>
+</div>
+
+<script>
+const API = "https://script.google.com/macros/s/AKfycbx7Cwnp8hoKuxcQ57TlllwBaA7zr9S2bcFVi9-mzyyY8RhRL3YiUpbJMFohLmQZkf1a/exec";
+const MODS = { prefinal: "Pre-Final Inspection", final: "Final Inspection", "1stbundle": "1st Bundle Inspection", "1stcarton": "1st Carton Inspection", sewinginline: "Sewing Inline Inspection", finishinginline: "Finishing Inline Inspection", qc: "QC Inspection" };
+let CREDS = null, ROWS = [];
+const $ = id => document.getElementById(id);
+const esc = s => String(s == null ? "" : s).replace(/[&<>"']/g, c => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
+const call = async p => JSON.parse(await (await fetch(API, { method: "POST", headers: { "Content-Type": "text/plain;charset=utf-8" }, body: JSON.stringify(p) })).text());
+
+$("siToggle").onclick = () => { const p = $("siPass"), show = p.type === "text"; p.type = show ? "password" : "text"; $("siToggle").textContent = show ? "Show" : "Hide"; p.focus(); };
+$("signinForm").onsubmit = async e => { e.preventDefault(); await load($("siUser").value, $("siPass").value, true); };
+$("btnRefresh").onclick = () => load(CREDS.u, CREDS.p, false);
+["fStatus", "fModule"].forEach(id => $(id).onchange = draw); $("fText").oninput = draw;
+
+async function load(u, p, first) {
+  const err = $("siErr"), btn = $("siBtn"); err.style.display = "none";
+  if (!String(u).trim() || !p) { err.textContent = "Enter your User ID and password."; err.style.display = "block"; return; }
+  btn.disabled = true; btn.textContent = "Checking…";
+  try {
+    const d = await call({ action: "listEditRequests", userId: u, password: p });
+    if (!d.ok) throw new Error(d.error || "Could not load the requests.");
+    CREDS = { u, p }; ROWS = d.requests || [];
+    if (first) { $("signinView").style.display = "none"; $("mainView").style.display = "block"; }
+    const mods = [...new Set(ROWS.map(r => r.module))];
+    const cur = $("fModule").value;
+    $("fModule").innerHTML = '<option value="">All modules</option>' + mods.map(m => `<option value="${esc(m)}">${esc(MODS[m] || m)}</option>`).join("");
+    $("fModule").value = cur;
+    draw();
+  } catch (x) {
+    if (first) { err.textContent = x.message || "Could not reach the server."; err.style.display = "block"; } else alert(x.message || "Could not refresh.");
+  }
+  btn.disabled = false; btn.textContent = "Open Edit Requests";
+}
+function draw() {
+  const st = $("fStatus").value, m = $("fModule").value, q = $("fText").value.trim().toLowerCase();
+  const cnt = s => ROWS.filter(r => r.status === s).length;
+  $("tiles").innerHTML = [["Pending", cnt("Pending")], ["Approved (waiting for user)", cnt("Approved")], ["Rejected", cnt("Rejected")], ["Used", cnt("Used")]].map(([l, n]) => `<div class="tile"><div class="n">${n}</div><div class="l">${l}</div></div>`).join("");
+  const rows = ROWS.filter(r => (!st || r.status === st) && (!m || r.module === m) && (!q || [r.requestedBy, r.report, r.reason].join(" ").toLowerCase().indexOf(q) >= 0));
+  $("cnt").textContent = rows.length + " request(s)";
+  $("tbl").innerHTML = `<tr><th>Requested</th><th>Module</th><th>Report</th><th>By</th><th>Reason</th><th>Status</th><th>Decision</th><th></th></tr>` +
+    (rows.map(r => `<tr><td style="white-space:nowrap">${esc(r.requestedAt)}</td><td>${esc(MODS[r.module] || r.module)}</td><td>${esc(r.report)}</td><td>${esc(r.requestedBy)}</td><td style="max-width:280px">${esc(r.reason)}</td>
+      <td><span class="pill ${esc(r.status)}">${esc(r.status)}</span></td><td class="muted" style="white-space:nowrap">${r.decidedBy ? esc(r.decidedBy) + "<br>" + esc(r.decidedAt) : ""}${r.usedAt ? "<br>used " + esc(r.usedAt) : ""}</td>
+      <td style="white-space:nowrap">${r.status === "Pending" ? `<button class="btn sm" data-d="Approved" data-id="${esc(r.id)}">Approve</button> <button class="btn sm bad" data-d="Rejected" data-id="${esc(r.id)}">Reject</button>` : ""}</td></tr>`).join("") || `<tr><td colspan="8" class="muted" style="text-align:center;padding:18px">No requests.</td></tr>`);
+  $("tbl").querySelectorAll("[data-d]").forEach(b => b.onclick = async () => {
+    if (b.dataset.d === "Rejected" && !confirm("Reject this edit request?")) return;
+    b.disabled = true;
+    try { const d = await call({ action: "decideEditRequest", userId: CREDS.u, password: CREDS.p, id: b.dataset.id, decision: b.dataset.d }); if (!d.ok) throw new Error(d.error); await load(CREDS.u, CREDS.p, false); }
+    catch (e) { alert(e.message || "Could not save the decision."); b.disabled = false; }
+  });
+}
+</script>
+</body>
+</html>

@@ -124,6 +124,10 @@
       a.href = "login-history.html"; a.textContent = "Login History";
       a.style.cssText = "margin-left:14px;font-size:11.5px;letter-spacing:.06em;text-transform:uppercase;border:1px solid currentColor;padding:3px 9px;border-radius:2px;text-decoration:none;color:inherit";
       document.getElementById("dashUser").appendChild(a);
+      const b = document.createElement("a");
+      b.href = "edit-requests.html"; b.textContent = "Edit Requests";
+      b.style.cssText = a.style.cssText;
+      document.getElementById("dashUser").appendChild(b);
     }
     document.getElementById("welcomeName").textContent = `, ${session.name.split(" ")[0]}`;
   }

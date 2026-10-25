@@ -65,6 +65,7 @@ table.rep-table{width:100%;border-collapse:collapse;}
 .cam-btn{border:1px solid var(--line);background:#fff;border-radius:6px;padding:3px 8px;font-size:11px;cursor:pointer;white-space:nowrap;}
 .sign-table input{min-width:120px;}
 </style>
+<script src="js/edit-guard.js"></script>
 </head>
 <body>
 <div class="guard-bar"><span>J.M. FABRICS LIMITED &middot; QA Inspection &middot; Sewing Inline Inspection</span><a href="qa-inspection.html">&larr; Back to QA Inspection</a></div>
@@ -669,6 +670,26 @@ function renderSignOffPanel(){
   </div>`;
 }
 
+/* Report Log buttons: only an administrator can open/edit/delete freely. Others get PDF + "Request Edit";
+   an approved request unlocks one edit. */
+function logActions_(r){
+  const G = window.TCEG, admin = !!(G && G.isAdmin());
+  const label = [INSPECTION_TYPE, r.header.ir || r.header.styleName, r.header.date].filter(Boolean).join(' \u00B7 ');
+  const pdf = `<button type="button" class="btn ghost small" data-pdf-report="${r.id}">PDF</button>`;
+  if (admin) return `<button type="button" class="btn ghost small" data-view-report="${r.id}">Open / Edit</button> ${pdf} <button type="button" class="btn danger small" data-delete-report="${r.id}">Delete</button>`;
+  if (G && G.canEdit(r.id)) return `<button type="button" class="btn ghost small" data-view-report="${r.id}">Open (edit approved)</button> ${pdf}`;
+  return pdf + ' ' + (G ? G.requestButton(r.id, label) : '');
+}
+async function pdfFromLog_(id){
+  const r = state.reports.find(x=>x.id===id); if (!r) return;
+  const keys = ['header','checklist','groupPictures','defects','noDefectsFound','comments','decision','signOff','editingId','anySbu','tab'], snap = {};
+  keys.forEach(k=>{ snap[k] = state[k]; });
+  openReport_(r);
+  try{ await exportPdf(); showToast('PDF downloaded.'); }catch(e){ console.error(e); showToast('Could not create the PDF.'); }
+  keys.forEach(k=>{ state[k] = snap[k]; });
+  render();
+}
+
 function renderLog(){
   const rows = state.reports.slice().sort((a,b)=> new Date(b.header.date)-new Date(a.header.date)).map(r=>{
     const aql = computeAQL(r.header.lotQty, 0,0,0, r.header.aqlCritical, r.header.aqlMajor, r.header.aqlMinor, r.header.inspectionLevel, true);
@@ -679,7 +700,7 @@ function renderLog(){
       <td>${esc(r.header.styleName||r.header.ir)}</td>
       <td>${esc(r.header.line)}</td>
       <td><span class="badge ${r.decision==='Rejected'?'fail':r.decision==='Accepted'?'pass':''}">${esc(r.decision||'-')}</span></td>
-      <td><button type="button" class="btn ghost small" data-view-report="${r.id}">Open</button> <button type="button" class="btn danger small" data-delete-report="${r.id}">Delete</button></td>
+      <td>${logActions_(r)}</td>
     </tr>`;
   }).join('') || `<tr><td colspan="6" class="subtle-note">No ${esc(INSPECTION_TYPE)} reports saved yet.</td></tr>`;
   return `
@@ -786,9 +807,12 @@ function bindEvents(){
   document.querySelectorAll('[data-view-report]').forEach(el=>el.addEventListener('click', ()=>{
     const r = state.reports.find(x=>x.id===el.dataset.viewReport);
     if (!r) return;
+    if (window.TCEG && !TCEG.canEdit(r.id)){ showToast('Only an administrator can open a saved report. Use Request Edit.'); return; }
     openReport_(r);
   }));
+  document.querySelectorAll('[data-pdf-report]').forEach(el=>el.addEventListener('click', ()=>pdfFromLog_(el.dataset.pdfReport)));
   document.querySelectorAll('[data-delete-report]').forEach(el=>el.addEventListener('click', ()=>{
+    if (!(window.TCEG && TCEG.isAdmin())){ showToast('Only an administrator can delete a report.'); return; }
     if (window.TC_IS_GUEST){ showToast('Guest accounts are view only — deleting is disabled.'); return; }
     if (!confirm('Delete this report? This cannot be undone.')) return;
     state.reports = state.reports.filter(x=>x.id!==el.dataset.deleteReport);
@@ -828,6 +852,7 @@ async function autoPdfFromUrl_(){
 
 function saveInspection(){
   if (window.TC_IS_GUEST){ showToast('Guest accounts are view only — saving is disabled.'); return; }
+  if (state.editingId && window.TCEG && !TCEG.canEdit(state.editingId)){ showToast('This report is locked. Ask an administrator for an edit (Reports Log > Request Edit).'); return; }
   const h = state.header;
   if (!h.buyer || !h.line){ showToast('Please fill in at least Buyer and Line before saving.'); return; }
   const report = {
@@ -849,10 +874,12 @@ function saveInspection(){
   const idx = state.reports.findIndex(r=>r.id===report.id);
   const isNew = idx < 0;
   if (idx>=0) state.reports[idx]=report; else state.reports.push(report);
-  state.editingId = report.id;
   persistReports();
   if (isNew) mirrorToStyleTracking_(report);
-  showToast('Inspection saved.');
+  if (!isNew && window.TCEG) TCEG.consume(report.id);
+  // a saved report is locked: clear the form and show the log (PDF / Request Edit live there)
+  Object.assign(state, emptyReportState()); state.editingId = null; state.anySbu = false; state.tab = 'log';
+  showToast('Inspection saved. Find it in the Reports Log.');
   render();
 }
 
@@ -1053,6 +1080,7 @@ async function exportPdf(){
 
 /* ============================= INIT ============================= */
 if (!localStorage.getItem('tc_session')) { /* soft guard — page still works if opened directly during dev */ }
+if (window.TCEG) TCEG.init('sewinginline', ()=>render());
 loadReports();
 </script>
 <script src="js/module-auth.js"></script>
