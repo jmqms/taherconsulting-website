@@ -6,6 +6,8 @@
 <title>Document Archive — Taher Consulting</title>
 <link rel="icon" type="image/svg+xml" href="assets/favicon.svg">
 <link rel="stylesheet" href="css/style.css">
+<script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf-autotable/3.8.2/jspdf.plugin.autotable.min.js"></script>
 <style>
   body{background:var(--paper);}
   .dm-wrap{max-width:1080px;margin:0 auto;padding:32px 24px 60px;}
@@ -43,6 +45,29 @@
   .history-row{display:flex;justify-content:space-between;align-items:center;padding:6px 0;font-size:13px;border-bottom:1px solid var(--line);}
   .history-row:last-child{border-bottom:none;}
   .history-row a{color:var(--pass);font-family:var(--mono);font-size:11.5px;}
+
+
+  .main-tabs{display:flex;gap:6px;margin:0 0 22px;border-bottom:2px solid var(--ink);flex-wrap:wrap;}
+  .main-tabs button{font-family:var(--mono);font-size:12.5px;letter-spacing:.04em;text-transform:uppercase;padding:11px 20px;border:1.5px solid var(--ink);border-bottom:none;background:none;color:var(--ink);cursor:pointer;border-radius:4px 4px 0 0;margin-bottom:-2px;}
+  .main-tabs button.active{background:var(--ink);color:var(--paper);}
+  .tab-pane{display:none;} .tab-pane.show{display:block;}
+  .chips{display:flex;gap:8px;flex-wrap:wrap;margin-bottom:16px;}
+  .chip{font-family:var(--mono);font-size:11.5px;letter-spacing:.03em;padding:8px 14px;border-radius:20px;border:1.5px solid var(--ink);background:none;color:var(--ink);cursor:pointer;}
+  .chip b{margin-left:6px;opacity:.7;} .chip.active{background:var(--ink);color:var(--paper);}
+  .filters{display:flex;gap:14px;flex-wrap:wrap;align-items:flex-end;margin-bottom:18px;}
+  .filters .field{margin:0;min-width:170px;}
+  .sec-group{margin-bottom:16px;border:1.5px solid var(--ink);border-radius:5px;background:var(--card);}
+  .sec-group>summary{cursor:pointer;list-style:none;padding:12px 18px;font-family:var(--display);font-size:16px;display:flex;justify-content:space-between;align-items:center;}
+  .sec-group>summary::-webkit-details-marker{display:none;}
+  .sec-group>summary .cnt{font-family:var(--mono);font-size:11px;color:var(--ink-soft);}
+  .sec-group>summary:before{content:"\25B8";margin-right:10px;} .sec-group[open]>summary:before{content:"\25BE";}
+  .sec-body{padding:0 14px 6px;} .sec-body .doc-card{border-width:1px;box-shadow:none;}
+  .tbl-wrap{overflow-x:auto;} table.ml{width:100%;border-collapse:collapse;font-size:13px;min-width:860px;}
+  table.ml th{font-family:var(--mono);font-size:10.5px;text-transform:uppercase;letter-spacing:.04em;text-align:left;padding:9px 8px;background:var(--ink);color:var(--paper);white-space:nowrap;}
+  table.ml td{padding:8px;border-bottom:1px solid var(--line);vertical-align:top;}
+  table.ml tr.cat-row td{background:var(--paper);font-family:var(--display);font-weight:700;border-top:2px solid var(--ink);}
+  .ml-actions{display:flex;gap:10px;flex-wrap:wrap;align-items:center;margin-bottom:14px;}
+  .ml-count{font-family:var(--mono);font-size:11.5px;color:var(--ink-soft);}
 
   @media (max-width:700px){ .form-grid{grid-template-columns:1fr;} }
 </style>
@@ -93,11 +118,48 @@ function tcBlockIfGuest(actionLabel) {
 <div class="dm-wrap">
   <div class="dm-head">
     <div class="eyebrow">Quality Management System</div>
-    <h1>Quality Manual &amp; SOP Archive</h1>
-    <p class="lede" style="margin-top:6px">Upload controlled documents here. Uploading a PDF again under the same document keeps the old version in the history — nothing is silently overwritten.</p>
+    <h1>Document Archive</h1>
+    <p class="lede" style="margin-top:6px">Quality Manual, SOP, Policy, Procedure, Process Flow Chart and KPI documents. Uploading a PDF again under the same document keeps the old version in the history &mdash; nothing is silently overwritten.</p>
   </div>
 
-  <div class="panel">
+  <div class="main-tabs" id="mainTabs">
+    <button data-tab="upload" class="active">1. Upload Documents</button>
+    <button data-tab="master">2. Documents Master List</button>
+    <button data-tab="documents">3. Documents</button>
+  </div>
+
+  <!-- ============ TAB 1: Documents (library) ============ -->
+  <div class="tab-pane" id="pane-documents">
+    <div class="chips" id="catChips"></div>
+    <div class="filters">
+      <div class="field"><label>Section</label><select id="sectionFilter"><option value="">All Sections</option><option>All</option><option>PD</option><option>Store</option><option>Knitting</option><option>Dyeing</option><option>Fabrics</option><option>RM</option><option>Cutting</option><option>Printing</option><option>Embroidery</option><option>Sewing</option><option>Wash</option><option>Finishing</option><option>QA</option><option>QMS</option></select></div>
+      <div class="field" style="min-width:260px"><label>Search</label><input id="docSearch" placeholder="Title, Doc No, SL&hellip;"></div>
+      <span class="ml-count" id="docCount"></span>
+    </div>
+    <div id="docList"><div style="color:var(--ink-soft);font-size:13px">Loading…</div></div>
+  </div>
+
+  <!-- ============ TAB 2: Documents Master List ============ -->
+  <div class="tab-pane" id="pane-master">
+    <div class="panel">
+      <h3>Documents Master List <span style="font-weight:400;font-size:12px;color:var(--ink-soft)">&mdash; latest version of every controlled document</span></h3>
+      <div class="filters">
+        <div class="field"><label>Category</label><select id="mlCat"><option value="">All Categories</option></select></div>
+        <div class="field"><label>Section</label><select id="mlSec"><option value="">All Sections</option><option>All</option><option>PD</option><option>Store</option><option>Knitting</option><option>Dyeing</option><option>Fabrics</option><option>RM</option><option>Cutting</option><option>Printing</option><option>Embroidery</option><option>Sewing</option><option>Wash</option><option>Finishing</option><option>QA</option><option>QMS</option></select></div>
+        <div class="field" style="min-width:240px"><label>Search</label><input id="mlSearch" placeholder="Title, Doc No&hellip;"></div>
+      </div>
+      <div class="ml-actions">
+        <button class="btn btn-primary" id="mlPdf">&#11015; Download PDF</button>
+        <button class="btn btn-ghost" id="mlXls">&#11015; Download Excel</button>
+        <span class="ml-count" id="mlCount"></span>
+      </div>
+      <div class="tbl-wrap"><table class="ml"><thead><tr><th>SL</th><th>Doc No</th><th>Document Title</th><th>Section</th><th>Version No</th><th>Effective Date</th><th>Revision Date</th><th>Rev.</th><th>File</th></tr></thead><tbody id="mlBody"></tbody></table></div>
+    </div>
+  </div>
+
+  <!-- ============ TAB 3: Upload Documents ============ -->
+  <div class="tab-pane show" id="pane-upload">
+    <div class="panel">
     <h3>Upload Document</h3>
     <div class="form-grid">
       <div class="field"><label>Document Title</label><input id="docTitle" placeholder="e.g. Sharp Tool Control SOP"></div>
@@ -132,56 +194,45 @@ function tcBlockIfGuest(actionLabel) {
     <button class="btn btn-ghost" id="cancelUpdateBtn" style="display:none" onclick="cancelUpdateMode()">Cancel (uploading a fresh document instead)</button>
     <div id="docMsg" class="form-msg"></div>
   </div>
-
-  <div class="cat-tabs" id="catTabs">
-    <button data-cat="Quality Manual" class="active">Quality Manual</button>
-    <button data-cat="SOP">SOP</button>
-    <button data-cat="Policy">Policy</button>
-    <button data-cat="Process Flow Chart">Process Flow Chart</button>
-    <button data-cat="Procedure">Procedure</button>
-    <button data-cat="KPI">KPI</button>
   </div>
-  <div class="field" style="max-width:260px;margin-bottom:18px"><label>Filter by Section</label>
-    <select id="sectionFilter" onchange="renderDocList()">
-      <option value="">All Sections</option>
-      <option>All</option><option>PD</option><option>Store</option><option>Knitting</option>
-      <option>Dyeing</option><option>Fabrics</option><option>RM</option><option>Cutting</option>
-      <option>Printing</option><option>Embroidery</option><option>Sewing</option><option>Wash</option>
-      <option>Finishing</option><option>QA</option><option>QMS</option>
-    </select>
-  </div>
-
-  <div id="docList"><div style="color:var(--ink-soft);font-size:13px">Loading…</div></div>
 </div>
 
 <script>
 const DOC_API_URL = "https://script.google.com/macros/s/AKfycbxX_xUN8yuYpeNr0kppchq_hQyt4SRNmnneXS1QrGSwb6hTIgG5NIP0X22PLhz_a_DpDA/exec";
-let activeCat = "Quality Manual";
+const CATEGORIES = ["Quality Manual","SOP","Policy","Process Flow Chart","Procedure","KPI"];
+const SECTIONS = ["All","PD","Store","Knitting","Dyeing","Fabrics","RM","Cutting","Printing","Embroidery","Sewing","Wash","Finishing","QA","QMS"];
+let activeCat = "";          // "" = all categories
 let allDocs = [];
+let loadedOnce = false;
 
-function esc(s){ return (s||"").toString().replace(/[&<>"]/g, c => ({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;"}[c])); }
+function esc(s){ return (s==null?"":s).toString().replace(/[&<>"]/g, c => ({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;"}[c])); }
+function fmtDate(v){ const s = String(v||""); return /^\d{4}-\d{2}-\d{2}/.test(s) ? s.slice(0,10) : s; }
+function nz(v){ return String(v==null?"":v).trim().toLowerCase(); }
 
+/* ---------- tabs ---------- */
+function showTab(name){
+  if (["documents","master","upload"].indexOf(name) < 0) name = "upload";
+  document.querySelectorAll("#mainTabs button").forEach(b => b.classList.toggle("active", b.dataset.tab === name));
+  document.querySelectorAll(".tab-pane").forEach(p => p.classList.toggle("show", p.id === "pane-" + name));
+  try { sessionStorage.setItem("da_tab", name); } catch(e){}
+  if (name === "master") renderMaster();
+  if (name === "documents") renderDocList();
+}
+document.getElementById("mainTabs").addEventListener("click", e => { const b = e.target.closest("button[data-tab]"); if (b) showTab(b.dataset.tab); });
+
+/* ---------- API ---------- */
 async function docApi(payload) {
   if (DOC_API_URL.indexOf("PASTE_YOUR") === 0) {
     throw new Error("Document Archive backend not connected yet — see document-archive-backend.gs for setup steps.");
   }
-  const res = await fetch(DOC_API_URL, {
-    method: "POST",
-    headers: { "Content-Type": "text/plain;charset=utf-8" },
-    body: JSON.stringify(payload),
-  });
+  const res = await fetch(DOC_API_URL, { method: "POST", headers: { "Content-Type": "text/plain;charset=utf-8" }, body: JSON.stringify(payload) });
   return res.json();
 }
-
 function fileToBase64(file) {
-  return new Promise((resolve, reject) => {
-    const reader = new FileReader();
-    reader.onload = () => resolve(reader.result.split(",")[1]);
-    reader.onerror = reject;
-    reader.readAsDataURL(file);
-  });
+  return new Promise((resolve, reject) => { const r = new FileReader(); r.onload = () => resolve(r.result.split(",")[1]); r.onerror = reject; r.readAsDataURL(file); });
 }
 
+/* ---------- upload ---------- */
 async function uploadDocument() {
   if (tcBlockIfGuest("Uploading a document")) return;
   const msg = document.getElementById("docMsg");
@@ -196,151 +247,192 @@ async function uploadDocument() {
   const revisionDate = document.getElementById("docRevisionDate").value;
   const notes = document.getElementById("docNotes").value.trim();
   const docId = document.getElementById("docIdField").value;
-  const fileInput = document.getElementById("docFile");
-  const file = fileInput.files[0];
+  const file = document.getElementById("docFile").files[0];
 
   if (!title) { msg.textContent = "Document title is required."; msg.className = "form-msg err show"; return; }
   if (!file) { msg.textContent = "Choose a PDF file."; msg.className = "form-msg err show"; return; }
   if (file.type !== "application/pdf") { msg.textContent = "Only PDF files are accepted."; msg.className = "form-msg err show"; return; }
   if (file.size > 15 * 1024 * 1024) { msg.textContent = "File is larger than 15MB — please compress the PDF first."; msg.className = "form-msg err show"; return; }
 
-  btn.disabled = true;
-  btn.textContent = "Uploading…";
-  msg.className = "form-msg";
-
+  btn.disabled = true; btn.textContent = "Uploading…"; msg.className = "form-msg";
   try {
     const fileBase64 = await fileToBase64(file);
     let uploadedBy = "";
     try { uploadedBy = (JSON.parse(localStorage.getItem("tc_session") || sessionStorage.getItem("tc_session") || "{}").name) || ""; } catch(e) {}
-
-    const res = await docApi({
-      action: "uploadDocument",
-      doc: { docId, title, category, section, docNo, documentSl, versionNo, effectiveDate, revisionDate, notes, fileBase64, fileName: file.name, uploadedBy }
-    });
+    const res = await docApi({ action: "uploadDocument",
+      doc: { docId, title, category, section, docNo, documentSl, versionNo, effectiveDate, revisionDate, notes, fileBase64, fileName: file.name, uploadedBy } });
     if (!res.ok) throw new Error(res.error || "Upload failed");
-
-    msg.textContent = `Uploaded as version ${res.version}.`;
+    msg.textContent = `Uploaded as version ${res.version}. It now appears in Documents and the Master List.`;
     msg.className = "form-msg ok show";
     cancelUpdateMode();
     document.getElementById("docFile").value = "";
     loadDocuments();
-  } catch (err) {
-    msg.textContent = err.message;
-    msg.className = "form-msg err show";
-  } finally {
-    btn.disabled = false;
-    btn.textContent = "Upload →";
-  }
+  } catch (err) { msg.textContent = err.message; msg.className = "form-msg err show"; }
+  finally { btn.disabled = false; btn.textContent = document.getElementById("docIdField").value ? "Upload New Version →" : "Upload →"; }
 }
-
 function startUpdateMode(doc) {
   if (tcBlockIfGuest("Uploading a new version")) return;
   document.getElementById("docTitle").value = doc.title;
   document.getElementById("docCategory").value = doc.category;
   document.getElementById("docSection").value = doc.section || "All";
-  document.getElementById("docNo").value = doc.docNo;
+  document.getElementById("docNo").value = doc.docNo || "";
   document.getElementById("docSl").value = doc.documentSl || "";
   document.getElementById("docVersionNo").value = doc.versionNo || "";
-  document.getElementById("docEffectiveDate").value = doc.effectiveDate || "";
-  document.getElementById("docRevisionDate").value = doc.revisionDate || "";
+  document.getElementById("docEffectiveDate").value = fmtDate(doc.effectiveDate);
+  document.getElementById("docRevisionDate").value = fmtDate(doc.revisionDate);
   document.getElementById("docNotes").value = "";
   document.getElementById("docIdField").value = doc.docId;
   document.getElementById("cancelUpdateBtn").style.display = "inline-flex";
-  document.getElementById("uploadBtn").textContent = `Upload New Version →`;
+  document.getElementById("uploadBtn").textContent = "Upload New Version →";
+  showTab("upload");
   window.scrollTo({ top: 0, behavior: "smooth" });
 }
-
 function cancelUpdateMode() {
-  document.getElementById("docIdField").value = "";
-  document.getElementById("docTitle").value = "";
-  document.getElementById("docNo").value = "";
-  document.getElementById("docSl").value = "";
-  document.getElementById("docVersionNo").value = "";
-  document.getElementById("docEffectiveDate").value = "";
-  document.getElementById("docRevisionDate").value = "";
-  document.getElementById("docNotes").value = "";
+  ["docIdField","docTitle","docNo","docSl","docVersionNo","docEffectiveDate","docRevisionDate","docNotes"].forEach(id => document.getElementById(id).value = "");
   document.getElementById("cancelUpdateBtn").style.display = "none";
   document.getElementById("uploadBtn").textContent = "Upload →";
 }
 
-document.getElementById("catTabs").addEventListener("click", (e) => {
-  const btn = e.target.closest("button[data-cat]");
-  if (!btn) return;
-  activeCat = btn.dataset.cat;
-  document.querySelectorAll(".cat-tabs button").forEach(b => b.classList.toggle("active", b.dataset.cat === activeCat));
-  renderDocList();
-});
-
+/* ---------- data ---------- */
 async function loadDocuments() {
   const listEl = document.getElementById("docList");
   try {
     const res = await docApi({ action: "listDocuments" });
     if (!res.ok) throw new Error(res.error || "Failed to load documents");
-    allDocs = res.documents;
-    renderDocList();
+    allDocs = res.documents || []; loadedOnce = true;
+    renderChips(); renderDocList(); renderMaster();
   } catch (err) {
     listEl.innerHTML = `<div style="color:var(--reject);font-family:var(--mono);font-size:12.5px">${esc(err.message)} — check that DOC_API_URL is a live deployment (open it directly in a new tab to test), and that the Apps Script is deployed with "Who has access: Anyone".</div>`;
   }
 }
+// one entry per document: [latest, ...older versions], newest first
+function docGroups(list) {
+  const by = {};
+  list.forEach(d => { (by[d.docId] = by[d.docId] || []).push(d); });
+  return Object.values(by).map(v => v.sort((a, b) => Number(b.version) - Number(a.version)));
+}
+const catRank = c => { const i = CATEGORIES.indexOf(c); return i < 0 ? 99 : i; };
+const secRank = s => { const i = SECTIONS.indexOf(s); return i < 0 ? 99 : i; };
+const slNum = v => { const n = parseFloat(String(v||"").replace(/[^0-9.]/g, "")); return isNaN(n) ? 1e9 : n; };
 
+/* ---------- TAB: Documents ---------- */
+function renderChips() {
+  const groups = docGroups(allDocs), cnt = {};
+  groups.forEach(g => { cnt[g[0].category] = (cnt[g[0].category] || 0) + 1; });
+  const mk = (val, label, n) => `<button class="chip ${activeCat === val ? "active" : ""}" data-cat="${esc(val)}">${esc(label)}<b>${n}</b></button>`;
+  document.getElementById("catChips").innerHTML = mk("", "All", groups.length) + CATEGORIES.map(c => mk(c, c, cnt[c] || 0)).join("");
+}
+document.getElementById("catChips").addEventListener("click", e => { const b = e.target.closest(".chip"); if (!b) return; activeCat = b.dataset.cat; renderChips(); renderDocList(); });
+document.getElementById("sectionFilter").addEventListener("change", renderDocList);
+document.getElementById("docSearch").addEventListener("input", renderDocList);
+
+function docMatches(d, sec, q) {
+  if (sec && d.section !== sec && d.section !== "All") return false;
+  if (q && [d.title, d.docNo, d.documentSl, d.versionNo, d.notes].join(" ").toLowerCase().indexOf(q) < 0) return false;
+  return true;
+}
+function docCardHTML(versions, idx) {
+  const latest = versions[0], older = versions.slice(1);
+  const pre = { docId: latest.docId, title: latest.title, category: latest.category, section: latest.section, docNo: latest.docNo, documentSl: latest.documentSl, versionNo: latest.versionNo, effectiveDate: latest.effectiveDate, revisionDate: latest.revisionDate };
+  return `
+    <div class="doc-card">
+      <div class="doc-top">
+        <div>
+          <h4>${esc(latest.title)} <span class="version-badge">v${esc(latest.version)}</span></h4>
+          <div class="meta">${esc(latest.docNo || "No Doc No")} &middot; SL ${esc(latest.documentSl || "—")} &middot; Version No: ${esc(latest.versionNo || "—")}</div>
+          <div class="meta">Effective: ${esc(fmtDate(latest.effectiveDate) || "—")} &middot; Revised: ${esc(fmtDate(latest.revisionDate) || "—")} &middot; Uploaded ${esc(fmtDate(latest.createdAt))} by ${esc(latest.uploadedBy || "—")}</div>
+          ${latest.notes ? `<div class="meta" style="margin-top:4px">${esc(latest.notes)}</div>` : ""}
+        </div>
+        <div class="actions">
+          <a class="btn btn-ghost" href="${esc(latest.fileUrl)}" target="_blank" rel="noopener">View / Download</a>
+          <button class="btn btn-ghost" onclick='startUpdateMode(${JSON.stringify(pre).replace(/'/g, "&#39;")})'>Upload New Version</button>
+          ${older.length ? `<button class="btn btn-ghost" onclick="toggleHistory('${idx}')">Version History (${older.length})</button>` : ""}
+        </div>
+      </div>
+      ${older.length ? `<div class="history-list" id="hist-${idx}">${older.map(v => `
+        <div class="history-row"><span>v${esc(v.version)} — ${esc(fmtDate(v.createdAt))} by ${esc(v.uploadedBy || "—")}${v.notes ? " — " + esc(v.notes) : ""}</span>
+        <a href="${esc(v.fileUrl)}" target="_blank" rel="noopener">Download</a></div>`).join("")}</div>` : ""}
+    </div>`;
+}
 function renderDocList() {
   const listEl = document.getElementById("docList");
-  const sectionFilter = document.getElementById("sectionFilter").value;
-  let inCat = allDocs.filter(d => d.category === activeCat);
-  if (sectionFilter) inCat = inCat.filter(d => d.section === sectionFilter || d.section === "All");
-
-  const byDocId = {};
-  inCat.forEach(d => {
-    if (!byDocId[d.docId]) byDocId[d.docId] = [];
-    byDocId[d.docId].push(d);
+  if (!loadedOnce) return;
+  const sec = document.getElementById("sectionFilter").value, q = nz(document.getElementById("docSearch").value);
+  let groups = docGroups(allDocs).filter(g => (!activeCat || g[0].category === activeCat) && docMatches(g[0], sec, q));
+  document.getElementById("docCount").textContent = groups.length + " document(s)";
+  if (!groups.length) { listEl.innerHTML = `<div style="color:var(--ink-soft);font-size:13px">No documents found${activeCat ? " in " + esc(activeCat) : ""}.</div>`; return; }
+  // organise: Category -> Section (sections in plant-flow order); within a section by SL / Doc No
+  const cats = {};
+  groups.forEach(g => { const d = g[0]; ((cats[d.category] = cats[d.category] || {})[d.section || "All"] = (cats[d.category][d.section || "All"] || [])).push(g); });
+  let idx = 0, html = "";
+  Object.keys(cats).sort((a, b) => catRank(a) - catRank(b) || a.localeCompare(b)).forEach(cat => {
+    if (!activeCat) html += `<h3 style="font-family:var(--display);font-size:19px;margin:22px 0 10px">${esc(cat)}</h3>`;
+    Object.keys(cats[cat]).sort((a, b) => secRank(a) - secRank(b) || a.localeCompare(b)).forEach(s => {
+      const arr = cats[cat][s].sort((a, b) => slNum(a[0].documentSl) - slNum(b[0].documentSl) || String(a[0].docNo).localeCompare(String(b[0].docNo)) || String(a[0].title).localeCompare(String(b[0].title)));
+      html += `<details class="sec-group" open><summary><span>${esc(s === "All" ? "All Sections (Common)" : s)}</span><span class="cnt">${arr.length} document(s)</span></summary><div class="sec-body">${arr.map(g => docCardHTML(g, idx++)).join("")}</div></details>`;
+    });
   });
-
-  const groups = Object.values(byDocId).map(versions => versions.sort((a, b) => Number(b.version) - Number(a.version)));
-  groups.sort((a, b) => new Date(b[0].createdAt) - new Date(a[0].createdAt));
-
-  if (!groups.length) {
-    listEl.innerHTML = `<div style="color:var(--ink-soft);font-size:13px">No ${esc(activeCat)} documents uploaded yet.</div>`;
-    return;
-  }
-
-  listEl.innerHTML = groups.map((versions, idx) => {
-    const latest = versions[0];
-    const older = versions.slice(1);
-    return `
-      <div class="doc-card">
-        <div class="doc-top">
-          <div>
-            <h4>${esc(latest.title)} <span class="version-badge">v${esc(latest.version)}</span></h4>
-            <div class="meta">${esc(latest.docNo || "No Doc No")} &middot; SL ${esc(latest.documentSl || "—")} &middot; Section: ${esc(latest.section || "—")} &middot; Version No: ${esc(latest.versionNo || "—")}</div>
-            <div class="meta">Effective: ${esc(latest.effectiveDate || "—")} &middot; Revised: ${esc(latest.revisionDate || "—")} &middot; Uploaded ${esc(latest.createdAt)} by ${esc(latest.uploadedBy || "—")}</div>
-            ${latest.notes ? `<div class="meta" style="margin-top:4px">${esc(latest.notes)}</div>` : ""}
-          </div>
-          <div class="actions">
-            <a class="btn btn-ghost" href="${esc(latest.fileUrl)}" target="_blank" rel="noopener">View / Download</a>
-            <button class="btn btn-ghost" onclick='startUpdateMode(${JSON.stringify({docId: latest.docId, title: latest.title, category: latest.category, section: latest.section, docNo: latest.docNo, documentSl: latest.documentSl, versionNo: latest.versionNo, effectiveDate: latest.effectiveDate, revisionDate: latest.revisionDate}).replace(/'/g, "&#39;")})'>Upload New Version</button>
-            ${older.length ? `<button class="btn btn-ghost" onclick="toggleHistory(${idx})">Version History (${older.length})</button>` : ""}
-          </div>
-        </div>
-        ${older.length ? `
-          <div class="history-list" id="hist-${idx}">
-            ${older.map(v => `
-              <div class="history-row">
-                <span>v${esc(v.version)} — ${esc(v.createdAt)} by ${esc(v.uploadedBy || "—")}${v.notes ? " — " + esc(v.notes) : ""}</span>
-                <a href="${esc(v.fileUrl)}" target="_blank" rel="noopener">Download</a>
-              </div>
-            `).join("")}
-          </div>
-        ` : ""}
-      </div>
-    `;
-  }).join("");
+  listEl.innerHTML = html;
 }
+function toggleHistory(idx) { document.getElementById("hist-" + idx).classList.toggle("show"); }
 
-function toggleHistory(idx) {
-  document.getElementById("hist-" + idx).classList.toggle("show");
+/* ---------- TAB: Master List ---------- */
+(function(){ document.getElementById("mlCat").innerHTML = `<option value="">All Categories</option>` + CATEGORIES.map(c => `<option>${esc(c)}</option>`).join(""); })();
+["mlCat","mlSec"].forEach(id => document.getElementById(id).addEventListener("change", renderMaster));
+document.getElementById("mlSearch").addEventListener("input", renderMaster);
+
+function masterRows() {
+  const cat = document.getElementById("mlCat").value, sec = document.getElementById("mlSec").value, q = nz(document.getElementById("mlSearch").value);
+  const rows = docGroups(allDocs).filter(g => (!cat || g[0].category === cat) && docMatches(g[0], sec, q)).map(g => g[0]);
+  rows.sort((a, b) => catRank(a.category) - catRank(b.category) || secRank(a.section || "All") - secRank(b.section || "All") || slNum(a.documentSl) - slNum(b.documentSl) || String(a.docNo).localeCompare(String(b.docNo)) || String(a.title).localeCompare(String(b.title)));
+  return rows;
 }
+function renderMaster() {
+  if (!loadedOnce) return;
+  const rows = masterRows();
+  document.getElementById("mlCount").textContent = rows.length + " document(s)";
+  let last = null, html = "";
+  rows.forEach(d => {
+    if (d.category !== last) { html += `<tr class="cat-row"><td colspan="9">${esc(d.category)}</td></tr>`; last = d.category; }
+    html += `<tr><td>${esc(d.documentSl || "—")}</td><td>${esc(d.docNo || "—")}</td><td>${esc(d.title)}</td><td>${esc(d.section || "—")}</td><td>${esc(d.versionNo || "—")}</td><td>${esc(fmtDate(d.effectiveDate) || "—")}</td><td>${esc(fmtDate(d.revisionDate) || "—")}</td><td>v${esc(d.version)}</td><td><a href="${esc(d.fileUrl)}" target="_blank" rel="noopener">Open</a></td></tr>`;
+  });
+  document.getElementById("mlBody").innerHTML = html || `<tr><td colspan="9" style="text-align:center;color:var(--ink-soft)">No documents found.</td></tr>`;
+}
+function mlStamp() { return new Date().toISOString().slice(0, 10); }
+document.getElementById("mlXls").addEventListener("click", () => {
+  const rows = masterRows(); if (!rows.length) return alert("No documents to download.");
+  const head = ["SL", "Category", "Doc No", "Document Title", "Section", "Version No", "Effective Date", "Revision Date", "Rev. (upload)", "Uploaded By", "Uploaded On", "File Link"];
+  const q = v => '"' + String(v == null ? "" : v).replace(/"/g, '""') + '"';
+  const lines = [head.map(q).join(",")].concat(rows.map(d => [d.documentSl, d.category, d.docNo, d.title, d.section, d.versionNo, fmtDate(d.effectiveDate), fmtDate(d.revisionDate), "v" + d.version, d.uploadedBy, fmtDate(d.createdAt), d.fileUrl].map(q).join(",")));
+  const blob = new Blob(["\uFEFF" + lines.join("\r\n")], { type: "text/csv;charset=utf-8" });
+  const a = document.createElement("a"); a.href = URL.createObjectURL(blob); a.download = "Documents_Master_List_" + mlStamp() + ".csv";
+  document.body.appendChild(a); a.click(); setTimeout(() => { URL.revokeObjectURL(a.href); a.remove(); }, 500);
+});
+document.getElementById("mlPdf").addEventListener("click", () => {
+  const rows = masterRows(); if (!rows.length) return alert("No documents to download.");
+  if (!window.jspdf) return alert("PDF library did not load. Check the internet connection and try again.");
+  const T = s => String(s == null ? "" : s).replace(/[\u2013\u2014]/g, "-").replace(/[\u2018\u2019]/g, "'").replace(/[\u201C\u201D]/g, '"').replace(/[^\x00-\xFF]/g, "?");
+  const doc = new window.jspdf.jsPDF({ unit: "mm", format: "a4", orientation: "landscape", compress: true });
+  const cat = document.getElementById("mlCat").value, sec = document.getElementById("mlSec").value;
+  doc.setFont("helvetica", "bold"); doc.setFontSize(15); doc.text("J.M. FABRICS LIMITED", 10, 12);
+  doc.setFontSize(12); doc.text("Documents Master List", 10, 18.5);
+  doc.setFont("helvetica", "normal"); doc.setFontSize(8.5); doc.setTextColor(100);
+  doc.text(T("Date: " + mlStamp() + "   |   " + rows.length + " document(s)" + (cat ? "   |   Category: " + cat : "") + (sec ? "   |   Section: " + sec : "")), 10, 23.5); doc.setTextColor(0);
+  const body = []; let last = null;
+  rows.forEach(d => {
+    if (d.category !== last) { body.push([{ content: T(d.category), colSpan: 8, styles: { fontStyle: "bold", fillColor: [226, 231, 235] } }]); last = d.category; }
+    body.push([T(d.documentSl || "-"), T(d.docNo || "-"), T(d.title), T(d.section || "-"), T(d.versionNo || "-"), T(fmtDate(d.effectiveDate) || "-"), T(fmtDate(d.revisionDate) || "-"), "v" + d.version]);
+  });
+  doc.autoTable({ startY: 27, margin: { left: 10, right: 10, bottom: 12 }, theme: "grid", head: [["SL", "Doc No", "Document Title", "Section", "Version No", "Effective Date", "Revision Date", "Rev."]], body,
+    styles: { fontSize: 8, cellPadding: 1.6, overflow: "linebreak" }, headStyles: { fillColor: [47, 63, 76], textColor: 255 },
+    columnStyles: { 0: { cellWidth: 14 }, 1: { cellWidth: 36 }, 3: { cellWidth: 26 }, 4: { cellWidth: 24 }, 5: { cellWidth: 28 }, 6: { cellWidth: 28 }, 7: { cellWidth: 14 } } });
+  const n = doc.getNumberOfPages();
+  for (let p = 1; p <= n; p++) { doc.setPage(p); doc.setFontSize(7.5); doc.setTextColor(110); doc.text("Page " + p + " of " + n, 287, 204, { align: "right" }); }
+  doc.save("Documents_Master_List_" + mlStamp() + ".pdf");
+});
 
 loadDocuments();
+try { showTab(sessionStorage.getItem("da_tab") || "upload"); } catch(e) { showTab("upload"); }
 </script>
 
 <script src="js/module-auth.js"></script>
