@@ -3461,11 +3461,13 @@ function ttOpenClose(id) {
         <div class="sd-row"><span>Buyer</span><b>${esc(r.buyer || "—")}</b></div>
         <div class="sd-row"><span>IR No</span><b>${esc(r.ir || "—")}</b></div>
         <div class="sd-row"><span>Style</span><b>${esc(r.styleNo || "—")}</b></div>
+        <div class="sd-row"><span>Login Date</span><b>${esc(String(r.logInDate || "").slice(0, 10) || "—")}</b></div>
+        <div class="sd-row"><span>Section</span><b>${esc(r.section || "—")}</b></div>
       </div>
       <div style="font-size:13px;color:var(--ink-soft);margin-bottom:12px"><b>Tests:</b> ${esc((r.requirements || []).join(", ") || "—")}<br>
         <b>Sample:</b> ${esc(r.testOn)} · ${esc(r.testOption)} · ${esc(r.color)} · ${esc(r.printType || r.size)}${r.gsm ? " · " + esc(r.gsm) + " GSM" : ""}${r.submission ? " · " + esc(r.submission) : ""} · ${esc(r.fiber)} · ${esc(r.fabricType)}${r.testCycle !== "" && r.testCycle != null ? " · Cycle: " + esc(r.testCycle) + " wash" : ""}</div>
       <div class="form-grid">
-        <div class="field"><label>Report / Log Out Date</label><input type="date" id="tcDate" value="${esc(String(r.reportDate || "").slice(0, 10))}" ${closed ? "disabled" : ""}></div>
+        <div class="field"><label>Report / Log Out Date</label><input type="date" id="tcDate" value="${esc(String(r.reportDate || "").slice(0, 10))}" min="${esc(String(r.logInDate || "").slice(0, 10))}" ${closed ? "disabled" : ""}></div>
         <div class="field"><label>TRF No</label><input id="tcTrp" value="${esc(r.trpNo)}" ${closed ? "disabled" : ""}></div>
         <div class="field"><label>Result</label><select id="tcResult" ${closed ? "disabled" : ""}><option${r.result === "Pass" ? " selected" : ""}>Pass</option><option${r.result === "Fail" ? " selected" : ""}>Fail</option></select></div>
       </div>
