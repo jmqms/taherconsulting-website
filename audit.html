@@ -27,6 +27,9 @@
         .nav-tabs { display: flex; gap: 10px; margin-bottom: 25px; border-bottom: 2px solid #e2e8f0; padding-bottom: 10px; flex-wrap: wrap; }
         .tab-btn { padding: 10px 20px; border: none; background: none; font-size: 16px; font-weight: 600; cursor: pointer; color: var(--text-muted); transition: all 0.2s; }
         .tab-btn.active { color: var(--primary); border-bottom: 3px solid var(--primary); }
+        .sub-nav { display: flex; gap: 8px; flex-wrap: wrap; margin-bottom: 12px; }
+        .sub-btn { padding: 8px 16px; border: 1.5px solid #cbd5e1; background: #fff; border-radius: 999px; font-size: 14px; font-weight: 600; cursor: pointer; color: var(--text-muted); }
+        .sub-btn.active { background: var(--primary); border-color: var(--primary); color: #fff; }
         .form-row { display: flex; gap: 20px; flex-wrap: wrap; margin-bottom: 20px; }
         .form-group { flex: 1; min-width: 220px; }
         label { display: block; font-weight: 600; margin-bottom: 8px; color: #475569; }
@@ -151,13 +154,20 @@
         <button class="logout-btn" onclick="logout()">Log Out</button>
     </div>
     
-    <div class="nav-tabs">
-        <button class="tab-btn active" onclick="switchTab('audit-form', this)">📝 New Daily Entry</button>
-        <button class="tab-btn" onclick="switchTab('dashboard-view', this); loadDashboard();">📊 Month-End Dashboard</button>
-        <button class="tab-btn" onclick="switchTab('analysis-dashboard-view', this); initAnalysisFilters();">🎯 Analysis Dashboard</button>
-        <button class="tab-btn" onclick="switchTab('nc-analysis-view', this); loadNCAnalysis();">🚨 NC Analysis Dashboard</button>
-        <button class="tab-btn" onclick="switchTab('data-logs', this); loadLogs();">📋 View Saved Rows</button>
+    <!-- 3 main areas: 1 Entry, 2 Analysis (3 dashboards), 3 Records. The sub-menu appears under "Analysis". -->
+    <div class="nav-tabs" id="main-nav" style="margin-bottom:12px">
+        <button class="tab-btn main-btn active" data-group="entry" onclick="goGroup('entry')">📝 1. Daily Entry</button>
+        <button class="tab-btn main-btn" data-group="analysis" onclick="goGroup('analysis')">📊 2. Analysis &amp; Dashboards</button>
+        <button class="tab-btn main-btn" data-group="records" onclick="goGroup('records')">📋 3. Saved Records</button>
     </div>
+    <div class="sub-nav" id="sub-nav-analysis" style="display:none">
+        <button class="sub-btn active" data-pane="overview-view" onclick="goSub('overview-view', this)">🏠 Overview</button>
+        <button class="sub-btn" data-pane="dashboard-view" onclick="goSub('dashboard-view', this)">📊 Month-End Dashboard</button>
+        <button class="sub-btn" data-pane="analysis-dashboard-view" onclick="goSub('analysis-dashboard-view', this)">🎯 Checkpoint Analysis</button>
+        <button class="sub-btn" data-pane="nc-analysis-view" onclick="goSub('nc-analysis-view', this)">🚨 NC Ranking</button>
+        <button class="sub-btn" data-pane="reports-view" onclick="goSub('reports-view', this)">📥 Reports</button>
+    </div>
+    <div style="margin-bottom:22px;border-bottom:2px solid #e2e8f0"></div>
 
     <!-- AUDIT FORM TAB -->
     <div id="audit-form" class="tab-content">
@@ -177,7 +187,7 @@
             </div>
             <div class="form-group">
                 <label>Audit Date</label>
-                <input type="date" id="audit-date" required>
+                <input type="date" id="audit-date" required onchange="loadPendingLines()">
             </div>
             <div class="form-group">
                 <label>Select SBU</label>
@@ -203,11 +213,13 @@
             </div>
             <div class="form-group">
                 <label>Select Production Line</label>
-                <select id="line-select" onchange="loadCheckpoints()">
+                <select id="line-select" onchange="loadCheckpoints(); markPendingSelected_()">
                     <option value="">-- Choose Line --</option>
                 </select>
             </div>
         </div>
+
+        <div id="pending-box" style="display:none;margin-top:14px;background:#fffbeb;border:1px solid #fde68a;border-radius:8px;padding:12px 14px;"></div>
 
         <div id="checkpoints-area" style="margin-top: 30px;"></div>
 
@@ -219,10 +231,35 @@
         </div>
     </div>
 
-    <!-- MONTH-END DASHBOARD TAB -->
-    <div id="dashboard-view" class="tab-content" style="display:none;">
-        <h2>SBU &amp; Line-Wise Analysis</h2>
-        
+    <!-- OVERVIEW TAB -->
+    <div id="overview-view" class="tab-content" style="display:none;">
+        <h2>Audit Overview</h2>
+        <div class="filter-box">
+            <div class="filter-group"><strong>Date:</strong> <input type="date" id="ov-date" onchange="loadOverview()"></div>
+            <div class="filter-group"><button class="btn" style="background:#64748b;padding:8px 14px;font-size:14px" onclick="invalidateCloudDataCache(); loadOverview();">&#8635; Refresh</button></div>
+        </div>
+        <div class="dashboard-grid" id="ov-tiles">
+            <div class="stat-card"><div class="stat-num" id="ov-done">-</div><div>Line-sections audited (Sewing + Finishing)</div></div>
+            <div class="stat-card"><div class="stat-num" id="ov-pending">-</div><div>Still pending</div></div>
+            <div class="stat-card"><div class="stat-num" id="ov-comp">-</div><div>Compliance (selected day)</div></div>
+            <div class="stat-card"><div class="stat-num" id="ov-fail">-</div><div>Failures (selected day)</div></div>
+            <div class="stat-card"><div class="stat-num" id="ov-mtd">-</div><div>Month-to-date compliance</div></div>
+        </div>
+        <h3>SBU-wise coverage (selected day)</h3>
+        <table>
+            <thead><tr><th>SBU</th><th>Sewing</th><th>Finishing</th><th>Metal &amp; Needle</th><th>Compliance</th><th>Failures</th><th>Pending lines</th></tr></thead>
+            <tbody id="ov-sbu-body"></tbody>
+        </table>
+        <h3 style="margin-top:28px;">🚨 Top 5 recurring failures (this month)</h3>
+        <table>
+            <thead><tr><th>#</th><th>Line</th><th>Section</th><th>Checkpoint</th><th>Failures</th></tr></thead>
+            <tbody id="ov-top-body"></tbody>
+        </table>
+    </div>
+
+    <!-- REPORTS TAB -->
+    <div id="reports-view" class="tab-content" style="display:none;">
+        <h2>Reports &amp; Downloads</h2>
         <div class="downloader-panel">
             <h3 style="margin-top:0; font-size:16px; color:#1e40af;">📥 Export Full Daily QMS Reports (All Lines Combined)</h3>
             <div style="display:flex; gap:15px; flex-wrap:wrap; align-items:center;">
@@ -245,6 +282,12 @@
                 </div>
             </div>
         </div>
+    </div>
+
+    <!-- MONTH-END DASHBOARD TAB -->
+    <div id="dashboard-view" class="tab-content" style="display:none;">
+        <h2>SBU &amp; Line-Wise Analysis</h2>
+        
 
         <div class="sbu-tabs" id="dashboard-sbu-tabs">
             <button class="sbu-tab-btn active" onclick="selectDashboardSBU('ALL', this)">All SBUs</button>
@@ -327,6 +370,7 @@
                     <strong>End Date:</strong>
                     <input type="date" id="analysis-end-date" onchange="runAnalysisEvaluation()">
                 </div>
+                <div class="filter-group"><button class="btn" style="background:#64748b;padding:8px 14px;font-size:14px" onclick="invalidateCloudDataCache(); runAnalysisEvaluation();">&#8635; Refresh</button></div>
             </div>
             
             <div style="display:flex; gap:15px; flex-wrap:wrap;">
@@ -401,6 +445,7 @@
                 <strong>End Date:</strong>
                 <input type="date" id="nc-end-date" onchange="loadNCAnalysis()">
             </div>
+            <div class="filter-group"><button class="btn" style="background:#64748b;padding:8px 14px;font-size:14px" onclick="invalidateCloudDataCache(); loadNCAnalysis();">&#8635; Refresh</button></div>
         </div>
 
         <div style="display:grid; grid-template-columns: repeat(auto-fit, minmax(420px, 1fr)); gap:25px;">
@@ -507,15 +552,23 @@
         const qs = Object.keys(params)
             .filter(k => params[k] !== undefined && params[k] !== null && params[k] !== '')
             .map(k => k + '=' + encodeURIComponent(params[k])).join('&');
-        let res;
-        try {
-            res = await fetch(CLOUD_API_URL + '?' + qs, { redirect: 'follow' });
-        } catch (err) {
-            throw new Error('[build 2026-09-29g] Cannot reach the audit database. In Apps Script: Deploy > Manage deployments > "Who has access" = Anyone, and authorize the script once. (' + err.message + ')');
+        // Apps Script sometimes answers a burst of parallel calls with a hiccup (HTML page / network error):
+        // retry a couple of times before giving up so one bad reply does not freeze a whole dashboard.
+        let lastErr = null;
+        for (let attempt = 1; attempt <= 3; attempt++) {
+            try {
+                const res = await fetch(CLOUD_API_URL + '?' + qs, { redirect: 'follow' });
+                const data = await readBackendJson(res);
+                if (data && data.status === 'error') { const e = new Error(data.message); e.noRetry = true; throw e; }
+                return data;
+            } catch (err) {
+                lastErr = err;
+                if (err.noRetry || attempt === 3) break;
+                await new Promise(r => setTimeout(r, 700 * attempt));
+            }
         }
-        const data = await readBackendJson(res);
-        if (data && data.status === 'error') throw new Error(data.message);
-        return data;
+        if (lastErr && lastErr.noRetry) throw lastErr;
+        throw new Error('Cannot reach the audit database right now (' + (lastErr ? lastErr.message : 'unknown') + '). Check the internet and press Refresh. If it keeps failing: Apps Script > Deploy > Manage deployments > "Who has access" = Anyone.');
     }
 
     // Each month has its own tab (January'26, February'26 ...). Ask which months exist.
@@ -555,10 +608,25 @@
 
     // filters: {from,to,sbu,section,subcategory,question,status}; mode: 'rows' | 'agg'
     // 'agg' returns [{sbu,line,section,subcategory,question,total,pass,fail}]
-    async function queryCloud(filters, mode, onProgress) {
+    // The same scan can be asked for twice in a row (tab click + date change). One scan is shared by all askers
+    // (_inflight); every asker gets its own progress callback, so an old request can no longer overwrite the screen.
+    const _inflight = {};
+    function queryCloud(filters, mode, onProgress) {
         const key = mode + '|' + JSON.stringify(filters);
         const hit = _queryCache[key];
-        if (hit && Date.now() - hit.t < QUERY_TTL_MS) return hit.v;
+        if (hit && Date.now() - hit.t < QUERY_TTL_MS) return Promise.resolve(hit.v);
+        let job = _inflight[key];
+        if (!job) {
+            job = { listeners: new Set() };
+            job.promise = queryCloudRun_(filters, mode, key, (d, t, label) => job.listeners.forEach(fn => { try { fn(d, t, label); } catch (e) {} }));
+            _inflight[key] = job;
+            const clear = () => { if (_inflight[key] === job) delete _inflight[key]; };
+            job.promise.then(clear, clear);
+        }
+        if (onProgress) job.listeners.add(onProgress);
+        return job.promise;
+    }
+    async function queryCloudRun_(filters, mode, key, report) {
 
         // only the month tabs (e.g. September'26) that overlap the requested date range
         const months = await getArchiveMonths();
@@ -568,7 +636,7 @@
 
         let merged = [];
         for (let i = 0; i < sources.length; i++) {
-            const prog = onProgress ? (d, t) => onProgress(d, t, sources[i]) : null;
+            const prog = (d, t) => report(d, t, sources[i]);
             merged = merged.concat(await querySource(filters, mode, sources[i], prog));
         }
 
@@ -588,13 +656,14 @@
         return result;
     }
 
-    function progressText(el, colspan) {
+    function progressText(el, colspan, isStale) {
         return (done, total, label) => {
+            if (isStale && isStale()) return;   // a newer request owns the screen now
             el.innerHTML = `<tr><td colspan="${colspan}" class="loading-text">🔄 Scanning ${label || 'database'}… ${done}/${total}</td></tr>`;
         };
     }
 
-    function invalidateCloudDataCache() { for (const k in _queryCache) delete _queryCache[k]; _archiveMonths = null; }
+    function invalidateCloudDataCache() { for (const k in _queryCache) delete _queryCache[k]; for (const k in _inflight) delete _inflight[k]; _archiveMonths = null; }
     function resetPersistentCache() { invalidateCloudDataCache(); }
 
     let totalActiveCheckpoints = 0;
@@ -705,13 +774,18 @@
     }
 
     function initApp() {
-        document.getElementById('audit-date').valueAsDate = new Date();
-        document.getElementById('bulk-download-date').valueAsDate = new Date();
-
+        // local (Bangladesh) calendar dates - valueAsDate would use UTC and show the previous day early in the morning
+        const ymd = d => d.getFullYear() + '-' + String(d.getMonth() + 1).padStart(2, '0') + '-' + String(d.getDate()).padStart(2, '0');
         const baseToday = new Date();
         const firstDayOfMonth = new Date(baseToday.getFullYear(), baseToday.getMonth(), 1);
-        document.getElementById('dashboard-start-date').valueAsDate = firstDayOfMonth;
-        document.getElementById('dashboard-end-date').valueAsDate = baseToday;
+        const setv = (id, v) => { const el = document.getElementById(id); if (el) el.value = v; };
+        setv('audit-date', ymd(baseToday));
+        setv('bulk-download-date', ymd(baseToday));
+        setv('dashboard-start-date', ymd(firstDayOfMonth));
+        setv('dashboard-end-date', ymd(baseToday));
+        // Analysis + NC: default to this month (an empty range scans the whole history and is very slow)
+        ['nc-start-date', 'analysis-start-date'].forEach(id => { const el = document.getElementById(id); if (el && !el.value) el.value = ymd(firstDayOfMonth); });
+        ['nc-end-date', 'analysis-end-date'].forEach(id => { const el = document.getElementById(id); if (el && !el.value) el.value = ymd(baseToday); });
     }
 
     let selectedDashboardSBU = 'ALL';
@@ -937,11 +1011,145 @@
         }
     };
 
-    function switchTab(tabId, btnElement) {
+    function showPane(tabId) {
         document.querySelectorAll('.tab-content').forEach(el => el.style.display = 'none');
         document.getElementById(tabId).style.display = 'block';
-        document.querySelectorAll('.tab-btn').forEach(btn => btn.classList.remove('active'));
-        btnElement.classList.add('active');
+    }
+    const PANE_LOADERS = {
+        'overview-view': () => loadOverview(),
+        'reports-view': () => {},
+        'dashboard-view': () => loadDashboard(),
+        'analysis-dashboard-view': () => initAnalysisFilters(),
+        'nc-analysis-view': () => loadNCAnalysis(),
+        'data-logs': () => loadLogs()
+    };
+    let lastAnalysisPane = 'overview-view';
+    function goGroup(group) {
+        document.querySelectorAll('#main-nav .main-btn').forEach(b => b.classList.toggle('active', b.dataset.group === group));
+        document.getElementById('sub-nav-analysis').style.display = group === 'analysis' ? 'flex' : 'none';
+        if (group === 'entry') showPane('audit-form');
+        else if (group === 'records') { showPane('data-logs'); PANE_LOADERS['data-logs'](); }
+        else {
+            const btn = document.querySelector('#sub-nav-analysis .sub-btn[data-pane="' + lastAnalysisPane + '"]') || document.querySelector('#sub-nav-analysis .sub-btn');
+            goSub(btn.dataset.pane, btn);
+        }
+    }
+    function goSub(tabId, btnElement) {
+        lastAnalysisPane = tabId;
+        document.querySelectorAll('#sub-nav-analysis .sub-btn').forEach(b => b.classList.toggle('active', b === btnElement));
+        showPane(tabId);
+        if (PANE_LOADERS[tabId]) PANE_LOADERS[tabId]();
+    }
+
+
+    // ---------- Entry: which lines are still pending for the chosen date / SBU / section ----------
+    let pendingSeq = 0;
+    function loadPendingLines() {
+        const box = document.getElementById('pending-box');
+        const sbu = document.getElementById('sbu-select').value;
+        const section = document.getElementById('section-select').value;
+        const date = document.getElementById('audit-date').value;
+        if (!sbu || !section || !date || !linesDatabase[sbu]) { box.style.display = 'none'; return; }
+        const seq = ++pendingSeq;
+        box.style.display = 'block';
+        box.innerHTML = '<span style="color:#92400e">🔄 Checking which lines are already audited…</span>';
+        queryCloud({ from: date, to: date, sbu: sbu }, 'agg').then(groups => {
+            if (seq !== pendingSeq) return;
+            const done = new Set();
+            groups.forEach(g => { if (g.section === section) done.add(g.line); });
+            const pending = linesDatabase[sbu].filter(l => !done.has(l));
+            let h = '<div style="font-weight:700;color:#92400e;margin-bottom:8px">' + sbu + ' · ' + section + ' · ' + date +
+                ' — <span style="color:#16a34a">' + done.size + ' audited</span>, <span style="color:#b45309">' + pending.length + ' pending</span></div>';
+            if (!pending.length) h += '<div style="color:#16a34a;font-weight:600">🎉 All lines audited for this day.</div>';
+            else h += '<div style="display:flex;flex-wrap:wrap;gap:6px">' + pending.map(l =>
+                '<button type="button" class="pend-chip" data-line="' + l + '" onclick="pickPendingLine(\'' + l + '\')" style="padding:5px 11px;border:1.5px solid #f59e0b;background:#fff;border-radius:999px;font-size:13px;font-weight:600;color:#92400e;cursor:pointer">' + l + '</button>').join('') + '</div>' +
+                '<div style="font-size:12px;color:#92400e;margin-top:8px">Click a line to select it.</div>';
+            box.innerHTML = h;
+            markPendingSelected_();
+        }).catch(err => {
+            if (seq !== pendingSeq) return;
+            box.innerHTML = '<span style="color:#b45309">Could not check pending lines (' + err.message + ').</span>';
+        });
+    }
+    function pickPendingLine(line) {
+        const sel = document.getElementById('line-select');
+        sel.value = line;
+        loadCheckpoints();
+        markPendingSelected_();
+        const area = document.getElementById('checkpoints-area');
+        if (area && area.scrollIntoView) area.scrollIntoView({ behavior: 'smooth', block: 'start' });
+    }
+    function markPendingSelected_() {
+        const cur = document.getElementById('line-select').value;
+        document.querySelectorAll('#pending-box .pend-chip').forEach(b => {
+            const on = b.dataset.line === cur;
+            b.style.background = on ? '#f59e0b' : '#fff';
+            b.style.color = on ? '#fff' : '#92400e';
+        });
+    }
+
+    // ---------- Overview ----------
+    let overviewSeq = 0;
+    function loadOverview() {
+        const ymd = d => d.getFullYear() + '-' + String(d.getMonth() + 1).padStart(2, '0') + '-' + String(d.getDate()).padStart(2, '0');
+        const dEl = document.getElementById('ov-date');
+        if (!dEl.value) dEl.value = ymd(new Date());
+        const day = dEl.value, monthStart = day.slice(0, 7) + '-01';
+        const seq = ++overviewSeq, stale = () => seq !== overviewSeq;
+        const sbuBody = document.getElementById('ov-sbu-body'), topBody = document.getElementById('ov-top-body');
+        ['ov-done', 'ov-pending', 'ov-comp', 'ov-fail', 'ov-mtd'].forEach(id => document.getElementById(id).innerText = '-');
+        sbuBody.innerHTML = '<tr><td colspan="7" class="loading-text">🔄 Loading…</td></tr>';
+        topBody.innerHTML = '<tr><td colspan="5" class="loading-text">🔄 Loading…</td></tr>';
+        const SBUS = Object.keys(linesDatabase);
+        const pct = (p, f) => (p + f) > 0 ? (p / (p + f) * 100).toFixed(1) + '%' : '-';
+
+        queryCloud({ from: day, to: day }, 'agg', progressText(sbuBody, 7, stale)).then(groups => {
+            if (stale()) return;
+            const done = {};   // sbu -> section -> Set(lines)
+            const agg = {};    // sbu -> {pass, fail}
+            groups.forEach(g => {
+                ((done[g.sbu] = done[g.sbu] || {})[g.section] = (done[g.sbu][g.section] || new Set())).add(g.line);
+                const a = agg[g.sbu] = agg[g.sbu] || { pass: 0, fail: 0 };
+                a.pass += g.pass; a.fail += g.fail;
+            });
+            let totDone = 0, totExp = 0, tp = 0, tf = 0, rows = '';
+            SBUS.forEach(sbu => {
+                const lines = linesDatabase[sbu], n = lines.length;
+                const cnt = sec => ((done[sbu] || {})[sec] || new Set()).size;
+                const sew = cnt('Sewing'), fin = cnt('Finishing'), met = cnt('Metal-Needle');
+                totDone += sew + fin; totExp += n * 2;
+                const a = agg[sbu] || { pass: 0, fail: 0 }; tp += a.pass; tf += a.fail;
+                const pendSew = lines.filter(l => !((done[sbu] || {}).Sewing || new Set()).has(l)).length;
+                const pendFin = lines.filter(l => !((done[sbu] || {}).Finishing || new Set()).has(l)).length;
+                const cell = (c) => '<td><span style="font-weight:700;color:' + (c === n ? '#16a34a' : (c === 0 ? '#dc2626' : '#b45309')) + '">' + c + ' / ' + n + '</span></td>';
+                rows += '<tr><td><span class="badge" style="background:#475569">' + sbu + '</span></td>' + cell(sew) + cell(fin) + cell(met) +
+                    '<td>' + pct(a.pass, a.fail) + '</td><td style="color:var(--danger);font-weight:bold">' + a.fail + '</td>' +
+                    '<td style="color:#b45309;font-weight:600">Sewing ' + pendSew + ' · Finishing ' + pendFin + '</td></tr>';
+            });
+            sbuBody.innerHTML = rows;
+            document.getElementById('ov-done').innerText = totDone + ' / ' + totExp;
+            document.getElementById('ov-pending').innerText = totExp - totDone;
+            document.getElementById('ov-comp').innerText = pct(tp, tf);
+            document.getElementById('ov-fail').innerText = tf;
+        }).catch(err => { if (!stale()) sbuBody.innerHTML = '<tr><td colspan="7" style="text-align:center;color:var(--danger)">Error: ' + err.message + '</td></tr>'; });
+
+        queryCloud({ from: monthStart, to: day }, 'agg', progressText(topBody, 5, stale)).then(groups => {
+            if (stale()) return;
+            let p = 0, f = 0; const byQ = {};
+            groups.forEach(g => {
+                p += g.pass; f += g.fail;
+                if (g.fail > 0) {
+                    const k = g.line + '|||' + g.section + '|||' + g.question;
+                    byQ[k] = (byQ[k] || 0) + g.fail;
+                }
+            });
+            document.getElementById('ov-mtd').innerText = pct(p, f);
+            const top = Object.keys(byQ).map(k => ({ k, n: byQ[k] })).sort((a, b) => b.n - a.n).slice(0, 5);
+            topBody.innerHTML = top.length ? top.map((t, i) => {
+                const [line, sec, q] = t.k.split('|||');
+                return '<tr><td>' + (i + 1) + '</td><td><strong>' + line + '</strong></td><td>' + sec + '</td><td style="font-size:14px">' + q + '</td><td><span class="fail-tag">🚨 ' + t.n + '</span></td></tr>';
+            }).join('') : '<tr><td colspan="5" style="text-align:center;color:#16a34a;font-weight:bold;padding:16px">🎉 No failures this month.</td></tr>';
+        }).catch(err => { if (!stale()) topBody.innerHTML = '<tr><td colspan="5" style="text-align:center;color:var(--danger)">Error: ' + err.message + '</td></tr>'; });
     }
 
     function updateLineDropdown() {
@@ -955,6 +1163,7 @@
             });
         }
         loadCheckpoints();
+        loadPendingLines();
     }
 
     function loadCheckpoints() {
@@ -1044,6 +1253,7 @@
         .then((response) => {
             if(response.status === "success") {
                 invalidateCloudDataCache();
+                loadPendingLines();
                 alert('🎉 Compliance log compiled and pushed into Cloud Master Database!');
                 if(triggerDownload) {
                     generateSingleFormPDF(payloadRows, auditor, date, sbu, section, line);
@@ -1121,7 +1331,7 @@
         dashboardRequestSeq++;
         const thisRequestId = dashboardRequestSeq;
         
-        queryCloud({ from: startDateVal, to: endDateVal, sbu: sbuFilter }, 'agg', progressText(tableBody, 6))
+        queryCloud({ from: startDateVal, to: endDateVal, sbu: sbuFilter }, 'agg', progressText(tableBody, 6, () => thisRequestId !== dashboardRequestSeq))
         .then(filteredData => {
             if (thisRequestId !== dashboardRequestSeq) return; // a newer request has since been made — discard this stale response
 
@@ -1298,7 +1508,7 @@
         analysisRequestSeq++;
         const thisRequestId = analysisRequestSeq;
 
-        queryCloud({ from: analyticStart, to: analyticEnd, sbu: sbuScope, section: selectedSection, subcategory: selectedSubSection, question: exactTargetQuestion }, 'rows', progressText(mainAnalyticsTable, 5))
+        queryCloud({ from: analyticStart, to: analyticEnd, sbu: sbuScope, section: selectedSection, subcategory: selectedSubSection, question: exactTargetQuestion }, 'rows', progressText(mainAnalyticsTable, 5, () => thisRequestId !== analysisRequestSeq))
         .then(cloudCache => {
             if (thisRequestId !== analysisRequestSeq) return;
             if(!Array.isArray(cloudCache)) return;
@@ -1425,7 +1635,11 @@
         ncRequestSeq++;
         const thisRequestId = ncRequestSeq;
 
-        queryCloud({ from: startVal, to: endVal, sbu: sbuScope, status: 'Fail' }, 'agg', progressText(sewingBody, 4))
+        queryCloud({ from: startVal, to: endVal, sbu: sbuScope, status: 'Fail' }, 'agg', (d, t, label) => {
+            if (thisRequestId !== ncRequestSeq) return;
+            const msg = `<tr><td colspan="4" class="loading-text">\uD83D\uDD04 Scanning ${label || 'database'}\u2026 ${d}/${t}</td></tr>`;
+            sewingBody.innerHTML = msg; finishingBody.innerHTML = msg;
+        })
         .then(failRows => {
             if (thisRequestId !== ncRequestSeq) return;
 
