@@ -7,7 +7,7 @@
  * module's Apps Script directly. */
 (function () {
   const API = "https://script.google.com/macros/s/AKfycbx7Cwnp8hoKuxcQ57TlllwBaA7zr9S2bcFVi9-mzyyY8RhRL3YiUpbJMFohLmQZkf1a/exec";
-  const G = { module: "", cb: null, map: {}, fetched: false, busy: false, lastUser: "" };
+  const G = { module: "", cb: null, openFn: null, adminEdit: null, adminDel: null, map: {}, fetched: false, busy: false, lastUser: "" };
 
   function parse(k, st) { try { return JSON.parse((st || localStorage).getItem(k) || "null"); } catch (e) { return null; } }
   function mainSession() { return parse("tc_session") || parse("tc_session", sessionStorage) || {}; }
@@ -40,6 +40,7 @@
         const changed = JSON.stringify(Object.keys(map).map(k => [k, map[k].status])) !== JSON.stringify(Object.keys(G.map).map(k => [k, G.map[k].status]));
         G.map = map; G.fetched = true; G.lastUser = who;
         if (changed && G.cb) G.cb();
+        notifyApproved(false);
       }
     } catch (e) {}
     G.busy = false;
@@ -73,6 +74,7 @@
     if (!r || r.status !== "Approved") return;
     try { await call({ action: "useEditRequest", id: r.id }); } catch (e) {}
     delete G.map[reportId];
+    notifyApproved(false);
     if (G.cb) G.cb();
   }
   // small HTML helper for log rows: the Edit / Request button of a report
@@ -111,7 +113,11 @@
   }
   function fixButton(ctx) {
     const cls = "btn btn-ghost", sty = "padding:4px 10px;font-size:11.5px";
-    if (isAdmin()) return `<a class="${cls}" style="${sty};text-decoration:none" href="edit-requests.html" target="_blank" rel="noopener">&#9998; Edit Requests</a>`;
+    if (isAdmin()) {
+      const can = G.adminEdit && ctx && (ctx.id || /\[[^\]]+\]/.test(String(ctx.extra || "")));
+      const ad = can ? ` <button type="button" class="${cls}" style="${sty}" data-eg-admin="edit" data-eg-ctx="${esc(JSON.stringify(ctx || {}))}">&#9998; Edit</button> <button type="button" class="${cls}" style="${sty};color:#b3261e;border-color:#b3261e" data-eg-admin="del" data-eg-ctx="${esc(JSON.stringify(ctx || {}))}">&#128465; Delete</button>` : "";
+      return `<a class="${cls}" style="${sty};text-decoration:none" href="edit-requests.html" target="_blank" rel="noopener">&#9998; Edit Requests</a>` + ad;
+    }
     return `<button type="button" class="${cls}" style="${sty}" data-eg-fix="${esc(JSON.stringify(ctx || {}))}" title="Something is wrong in this entry? Ask the administrator to correct it">&#9998; Request Edit</button>`;
   }
   async function openFix(ctx) {
@@ -157,6 +163,15 @@
     q("eg-mine").innerHTML = await mine();
   }
   document.addEventListener("click", function (e) {
+    const b = e.target.closest && e.target.closest("[data-eg-admin]");
+    if (!b) return;
+    e.preventDefault(); e.stopPropagation();
+    if (!isAdmin()) return;
+    let ctx = {}; try { ctx = JSON.parse(b.getAttribute("data-eg-ctx")); } catch (x) {}
+    const fn = b.getAttribute("data-eg-admin") === "del" ? G.adminDel : G.adminEdit;
+    if (fn) fn(ctx);
+  }, true);
+  document.addEventListener("click", function (e) {
     const b = e.target.closest && e.target.closest("[data-eg-fix]");
     if (!b) return;
     e.preventDefault(); e.stopPropagation();
@@ -164,9 +179,60 @@
     openFix(ctx);
   }, true);
 
+
+  /* ---------- Approval popup: when an administrator approves, the requester sees a pop-up with "Edit now" ----------
+     Shown once per approval in this browser session (and the green badge stays until the edit is saved). */
+  function approvedList() { return isAdmin() ? [] : Object.keys(G.map).map(k => G.map[k]).filter(r => r && r.status === "Approved"); }
+  function seenIds() { try { return JSON.parse(sessionStorage.getItem("tc_eg_seen") || "[]"); } catch (e) { return []; } }
+  function markSeen(ids) { try { sessionStorage.setItem("tc_eg_seen", JSON.stringify(seenIds().concat(ids))); } catch (e) {} }
+  function reqTitle(r) { return String(r.report || r.label || r.reportId || "").replace(/\|\d{10,}$/, ""); }
+  function notifyApproved(force) {
+    if (!G.openFn) return;
+    fixStyles();
+    const list = approvedList();
+    let badge = document.getElementById("eg-badge");
+    if (!list.length) { if (badge) badge.remove(); const m = document.getElementById("eg-appr"); if (m) m.classList.remove("show"); return; }
+    if (!badge) {
+      badge = document.createElement("button"); badge.id = "eg-badge"; badge.type = "button";
+      badge.style.cssText = "position:fixed;right:14px;bottom:14px;z-index:9990;background:#1E6B4A;color:#fff;border:0;border-radius:999px;padding:10px 16px;font:700 13px system-ui,Arial;box-shadow:0 4px 14px rgba(0,0,0,.25);cursor:pointer";
+      badge.onclick = () => showApproved();
+      document.body.appendChild(badge);
+    }
+    badge.textContent = "✅ " + list.length + " edit approved — open";
+    const seen = seenIds(), fresh = list.filter(r => seen.indexOf(r.id) < 0);
+    if (force || fresh.length) { showApproved(); markSeen(list.map(r => r.id)); }
+  }
+  function showApproved() {
+    fixStyles();
+    const list = approvedList(); if (!list.length) return;
+    let modal = document.getElementById("eg-appr");
+    if (!modal) { modal = document.createElement("div"); modal.id = "eg-appr"; modal.style.cssText = "position:fixed;inset:0;background:rgba(0,0,0,.5);z-index:9996;display:none;align-items:center;justify-content:center;padding:14px"; document.body.appendChild(modal); }
+    modal.innerHTML = '<div id="eg-box" style="border-top:5px solid #1E6B4A"><h3>✅ Edit approved</h3><div style="color:#667;font-size:12.5px">The administrator approved your edit request. You can edit once now — after you save, the report locks again.</div>' +
+      list.map(r => '<div class="ctx"><b>' + esc(reqTitle(r)) + '</b>' + (r.reason ? '<br><span style="color:#667">' + esc(r.reason) + '</span>' : '') +
+        '<div class="row" style="margin-top:8px"><button class="p" data-eg-open="' + esc(r.id) + '">Edit now</button></div></div>').join("") +
+      '<div class="row"><button id="eg-appr-close">Later</button></div></div>';
+    modal.style.display = "flex";
+    modal.querySelector("#eg-appr-close").onclick = () => { modal.style.display = "none"; };
+    modal.querySelectorAll("[data-eg-open]").forEach(b => b.onclick = () => {
+      const r = list.filter(x => x.id === b.getAttribute("data-eg-open"))[0]; if (!r) return;
+      modal.style.display = "none";
+      let ok = false; try { ok = G.openFn && G.openFn(r); } catch (e) { console.error(e); }
+      if (ok === false) alert("Please open this entry from its page and correct it. If the entry cannot be edited there, ask the administrator to correct it.");
+    });
+  }
+  // for custom edit screens (QA Process): the approval is used up after the corrected entry was saved
+  async function useRequest(r) {
+    if (!r || isAdmin()) return;
+    try { await call({ action: "useEditRequest", id: r.id }); } catch (e) {}
+    Object.keys(G.map).forEach(k => { if (G.map[k] && G.map[k].id === r.id) delete G.map[k]; });
+    notifyApproved(false); if (G.cb) G.cb();
+  }
+
   window.TCEG = {
     fixButton: fixButton, openFix: openFix,
-    init: function (moduleKey, onChange) { G.module = moduleKey; G.cb = onChange || null; refresh(); },
+    init: function (moduleKey, onChange, openFn) { G.module = moduleKey; G.cb = onChange || null; G.openFn = openFn || null; refresh(); },
+    useRequest: useRequest, showApproved: showApproved,
+    setAdmin: function (editFn, delFn) { G.adminEdit = editFn; G.adminDel = delFn; },
     isAdmin: isAdmin, status: status, canEdit: canEdit, request: request, consume: consume, requestButton: requestButton, refresh: refresh
   };
   window.addEventListener("focus", refresh);
