@@ -3586,7 +3586,47 @@ renderOverview();
     displayLabel: "QA Process",
     theme: { icon: "📋", accent: "#2F6E52", iconBg: "#E5F0E9", bg: "#0F1F18" }
   });
-  if (window.TCEG) TCEG.init("qaprocess");
+  if (window.TCEG) TCEG.init("qaprocess", null, r => { if (!/^Testing/.test(String(r.report || r.label || "")) || !/\[[^\]]+\]/.test(String(r.report || r.label || ""))) return false; ttFixOpen(r); return true; });
+
+// ---------- Correct a Testing entry after an administrator approved the Edit Request ----------
+const TT_FIX_FIELDS = [["sbu","SBU"],["buyer","Buyer"],["ir","IR No"],["styleNo","Style"],["season","Season"],["item","Item"],["color","Color"],["logInDate","Login Date","date"],
+  ["line","Line"],["size","Size"],["fiber","Fiber / Composition"],["fabricType","Fabric Type"],["testOn","Test on"],["testOption","Options"],["testCycle","Test Cycle"],
+  ["printType","Print / Embroidery Type"],["gsm","GSM"],["submission","Submission"]];
+async function ttFixOpen(req) {
+  const m = /\[([^\]]+)\]/.exec(String(req.report || req.label || ""));
+  if (!m) return false;
+  if (!tsList || !tsList.length) { try { const res = await qaApi({ action: "listTestRequests" }); tsList = (res && res.entries) || []; } catch (e) {} }
+  const r = (tsList || []).find(x => String(x.id) === m[1]);
+  if (!r) { alert("Could not find this Testing entry (" + m[1] + "). Please refresh the page and try again."); return true; }
+  let box = document.getElementById("ttFixModal");
+  if (!box) { box = document.createElement("div"); box.id = "ttFixModal"; box.style.cssText = "position:fixed;inset:0;background:rgba(0,0,0,.55);z-index:9997;display:flex;align-items:center;justify-content:center;padding:14px"; document.body.appendChild(box); }
+  box.style.display = "flex";
+  box.innerHTML = `<div style="background:#fff;border-radius:12px;max-width:640px;width:100%;max-height:92vh;overflow:auto;padding:20px;border-top:5px solid #1E6B4A">
+    <h3 style="margin:0 0 4px">&#9998; Correct entry — ${esc(r.ir)} · ${esc(r.section)}</h3>
+    <div style="font-size:12.5px;color:#667;margin-bottom:6px">Edit approved by the administrator (one time).</div>
+    ${req.reason ? `<div style="background:#f4f3ee;border-radius:8px;padding:8px 10px;font-size:12.5px;margin-bottom:10px"><b>Your request:</b> ${esc(req.reason)}</div>` : ""}
+    <div class="form-grid" style="grid-template-columns:repeat(auto-fit,minmax(180px,1fr))">${TT_FIX_FIELDS.map(([k, l, t]) =>
+      `<div class="field"><label>${esc(l)}</label><input data-fix="${k}" type="${t || "text"}" value="${esc(t === "date" ? String(r[k] || "").slice(0, 10) : (r[k] == null ? "" : r[k]))}"></div>`).join("")}</div>
+    <div id="ttFixMsg" style="margin-top:8px;font-size:12.5px"></div>
+    <div style="display:flex;gap:8px;margin-top:12px"><button class="btn btn-primary" id="ttFixSave">Save correction</button><button class="btn btn-ghost" id="ttFixCancel">Cancel</button></div></div>`;
+  box.querySelector("#ttFixCancel").onclick = () => { box.style.display = "none"; };
+  box.querySelector("#ttFixSave").onclick = async () => {
+    const msg = box.querySelector("#ttFixMsg"), fields = {};
+    box.querySelectorAll("[data-fix]").forEach(i => { if (String(r[i.dataset.fix] == null ? "" : r[i.dataset.fix]).slice(0, i.type === "date" ? 10 : 9999) !== i.value) fields[i.dataset.fix] = i.value.trim(); });
+    if (!Object.keys(fields).length) { msg.style.color = "#b3261e"; msg.textContent = "Nothing was changed."; return; }
+    const btn = box.querySelector("#ttFixSave"); btn.disabled = true; msg.style.color = "#667"; msg.textContent = "Saving…";
+    try {
+      const res = await qaApi({ action: "patchTestRequest", id: r.id, fields });
+      if (!res || !res.ok) throw new Error((res && res.error) || "Save failed (is the latest qa-process-backend.gs deployed?)");
+      Object.assign(r, fields);
+      if (window.TCEG) await TCEG.useRequest(req);
+      box.style.display = "none";
+      try { rlDraw(); } catch (e) {}
+      alert("Correction saved. The entry is locked again.");
+    } catch (e) { msg.style.color = "#b3261e"; msg.textContent = e.message; btn.disabled = false; }
+  };
+  return true;
+}
 </script>
 </body>
 </html>

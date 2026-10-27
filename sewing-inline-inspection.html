@@ -1080,7 +1080,7 @@ async function exportPdf(){
 
 /* ============================= INIT ============================= */
 if (!localStorage.getItem('tc_session')) { /* soft guard — page still works if opened directly during dev */ }
-if (window.TCEG) TCEG.init('sewinginline', ()=>render());
+if (window.TCEG) TCEG.init('sewinginline', ()=>render(), r => { const rep = state.reports.find(x=>x.id===r.reportId); if (!rep) { alert('Reports are still loading - please try again in a moment.'); return true; } openReport_(rep); return true; });
 loadReports();
 </script>
 <script src="js/module-auth.js"></script>

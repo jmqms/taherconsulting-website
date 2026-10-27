@@ -2975,7 +2975,7 @@ async function saveCurrentReport_(isFinal){
   if (ir) state.header.ir = ir;
 })();
 
-if (window.TCEG) TCEG.init('final', () => render());
+if (window.TCEG) TCEG.init('final', () => render(), r => { if (!state.reports.find(x=>x.id===r.reportId)) { alert('Reports are still loading - please try again in a moment.'); return true; } loadReportIntoForm_(r.reportId); return true; });
 loadReports().then(() => {
   // Opened from QA Inspection / Style Tracking "PDF" link: load that report and download its PDF
   const pdfId = new URLSearchParams(window.location.search).get('pdf');
