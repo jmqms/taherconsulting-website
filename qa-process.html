@@ -598,6 +598,7 @@ async function hubLoad(stageId) {
 }
 
 async function renderHubList(stageId, mode) {
+  window._hubMode = mode;
   const box = document.getElementById("hubBody");
   const sections = HUB_SECTIONS[stageId];
   const isLog = mode === "log";
@@ -682,7 +683,7 @@ function hubSee(i) {
   const head = [["SBU", r.sbu], ["Buyer", r.buyer], ["IR No", r.ir], ["Style", r.style], ["Date", r.date], ["Status", r.status], ["By", r.by], ["Color", r.color]];
   p.innerHTML = `<div class="panel" style="margin-bottom:20px;border-color:var(--gold)">
     <h3 style="display:flex;justify-content:space-between;align-items:center"><span>Details — ${esc(r.ir)} · ${esc(r.style)}</span>
-      <span style="display:flex;gap:8px;flex-wrap:wrap">${window.TCEG ? TCEG.fixButton({ area: ((ALL_STAGES.find(x => x.id === hubStage) || {}).label || hubStage) + (r.section && r.section !== "All" ? " (" + r.section + ")" : ""), ir: r.ir, date: r.date, extra: [r.style, r.color].filter(Boolean).join(" / ") }) : ""}${r.raw && r.raw._reportId ? `<button class="btn btn-primary" style="padding:4px 10px;font-size:11.5px" onclick="downloadInspectionPdf('${esc(hubStage)}','${esc(r.raw._reportId)}')">⬇ Download PDF</button>` : ""}
+      <span style="display:flex;gap:8px;flex-wrap:wrap">${window.TCEG ? TCEG.fixButton({ id: fixId_(hubStage, r.raw), area: ((ALL_STAGES.find(x => x.id === hubStage) || {}).label || hubStage) + (r.section && r.section !== "All" ? " (" + r.section + ")" : ""), ir: r.ir, date: r.date, extra: [r.style, r.color].filter(Boolean).join(" / ") }) : ""}${r.raw && r.raw._reportId ? `<button class="btn btn-primary" style="padding:4px 10px;font-size:11.5px" onclick="downloadInspectionPdf('${esc(hubStage)}','${esc(r.raw._reportId)}')">⬇ Download PDF</button>` : ""}
       ${hubStage === "ppmeeting" ? ppPrintButton(r.raw) : ""}
       <button class="btn btn-ghost" style="padding:4px 10px;font-size:11.5px" onclick="document.getElementById('hbDetails').innerHTML=''">✕ Close</button></span></h3>
     <div class="sd-grid" style="margin-bottom:14px">${head.map(([k, v]) => `<div class="sd-row"><span>${esc(k)}</span><b>${esc(v || "—")}</b></div>`).join("")}</div>
@@ -896,7 +897,7 @@ async function ovSee(i) {
     ["Season", m.season], ["Item", m.item], ["Inspector", e.inspector], ["Status", e.status], ["Score", e.score], ["Notes", e.notes]];
   box.innerHTML = `<div class="panel" style="border-color:var(--gold)">
     <h3 style="display:flex;justify-content:space-between;align-items:center;gap:8px;flex-wrap:wrap"><span>Details — ${esc(ir)} · ${esc(e._style)}</span>
-      <span style="display:flex;gap:8px;flex-wrap:wrap">${window.TCEG ? TCEG.fixButton({ area: (st ? st.label : e.stage), ir: ir, date: e._date, extra: [e._style, m.color].filter(Boolean).join(" / ") }) : ""}<button class="btn btn-primary" style="padding:4px 10px;font-size:11.5px" onclick="avOpenFrom('${esc(ir)}')">Style journey →</button>
+      <span style="display:flex;gap:8px;flex-wrap:wrap">${window.TCEG ? TCEG.fixButton({ id: ((fixDefFor_(e.stage) || {}).sheet === "entries" ? fixId_(e.stage, e) : ""), area: (st ? st.label : e.stage), ir: ir, date: e._date, extra: [e._style, m.color].filter(Boolean).join(" / ") }) : ""}<button class="btn btn-primary" style="padding:4px 10px;font-size:11.5px" onclick="avOpenFrom('${esc(ir)}')">Style journey →</button>
       <button class="btn btn-ghost" style="padding:4px 10px;font-size:11.5px" onclick="document.getElementById('ovDetails').innerHTML=''">✕ Close</button></span></h3>
     <div class="sd-grid" style="margin-bottom:14px">${rows.map(([k, v]) => `<div class="sd-row"><span>${esc(k)}</span><b>${esc(v || "—")}</b></div>`).join("")}</div>
     <div id="ovFull" style="color:var(--ink-soft)">Loading full ${esc(st ? st.label : "")} record…</div></div>`;
@@ -3586,12 +3587,13 @@ renderOverview();
     displayLabel: "QA Process",
     theme: { icon: "📋", accent: "#2F6E52", iconBg: "#E5F0E9", bg: "#0F1F18" }
   });
-  if (window.TCEG) TCEG.init("qaprocess", null, r => { if (!/^Testing/.test(String(r.report || r.label || "")) || !/\[[^\]]+\]/.test(String(r.report || r.label || ""))) return false; ttFixOpen(r); return true; });
+  if (window.TCEG) TCEG.setAdmin(adminEditEntry_, adminDeleteEntry_);
+  if (window.TCEG) TCEG.init("qaprocess", null, r => { const t = String(r.report || r.label || ""); if (/^Testing/.test(t) && /\[[^\]]+\]/.test(t)) { ttFixOpen(r); return true; } if (String(r.reportId || "").split("|")[3] && String(r.reportId).split("|")[3].indexOf("~") > 0) { stageFixOpen(r); return true; } return false; });
 
 // ---------- Correct a Testing entry after an administrator approved the Edit Request ----------
 const TT_FIX_FIELDS = [["sbu","SBU"],["buyer","Buyer"],["ir","IR No"],["styleNo","Style"],["season","Season"],["item","Item"],["color","Color"],["logInDate","Login Date","date"],
   ["line","Line"],["size","Size"],["fiber","Fiber / Composition"],["fabricType","Fabric Type"],["testOn","Test on"],["testOption","Options"],["testCycle","Test Cycle"],
-  ["printType","Print / Embroidery Type"],["gsm","GSM"],["submission","Submission"]];
+  ["printType","Print / Embroidery Type"],["gsm","GSM"],["submission","Submission"],["reportDate","Report / Log Out Date","date"],["trpNo","TRF / TRP No"],["result","Result"],["comments","Comments"]];
 async function ttFixOpen(req) {
   const m = /\[([^\]]+)\]/.exec(String(req.report || req.label || ""));
   if (!m) return false;
@@ -3622,10 +3624,101 @@ async function ttFixOpen(req) {
       if (window.TCEG) await TCEG.useRequest(req);
       box.style.display = "none";
       try { rlDraw(); } catch (e) {}
-      alert("Correction saved. The entry is locked again.");
+      alert(window.TCEG && TCEG.isAdmin() ? "Correction saved." : "Correction saved. The entry is locked again.");
     } catch (e) { msg.style.color = "#b3261e"; msg.textContent = e.message; btn.disabled = false; }
   };
   return true;
+}
+
+// ---------- Correct any other QA Process entry (SizeSet, PP Meeting, Physical/Functional, Print/Embroidery/Wash/Heat-seal, RA, generic stages) ----------
+const FIX_COMMON = (extra) => extra;
+const FIX_DEFS = {
+  sizeset: { sheet: "sizeset", list: { action: "listSizeSet" }, stamp: "createdAt", ir: "ir", fields: [["date","Date","Date","date"],["sbu","SBU","SBU"],["buyer","Buyer","Buyer"],["styleNo","StyleNo","Style"],["ir","IR","IR No"],["season","Season","Season"],["item","Item","Item"],["embellishmentType","EmbellishmentType","Embellishment Type"],["productType","ProductType","Product Type"],["orderType","OrderType","Order Type"],["colorCount","ColorCount","Color Count"],["plannedQty","PlannedQty","Planned Qty"],["status","Status","Status"],["correctionType","CorrectionType","Correction Type"],["remarks","Remarks","Remarks"]] },
+  ppmeeting: { sheet: "ppmeeting", list: { action: "listPPMeeting" }, stamp: "createdAt", ir: "ir", fields: [["date","Date","Date","date"],["sbu","SBU","SBU"],["buyer","Buyer","Buyer"],["ir","IR","IR No"],["styleNo","StyleNo","Style"],["season","Season","Season"],["item","Item","Item"],["ppBy","PPby","PP by"],["orderType","OrderType","Order Type"],["embellishmentType","EmbellishmentType","Embellishment Type"],["productType","ProductType","Product Type"],["plannedQty","PlannedQty","Planned Qty"],["requirementsReview","RequirementsReview","Requirements Review"]] },
+  physicalfunctional: { sheet: "physicalfunctional", list: { action: "listPhysicalFunctional" }, stamp: "createdAt", ir: "ir", fields: [["date","Date","Date","date"],["time","Time","Time"],["auditBy","AuditBy","Audit by"],["line","Line","Line"],["sbu","SBU","SBU"],["buyer","Buyer","Buyer"],["ir","IR","IR No"],["styleNo","StyleNo","Style"],["color","Color","Color"],["sampleChecked","SampleChecked","Sample Checked"],["passQty","PassQty","Pass Qty"],["failQty","FailQty","Fail Qty"],["defectPct","DefectPct","Defect %"],["defectType","DefectType","Defect Type"],["comments","Comments","Comments"],["correctiveAction","CorrectiveAction","Corrective Action"]] },
+  aql: { sheet: "aql", stamp: "createdAt", ir: "ir", fields: [["date","Date","Date","date"],["inspectedBy","InspectedBy","Inspected by"],["line","Line","Line"],["sbu","SBU","SBU"],["buyer","Buyer","Buyer"],["ir","IR","IR No"],["styleNo","StyleNo","Style"],["size","Size","Size"],["color","Color","Color"],["compareWith","CompareWith","Compare with"],["lotQty","LotQty","Lot Qty"],["sampleSize","SampleSize","Sample Size"],["foundCritical","FoundCritical","Found Critical"],["foundMajor","FoundMajor","Found Major"],["foundMinor","FoundMinor","Found Minor"],["comments","Comments","Comments"],["result","Result","Result"]] },
+  ra: { sheet: "ra", list: { action: "listQualityRA" }, stamp: "timestamp", ir: "ir", fields: [["sbu","SBU","SBU"],["buyer","Buyer","Buyer"],["ir","IR","IR No"],["styleNo","StyleNo","Style"],["raDate","RADate","RA Date","date"],["raBy","RAby","RA by"],["orderType","OrderType","Order Type"],["riskDecision","RiskDecision","Risk Decision"],["actionComments","ActionComments","Action / Comments"]] },
+  entries: { sheet: "entries", stamp: "timestamp", ir: "irNo", fields: [["orderNo","OrderNo","Order No"],["styleNo","StyleNo","Style"],["irNo","IrNo","IR No"],["inspector","Inspector","Inspector"],["status","Status","Status"],["score","Score","Score"],["notes","Notes","Notes"]] }
+};
+function fixDefFor_(stage) {
+  if (FIX_DEFS[stage]) return FIX_DEFS[stage];
+  if (["print", "embroidery", "wash", "heatseal"].indexOf(stage) >= 0) return Object.assign({}, FIX_DEFS.aql, { list: { action: "listAqlProcess", process: stage }, process: stage });
+  if (typeof QC_PAGES !== "undefined" && QC_PAGES[stage]) return null;   // inspection-report stages: corrected on their own inspection page
+  return Object.assign({}, FIX_DEFS.entries, { list: { action: "listEntries", stage: stage } });
+}
+// id carried inside the Edit Request: "<stage>~<creation stamp>"
+function fixId_(stage, raw) {
+  const d = fixDefFor_(stage); if (!d || !raw) return "";
+  const st = raw[d.stamp]; if (!st) return "";
+  return String(stage) + "~" + String(st).replace(/\|/g, "/");
+}
+async function stageFixOpen(req) {
+  const parts = String(req.reportId || "").split("|"), id = parts[3] || "", k = id.indexOf("~");
+  if (k < 0) return false;
+  const stage = id.slice(0, k), stamp = id.slice(k + 1), d = fixDefFor_(stage);
+  if (!d) return false;
+  let list = [];
+  try { const res = await qaApi(d.list); list = (res && res.entries) || []; } catch (e) { alert("Could not load the entry: " + e.message); return true; }
+  const r = list.find(x => String(x[d.stamp]).replace(/\|/g, "/") === stamp);
+  if (!r) { alert("Could not find this entry any more. Please refresh the page and try again."); return true; }
+  let box = document.getElementById("ttFixModal");
+  if (!box) { box = document.createElement("div"); box.id = "ttFixModal"; box.style.cssText = "position:fixed;inset:0;background:rgba(0,0,0,.55);z-index:9997;display:flex;align-items:center;justify-content:center;padding:14px"; document.body.appendChild(box); }
+  box.style.display = "flex";
+  const label = (ALL_STAGES.find(x => x.id === stage) || {}).label || stage;
+  const val = (f) => (f[3] === "date" ? String(r[f[0]] == null ? "" : r[f[0]]).slice(0, 10) : (r[f[0]] == null ? "" : String(r[f[0]])));
+  box.innerHTML = `<div style="background:#fff;border-radius:12px;max-width:680px;width:100%;max-height:92vh;overflow:auto;padding:20px;border-top:5px solid #1E6B4A">
+    <h3 style="margin:0 0 4px">&#9998; Correct entry — ${esc(label)} · IR ${esc(r[d.ir])}</h3>
+    <div style="font-size:12.5px;color:#667;margin-bottom:6px">Edit approved by the administrator (one time).</div>
+    ${req.reason ? `<div style="background:#f4f3ee;border-radius:8px;padding:8px 10px;font-size:12.5px;margin-bottom:10px"><b>Your request:</b> ${esc(req.reason)}</div>` : ""}
+    <div class="form-grid" style="grid-template-columns:repeat(auto-fit,minmax(180px,1fr))">${d.fields.map(f =>
+      `<div class="field"><label>${esc(f[2])}</label><input data-fix="${f[0]}" type="${f[3] || "text"}" value="${esc(val(f))}"></div>`).join("")}</div>
+    <div id="ttFixMsg" style="margin-top:8px;font-size:12.5px"></div>
+    <div style="display:flex;gap:8px;margin-top:12px"><button class="btn btn-primary" id="ttFixSave">Save correction</button><button class="btn btn-ghost" id="ttFixCancel">Cancel</button></div></div>`;
+  box.querySelector("#ttFixCancel").onclick = () => { box.style.display = "none"; };
+  box.querySelector("#ttFixSave").onclick = async () => {
+    const msg = box.querySelector("#ttFixMsg"), fields = {}, local = {};
+    d.fields.forEach(f => { const inp = box.querySelector('[data-fix="' + f[0] + '"]'); if (inp && inp.value.trim() !== val(f).trim()) { fields[f[1]] = inp.value.trim(); local[f[0]] = inp.value.trim(); } });
+    if (!Object.keys(fields).length) { msg.style.color = "#b3261e"; msg.textContent = "Nothing was changed."; return; }
+    const btn = box.querySelector("#ttFixSave"); btn.disabled = true; msg.style.color = "#667"; msg.textContent = "Saving…";
+    try {
+      const res = await qaApi({ action: "patchRow", sheet: d.sheet, process: d.process, stamp: stamp, ir: String(r[d.ir] == null ? "" : r[d.ir]), fields });
+      if (!res || !res.ok) throw new Error((res && res.error) || "Save failed (is the latest qa-process-backend.gs deployed?)");
+      if (window.TCEG) await TCEG.useRequest(req);
+      box.style.display = "none";
+      alert(window.TCEG && TCEG.isAdmin() ? "Correction saved. Refresh the list to see it." : "Correction saved. The entry is locked again. Refresh the list to see it.");
+      try { if (typeof hubStage !== "undefined" && hubStage === stage) renderHubList(stage, window._hubMode || "log"); } catch (e) {}
+    } catch (e) { msg.style.color = "#b3261e"; msg.textContent = e.message; btn.disabled = false; }
+  };
+  return true;
+}
+
+// ---------- Administrator: edit / delete directly from "See Details" ----------
+function adminEditEntry_(ctx) {
+  const t = String((ctx && ctx.area) || "");
+  const m = /\[([^\]]+)\]/.exec(String((ctx && ctx.extra) || ""));
+  if (/^Testing/.test(t) && m) return ttFixOpen({ report: t + " [" + m[1] + "]", reason: "" });
+  if (ctx && ctx.id) return stageFixOpen({ reportId: ["", "", "", ctx.id].join("|"), reason: "" });
+  alert("Direct edit is not available from this screen. Open the entry from its own Report Log.");
+}
+async function adminDeleteEntry_(ctx) {
+  const t = String((ctx && ctx.area) || ""), m = /\[([^\]]+)\]/.exec(String((ctx && ctx.extra) || ""));
+  const what = (ctx.area || "entry") + (ctx.ir ? " · IR " + ctx.ir : "");
+  if (!confirm("Delete this entry?\n\n" + what + "\n\nThis cannot be undone.")) return;
+  try {
+    let res;
+    if (/^Testing/.test(t) && m) res = await qaApi({ action: "patchTestRequest" === 0 ? "" : "deleteTestRequest", id: m[1] });
+    else if (ctx.id && ctx.id.indexOf("~") > 0) {
+      const k = ctx.id.indexOf("~"), stage = ctx.id.slice(0, k), stamp = ctx.id.slice(k + 1), d = fixDefFor_(stage);
+      if (!d) throw new Error("This entry type cannot be deleted here.");
+      const list = (await qaApi(d.list || {})).entries || [];
+      const r = list.find(x => String(x[d.stamp]).replace(/\|/g, "/") === stamp);
+      res = await qaApi({ action: "deleteRow", sheet: d.sheet, process: d.process, stamp: stamp, ir: r ? String(r[d.ir] == null ? "" : r[d.ir]) : undefined });
+    } else { alert("Direct delete is not available from this screen. Open the entry from its own Report Log."); return; }
+    if (!res || !res.ok) throw new Error((res && res.error) || "Delete failed (is the latest qa-process-backend.gs deployed?)");
+    alert("Entry deleted.");
+    try { if (t.indexOf("Testing") === 0) { tsList = tsList.filter(x => !m || String(x.id) !== m[1]); document.getElementById("rlDetails").innerHTML = ""; rlDraw(); } } catch (e) {}
+    try { if (typeof hubStage !== "undefined" && hubStage) { document.getElementById("hbDetails").innerHTML = ""; renderHubList(hubStage, window._hubMode || "log"); } } catch (e) {}
+  } catch (e) { alert("Could not delete: " + e.message); }
 }
 </script>
 </body>

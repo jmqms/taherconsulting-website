@@ -71,7 +71,7 @@ function nowBD_() {
 const ORDERS_SHEET = "Orders";
 const SIZESET_SHEET = "SizeSet";
 const PPMEETING_SHEET = "PPMeeting";
-const PPMEETING_HEADERS = ["Date","SBU","Buyer","IR","StyleNo","Season","Item","PPby","OrderType","EmbellishmentType","ProductType","PlannedQty","ColorsJSON","RequirementsReview","CommentsJSON","CreatedAt"];
+const PPMEETING_HEADERS = ["Date","SBU","Buyer","IR","StyleNo","Season","Item","PPby","OrderType","EmbellishmentType","ProductType","PlannedQty","ColorsJSON","RequirementsReview","CommentsJSON","CreatedAt","ReportJSON"];
 const PHYSICALFUNCTIONAL_SHEET = "PhysicalFunctional";
 const PHYSICALFUNCTIONAL_HEADERS = ["Date","Time","AuditBy","Line","SBU","Buyer","IR","StyleNo","Color","CheckpointsJSON","SampleChecked","PassQty","FailQty","DefectPct","DefectType","Comments","CorrectiveAction","CreatedAt"];
 const AQLPROCESS_SHEET = "AqlProcessChecks";
@@ -133,6 +133,9 @@ function doPost(e) {
 
   if (action === "savePPMeeting") return savePPMeeting_(body.entry);
   if (action === "listPPMeeting") return jsonResponse_({ ok: true, entries: listPPMeeting_() });
+  if (action === "getPPTemplate") return getPPTemplate_(body);
+  if (action === "savePPTemplate") return savePPTemplate_(body);
+  if (action === "translateBn") return translateBn_(body.texts);
 
   if (action === "savePhysicalFunctional") return savePhysicalFunctional_(body.entry);
   if (action === "listPhysicalFunctional") return jsonResponse_({ ok: true, entries: listPhysicalFunctional_() });
@@ -145,6 +148,10 @@ function doPost(e) {
   if (action === "saveTestRequest") return saveTestRequest_(body.entry);
   if (action === "listTestRequests") return jsonResponse_({ ok: true, entries: listTestRequests_() });
   if (action === "closeTestRequest") return closeTestRequest_(body);
+  if (action === "patchTestRequest") return patchTestRequest_(body);
+  if (action === "patchRow") return patchRow_(body);
+  if (action === "deleteTestRequest") return deleteTestRequest_(body);
+  if (action === "deleteRow") return deleteRow_(body);
 
   if (action === "saveEntry") return saveEntry_(body.entry);
   if (action === "listEntries") return jsonResponse_({ ok: true, entries: listEntries_(body.stage) });
@@ -295,21 +302,24 @@ function savePPMeeting_(entry) {
     entry.season || "", entry.item || "", entry.ppBy || "", entry.orderType || "",
     entry.embellishmentType || "", entry.productType || "", entry.plannedQty || "",
     JSON.stringify(entry.colors || []), entry.requirementsReview || "",
-    JSON.stringify(entry.comments || {}), nowBD_()
+    JSON.stringify(entry.comments || {}), nowBD_(),
+    // Full PP Meeting report (checkpoints, action plan, attendance). Kept well under the 50k-char cell limit (no images).
+    ppReportJson_(entry.report)
   ]);
 
   // Mirror a summary row into Entries so Style Tracking's per-stage
   // rollup (buildStyleStatus_) sees this PP Meeting submission too.
   const statusMap = { "Yes": "Done", "No": "Open", "N/A": "In Progress" };
+  const dev = entry.report && entry.report.summary ? Number(entry.report.summary.deviation) || 0 : 0;
   saveEntry_({
     stage: "ppmeeting",
     orderNo: "",
     styleNo: entry.styleNo || "",
     irNo: entry.ir || "",
     inspector: entry.ppBy || "",
-    status: statusMap[entry.requirementsReview] || "Open",
+    status: dev > 0 ? "In Progress" : (statusMap[entry.requirementsReview] || "Open"),
     score: "",
-    notes: "PP Meeting — " + (entry.orderType || "")
+    notes: "PP Meeting — " + (entry.orderType || "") + (dev ? " — " + dev + " deviation(s)" : "")
   });
 
   return jsonResponse_({ ok: true });
@@ -322,14 +332,17 @@ function listPPMeeting_() {
   for (let i = 1; i < rows.length; i++) {
     const r = rows[i];
     if (!r[4]) continue; // StyleNo required
-    let colors = [], comments = {};
+    let colors = [], comments = {}, report = null;
     try { colors = JSON.parse(r[12] || "[]"); } catch (e) {}
     try { comments = JSON.parse(r[14] || "{}"); } catch (e) {}
-    out.push({
+    try { report = r[16] ? JSON.parse(r[16]) : null; } catch (e) {}
+    const item = {
       date: r[0], sbu: r[1], buyer: r[2], ir: r[3], styleNo: r[4], season: r[5], item: r[6],
       ppBy: r[7], orderType: r[8], embellishmentType: r[9], productType: r[10], plannedQty: r[11],
       colors: colors, requirementsReview: r[13], comments: comments, createdAt: r[15]
-    });
+    };
+    if (report) item.report = report; // old entries (comments only) simply have no report
+    out.push(item);
   }
   return out;
 }
@@ -571,6 +584,123 @@ function closeTestRequest_(b) {
       return jsonResponse_({ ok: true });
     }
     return jsonResponse_({ ok: false, error: "Request not found" });
+  } finally { lock.releaseLock(); }
+}
+
+
+// Correct fields of an existing Testing entry (used after an administrator approved an Edit Request, or by an admin).
+// Only the listed fields can be changed; the row is found by Id.
+function patchTestRequest_(b) {
+  if (!b.id || !b.fields) return jsonResponse_({ ok: false, error: "Missing id or fields" });
+  const MAP = { sbu: "SBU", buyer: "Buyer", ir: "IR", styleNo: "StyleNo", season: "Season", item: "Item", logInDate: "LogInDate", color: "Color",
+    line: "Line", size: "Size", fiber: "Fiber", fabricType: "FabricType", testOn: "TestOn", testOption: "TestOption", testCycle: "TestCycle",
+    printType: "PrintType", gsm: "Gsm", submission: "Submission", reportDate: "ReportDate", trpNo: "TrfNo", result: "Result", comments: "Comments" };
+  const lock = LockService.getScriptLock();
+  try { lock.waitLock(25000); } catch (err) { return jsonResponse_({ ok: false, error: "Server busy, please try again." }); }
+  try {
+    const sheet = getSheet_(TESTREQ_SHEET, TESTREQ_HEADERS);
+    const rows = sheet.getDataRange().getValues();
+    for (let i = 1; i < rows.length; i++) {
+      if (String(rows[i][0]) !== String(b.id)) continue;
+      let n = 0;
+      Object.keys(b.fields).forEach(function (k) {
+        const h = MAP[k]; if (!h) return;
+        const col = TESTREQ_HEADERS.indexOf(h); if (col < 0) return;
+        sheet.getRange(i + 1, col + 1).setValue(b.fields[k]); n++;
+      });
+      return jsonResponse_({ ok: true, changed: n });
+    }
+    return jsonResponse_({ ok: false, error: "Entry not found" });
+  } finally { lock.releaseLock(); }
+}
+
+// Correct fields of an existing entry in the other QA Process sheets (after an administrator approved an Edit Request).
+// The row is found by its creation stamp (+ IR check); only the listed columns can be changed.
+function patchSpecs_() { return {
+  sizeset: { sheet: SIZESET_SHEET, headers: SIZESET_HEADERS, stamp: "CreatedAt", ir: "IR",
+    edit: ["Date","SBU","Buyer","StyleNo","IR","Season","Item","EmbellishmentType","ProductType","OrderType","ColorCount","PlannedQty","Status","CorrectionType","Remarks"] },
+  ppmeeting: { sheet: PPMEETING_SHEET, headers: PPMEETING_HEADERS, stamp: "CreatedAt", ir: "IR",
+    edit: ["Date","SBU","Buyer","IR","StyleNo","Season","Item","PPby","OrderType","EmbellishmentType","ProductType","PlannedQty","RequirementsReview"] },
+  physicalfunctional: { sheet: PHYSICALFUNCTIONAL_SHEET, headers: PHYSICALFUNCTIONAL_HEADERS, stamp: "CreatedAt", ir: "IR",
+    edit: ["Date","Time","AuditBy","Line","SBU","Buyer","IR","StyleNo","Color","SampleChecked","PassQty","FailQty","DefectPct","DefectType","Comments","CorrectiveAction"] },
+  aql: { sheet: AQLPROCESS_SHEET, headers: AQLPROCESS_HEADERS, stamp: "CreatedAt", ir: "IR",
+    edit: ["Date","InspectedBy","Line","SBU","Buyer","IR","StyleNo","Size","Color","CompareWith","LotQty","SampleSize","FoundCritical","FoundMajor","FoundMinor","Comments","Result"] },
+  ra: { sheet: QARA_SHEET, headers: QARA_HEADERS, stamp: "Timestamp", ir: "IR",
+    edit: ["SBU","Buyer","IR","StyleNo","RADate","RAby","OrderType","RiskDecision","ActionComments"] },
+  entries: { sheet: ENTRIES_SHEET, headers: ENTRIES_HEADERS, stamp: "Timestamp", ir: "IrNo",
+    edit: ["OrderNo","StyleNo","IrNo","Inspector","Status","Score","Notes"] }
+}; }
+function sameStamp_(cell, val) {
+  if (String(cell) === String(val)) return true;
+  if (cell instanceof Date) {
+    if (cell.toISOString() === String(val)) return true;
+    try { if (Utilities.formatDate(cell, "Asia/Dhaka", "yyyy-MM-dd HH:mm:ss") === String(val)) return true; } catch (e) {}
+  }
+  return false;
+}
+function patchRow_(b) {
+  const spec = patchSpecs_()[b.sheet];
+  if (!spec || !b.stamp || !b.fields) return jsonResponse_({ ok: false, error: "Bad request" });
+  const lock = LockService.getScriptLock();
+  try { lock.waitLock(25000); } catch (err) { return jsonResponse_({ ok: false, error: "Server busy, please try again." }); }
+  try {
+    const sheet = getSheet_(spec.sheet, spec.headers);
+    const rows = sheet.getDataRange().getValues();
+    const sc = spec.headers.indexOf(spec.stamp), ic = spec.headers.indexOf(spec.ir), pc = spec.headers.indexOf("Process");
+    for (let i = 1; i < rows.length; i++) {
+      if (!sameStamp_(rows[i][sc], b.stamp)) continue;
+      if (b.ir !== undefined && String(rows[i][ic]).trim() !== String(b.ir).trim()) continue;
+      if (b.process && pc >= 0 && String(rows[i][pc]).trim() !== String(b.process).trim()) continue;
+      let n = 0;
+      Object.keys(b.fields).forEach(function (h) {
+        if (spec.edit.indexOf(h) < 0) return;
+        const col = spec.headers.indexOf(h); if (col < 0) return;
+        sheet.getRange(i + 1, col + 1).setValue(b.fields[h]); n++;
+      });
+      return jsonResponse_({ ok: true, changed: n });
+    }
+    return jsonResponse_({ ok: false, error: "Entry not found" });
+  } finally { lock.releaseLock(); }
+}
+
+// Admin: delete an entry (e.g. a duplicate). The client only offers this to administrators.
+function deleteTestRequest_(b) {
+  if (!b.id) return jsonResponse_({ ok: false, error: "Missing id" });
+  const lock = LockService.getScriptLock();
+  try { lock.waitLock(25000); } catch (err) { return jsonResponse_({ ok: false, error: "Server busy, please try again." }); }
+  try {
+    const sheet = getSheet_(TESTREQ_SHEET, TESTREQ_HEADERS);
+    const rows = sheet.getDataRange().getValues();
+    for (let i = rows.length - 1; i >= 1; i--) {
+      if (String(rows[i][0]) !== String(b.id)) continue;
+      sheet.deleteRow(i + 1);
+      // remove the mirrored Entries row ("... [id]")
+      const es = getSheet_(ENTRIES_SHEET, ENTRIES_HEADERS), er = es.getDataRange().getValues();
+      for (let j = er.length - 1; j >= 1; j--) {
+        if (er[j][1] === "testing" && String(er[j][8]).indexOf("[" + b.id + "]") >= 0) { es.deleteRow(j + 1); break; }
+      }
+      return jsonResponse_({ ok: true });
+    }
+    return jsonResponse_({ ok: false, error: "Entry not found" });
+  } finally { lock.releaseLock(); }
+}
+function deleteRow_(b) {
+  const spec = patchSpecs_()[b.sheet];
+  if (!spec || !b.stamp) return jsonResponse_({ ok: false, error: "Bad request" });
+  const lock = LockService.getScriptLock();
+  try { lock.waitLock(25000); } catch (err) { return jsonResponse_({ ok: false, error: "Server busy, please try again." }); }
+  try {
+    const sheet = getSheet_(spec.sheet, spec.headers);
+    const rows = sheet.getDataRange().getValues();
+    const sc = spec.headers.indexOf(spec.stamp), ic = spec.headers.indexOf(spec.ir), pc = spec.headers.indexOf("Process");
+    for (let i = 1; i < rows.length; i++) {
+      if (!sameStamp_(rows[i][sc], b.stamp)) continue;
+      if (b.ir !== undefined && String(rows[i][ic]).trim() !== String(b.ir).trim()) continue;
+      if (b.process && pc >= 0 && String(rows[i][pc]).trim() !== String(b.process).trim()) continue;
+      sheet.deleteRow(i + 1);
+      return jsonResponse_({ ok: true });
+    }
+    return jsonResponse_({ ok: false, error: "Entry not found" });
   } finally { lock.releaseLock(); }
 }
 
@@ -1056,4 +1186,70 @@ function findUser_(sheetName, userId, password) {
 
 function jsonResponse_(obj) {
   return ContentService.createTextOutput(JSON.stringify(obj)).setMimeType(ContentService.MimeType.JSON);
+}
+
+
+// ---------------------------------------------------------------
+// PP Meeting: requirement templates (per Buyer or per Style) + Bangla translation
+// ---------------------------------------------------------------
+const PPTEMPLATE_SHEET = "PPTemplates";
+const PPTEMPLATE_HEADERS = ["Scope", "Key", "Buyer", "Style", "TemplateJSON", "UpdatedAt"];
+
+// A Sheets cell holds 50,000 characters max. If a report is too big, drop the (re-creatable) standard
+// requirement text from each checkpoint instead of cutting the JSON in half.
+function ppReportJson_(report) {
+  if (!report) return "";
+  let json = JSON.stringify(report);
+  if (json.length <= 49000) return json;
+  const slim = JSON.parse(json);
+  Object.keys(slim.sections || {}).forEach(function (k) { slim.sections[k].forEach(function (r) { delete r.standard; }); });
+  json = JSON.stringify(slim);
+  return json.length <= 49000 ? json : "";
+}
+function ppTplKey_(scope, buyer, style) {
+  const b = String(buyer || "").trim().toLowerCase();
+  return scope === "style" ? b + "|" + String(style || "").trim().toLowerCase() : b;
+}
+function getPPTemplate_(body) {
+  const sheet = getSheet_(PPTEMPLATE_SHEET, PPTEMPLATE_HEADERS);
+  const rows = sheet.getDataRange().getValues();
+  const bk = ppTplKey_("buyer", body.buyer), sk = ppTplKey_("style", body.buyer, body.style);
+  let buyerTpl = null, styleTpl = null;
+  for (let i = 1; i < rows.length; i++) {
+    try {
+      if (rows[i][0] === "buyer" && rows[i][1] === bk) buyerTpl = JSON.parse(rows[i][4]);
+      if (body.style && rows[i][0] === "style" && rows[i][1] === sk) styleTpl = JSON.parse(rows[i][4]);
+    } catch (e) {}
+  }
+  return jsonResponse_({ ok: true, buyerTpl: buyerTpl, styleTpl: styleTpl });
+}
+function savePPTemplate_(body) {
+  const scope = body.scope === "style" ? "style" : "buyer";
+  if (!body.buyer) return jsonResponse_({ ok: false, error: "Buyer is required." });
+  if (scope === "style" && !body.style) return jsonResponse_({ ok: false, error: "Style is required for a style template." });
+  const json = JSON.stringify(body.template || {});
+  if (json.length > 49000) return jsonResponse_({ ok: false, error: "Template is too large to save (" + json.length + " characters)." });
+  const lock = LockService.getScriptLock();
+  lock.waitLock(20000);
+  try {
+    const sheet = getSheet_(PPTEMPLATE_SHEET, PPTEMPLATE_HEADERS);
+    const key = ppTplKey_(scope, body.buyer, body.style);
+    const rows = sheet.getDataRange().getValues();
+    const rowData = [scope, key, body.buyer, scope === "style" ? body.style : "", json, nowBD_()];
+    for (let i = 1; i < rows.length; i++) {
+      if (rows[i][0] === scope && rows[i][1] === key) {
+        sheet.getRange(i + 1, 1, 1, rowData.length).setValues([rowData]);
+        return jsonResponse_({ ok: true, updated: true });
+      }
+    }
+    sheet.appendRow(rowData);
+    return jsonResponse_({ ok: true, updated: false });
+  } finally { lock.releaseLock(); }
+}
+// English -> Bangla for the PDF (Apps Script's built-in LanguageApp; no API key needed).
+function translateBn_(texts) {
+  const out = (texts || []).slice(0, 30).map(function (t) {
+    try { return LanguageApp.translate(String(t || ""), "en", "bn"); } catch (e) { return ""; }
+  });
+  return jsonResponse_({ ok: true, translations: out });
 }
