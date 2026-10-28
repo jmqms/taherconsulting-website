@@ -166,7 +166,7 @@ const STANDALONE_PAGES = {
   "Pre-Final Inspection": "pre-final-inspection.html",
   "Final Inspection": "final-inspection.html"
 };
-[["styletracking", "📍 Style Tracking"], ["dashboard", "📊 Inspector Dashboard"]].forEach(([id, label]) => {
+[["overview", "🏠 Dashboard"], ["styletracking", "📍 Style Tracking"], ["dashboard", "📊 Inspector Dashboard"]].forEach(([id, label]) => {
   const b = document.createElement("button");
   b.dataset.tab = id; b.textContent = label;
   sideEl.appendChild(b);
@@ -199,7 +199,7 @@ sideEl.addEventListener("click", (e) => {
 });
 
 function loadTab(id) {
-  if (id === "styletracking" || id === "dashboard" || id === "search") return QAInsights.render(id, document.getElementById("tabContent"));
+  if (id === "overview" || id === "styletracking" || id === "dashboard" || id === "search") return QAInsights.render(id, document.getElementById("tabContent"));
   if (id === "search") return renderSearch();
   const type = INSPECTION_TYPES.find(t => t.id === id);
   if (type) return renderInspectionForm(type);
@@ -441,9 +441,10 @@ async function runSearch() {
   }
 }
 
-// Default landing tab (all 6 inspection types are now standalone pages, so land on Search)
-searchBtn.classList.add("active");
-QAInsights.render("search", document.getElementById("tabContent"));
+// Default landing tab: the Dashboard (overview of every style and process)
+const firstBtn = sideEl.querySelector('button[data-tab="overview"]');
+if (firstBtn) firstBtn.classList.add("active");
+QAInsights.render("overview", document.getElementById("tabContent"));
 </script>
 
 <script src="js/module-auth.js"></script>

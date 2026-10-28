@@ -697,18 +697,19 @@ function renderLog(){
     <tr>
       <td>${esc(r.header.date)}</td>
       <td>${esc(r.header.buyer)}</td>
+      <td>${esc(r.header.ir||'')}</td>
       <td>${esc(r.header.styleName||r.header.ir)}</td>
       <td>${esc(r.header.color||'')}</td>
       <td><span class="badge ${r.decision==='Rejected'?'fail':r.decision==='Accepted'?'pass':''}">${esc(r.decision||'-')}</span></td>
       <td>${logActions_(r)}</td>
     </tr>`;
-  }).join('') || `<tr><td colspan="6" class="subtle-note">No ${esc(INSPECTION_TYPE)} reports saved yet.</td></tr>`;
+  }).join('') || `<tr><td colspan="7" class="subtle-note">No ${esc(INSPECTION_TYPE)} reports saved yet.</td></tr>`;
   return `
   <div class="panel panel-pad section-block">
     <h2 class="section-title">Reports Log</h2>
     <div class="overflow-x">
     <table class="rep-table">
-      <thead><tr><th>Date</th><th>Buyer</th><th>Style</th><th>Color</th><th>Decision</th><th></th></tr></thead>
+      <thead><tr><th>Date</th><th>Buyer</th><th>IR</th><th>Style</th><th>Color</th><th>Decision</th><th></th></tr></thead>
       <tbody>${rows}</tbody>
     </table>
     </div>
