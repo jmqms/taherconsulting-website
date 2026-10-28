@@ -2,7 +2,7 @@
  * qa-insights.js — Style Tracking + Inspector Dashboard for the QA Inspection page.
  * Reads the reports the six inspection pages already save (same backend), so
  * no new backend action is needed. Public API: QAInsights.render(tabId, el)
- *   tabId: "styletracking" | "dashboard"
+ *   tabId: "overview" | "styletracking" | "dashboard" | "search"
  */
 (function () {
   "use strict";
@@ -177,6 +177,10 @@
       ".qx-sd{display:grid;grid-template-columns:repeat(auto-fit,minmax(220px,1fr));gap:8px 24px}.qx-sd div{display:flex;justify-content:space-between;gap:12px;border-bottom:1px solid var(--line);padding:5px 0;font-size:13px}.qx-sd span{color:var(--ink-soft)}.qx-sd b{text-align:right}" +
       ".qx-sdt{font:14px var(--display);margin:14px 0 4px}.qx-total{display:flex;justify-content:space-between;margin-top:8px;padding-top:8px;border-top:1.5px solid var(--ink);font-size:14px}" +
       ".qx-empty{padding:28px;text-align:center;color:var(--ink-soft);font:12.5px var(--mono)}.qx-legend{display:flex;flex-wrap:wrap;gap:12px;margin:8px 0;font:11px var(--mono);color:var(--ink-soft)}.qx-legend i{display:inline-block;width:10px;height:10px;border-radius:2px;margin-right:5px;vertical-align:-1px}" +
+      ".qx-dl{font:bold 10px var(--mono);fill:var(--ink)}" +
+      ".qx-dot{display:inline-block;width:14px;height:14px;border-radius:3px;margin-right:3px;vertical-align:middle}.qx-dot.st-Pending,.qx-dot.st-NA{background:var(--line)}" +
+      ".qx-seg{display:flex;height:18px;border-radius:3px;overflow:hidden;min-width:140px;background:var(--line)}.qx-seg i{display:flex;align-items:center;justify-content:center;font:bold 10px var(--mono);color:#fff;font-style:normal}" +
+      ".qx-row{cursor:pointer}.qx-row:hover td{background:var(--line)}.qx-detail td{background:var(--paper);padding:10px 14px}" +
       ".qx-warn{font:12.5px var(--mono);background:var(--reject-dim);color:var(--reject);border:1px solid var(--reject);padding:9px 12px;border-radius:2px;margin-bottom:14px}";
     document.head.appendChild(s);
   }
@@ -265,7 +269,7 @@
   function chartSvg(kind, labels, series, stacked) {
     var n = labels.length;
     if (!n) return '<div class="qx-empty">No data in this date range.</div>';
-    var W = 720, H = 280, L = 42, T = 12, R = 12, B = 58, iw = W - L - R, ih = H - T - B, step = iw / n;
+    var W = 720, H = 290, L = 42, T = 22, R = 12, B = 58, iw = W - L - R, ih = H - T - B, step = iw / n;
     var tops = labels.map(function (_, i) {
       var vals = series.map(function (x) { return x.data[i] || 0; });
       return stacked ? vals.reduce(function (a, b) { return a + b; }, 0) : Math.max.apply(null, vals);
@@ -284,6 +288,8 @@
       var pts = series[0].data.map(function (v, i) { return [L + step * i + step / 2, T + ih - ih * v / max]; });
       g += '<polyline fill="none" stroke-width="2" style="stroke:' + series[0].color + '" points="' + pts.map(function (p) { return p[0] + "," + p[1]; }).join(" ") + '"/>' +
         pts.map(function (p, i) { return '<circle cx="' + p[0] + '" cy="' + p[1] + '" r="3.5" fill="' + series[0].color + '"><title>' + esc(labels[i]) + ": " + series[0].data[i] + "</title></circle>"; }).join("");
+      var lblEvery = n <= 31 ? 1 : Math.ceil(n / 30);
+      pts.forEach(function (p, i) { if (i % lblEvery === 0 || i === n - 1) g += '<text x="' + p[0] + '" y="' + (p[1] - 8) + '" text-anchor="middle" class="qx-dl">' + series[0].data[i] + "</text>"; });
     } else {
       var bw = Math.max(4, Math.min(44, step * 0.7 / (stacked ? 1 : series.length)));
       labels.forEach(function (lb, i) {
@@ -293,7 +299,10 @@
           var h = ih * v / max, x = stacked ? cx - bw / 2 : cx - bw * series.length / 2 + k * bw, yy = stacked ? T + ih - off - h : T + ih - h;
           if (stacked) off += h;
           g += '<rect x="' + x + '" y="' + yy + '" width="' + bw + '" height="' + h + '" fill="' + sr.color + '"><title>' + esc(lb) + " — " + esc(sr.name) + ": " + v + "</title></rect>";
+          if (stacked) { if (h >= 13) g += '<text x="' + (x + bw / 2) + '" y="' + (yy + h / 2 + 3.5) + '" text-anchor="middle" class="qx-dl" style="fill:#fff">' + v + "</text>"; }
+          else g += '<text x="' + (x + bw / 2) + '" y="' + (yy - 4) + '" text-anchor="middle" class="qx-dl">' + v + "</text>";
         });
+        if (stacked) { var tot = series.reduce(function (a, sr) { return a + (sr.data[i] || 0); }, 0); if (tot) g += '<text x="' + cx + '" y="' + (T + ih - off - 4) + '" text-anchor="middle" class="qx-dl">' + tot + "</text>"; }
       });
     }
     var legend = series.length > 1 ? '<div class="qx-legend">' + series.map(function (sr) { return '<span><i style="background:' + sr.color + '"></i>' + esc(sr.name) + "</span>"; }).join("") + "</div>" : "";
@@ -362,6 +371,109 @@
     });
   }
 
+
+  // ---------------- Dashboard (Overview + Active Styles) ----------------
+  var STATUS_COL = { Done: "#2f6e52", "In Progress": "#b8893a", Issue: "#a5483b", Pending: "#b9bfc7" };
+  function styleList(data) {
+    var map = {};
+    function slot(ir) { return map[ir] = map[ir] || { ir: ir, sbu: "", buyer: "", style: "", last: "" }; }
+    data.recs.forEach(function (x) {
+      if (x.outcome === "Draft" || !x.ir) return;
+      var m = slot(x.ir);
+      m.sbu = m.sbu || x.sbu; m.buyer = m.buyer || x.buyer; m.style = m.style || x.style; if (x.date > m.last) m.last = x.date;
+    });
+    data.testing.forEach(function (t) {
+      var ir = norm(t.ir); if (!ir) return;
+      var m = slot(ir), d = normDate(t.logOutDate || t.logInDate);
+      m.sbu = m.sbu || norm(t.sbu); m.buyer = m.buyer || norm(t.buyer); m.style = m.style || norm(t.styleNo); if (d > m.last) m.last = d;
+    });
+    return Object.keys(map).map(function (k) { return map[k]; });
+  }
+  function enrich(data) {
+    return styleList(data).map(function (m) {
+      var rows = tracking(data, m.ir), done = 0, issues = 0, cur = "";
+      rows.forEach(function (r) { if (r.status === "Done" || r.status === "N/A") done++; if (r.status === "Issue") issues++; if (!cur && r.status !== "Done" && r.status !== "N/A") cur = r.s.label; });
+      m.rows = rows; m.done = done; m.issues = issues;
+      m.completed = rows[rows.length - 1].status === "Done";
+      m.current = m.completed ? "Completed" : (cur || "—");
+      return m;
+    });
+  }
+  function dotsHTML(rows) {
+    return rows.map(function (r) { return '<span class="qx-dot st-' + r.status.replace(/[^A-Za-z]/g, "") + '" style="' + (r.status === "Done" ? "background:" + STATUS_COL.Done : r.status === "Issue" ? "background:" + STATUS_COL.Issue : r.status === "In Progress" ? "background:" + STATUS_COL["In Progress"] : "") + '" title="' + esc(r.s.label + ": " + r.status) + '"></span>'; }).join("");
+  }
+  function detailHTML(m) {
+    return '<table><thead><tr><th>#</th><th>Stage</th><th>Status</th><th>Date</th><th>Inspector / Party</th><th>Details</th><th>Report</th></tr></thead><tbody>' +
+      m.rows.map(function (r, i) {
+        return "<tr><td>" + (i + 1) + "</td><td><b>" + esc(r.s.label) + '</b></td><td><span class="qx-chip st-' + r.status.replace(/[^A-Za-z]/g, "") + '">' + esc(r.status) + "</span></td><td>" +
+          esc(r.date || "—") + "</td><td>" + esc(r.inspector || "—") + "</td><td>" + esc(r.note || "") + "</td><td>" + pdfLink(r.rec) + "</td></tr>";
+      }).join("") + "</tbody></table>";
+  }
+
+  function renderOverview(el) {
+    el.innerHTML = '<div class="qx"><h1>Dashboard</h1><div class="qx-card">Loading reports…</div></div>';
+    loadAll().then(function (data) {
+      var all = enrich(data);
+      var uniq = function (k) { return Object.keys(all.reduce(function (o, m) { if (m[k]) o[m[k]] = 1; return o; }, {})).sort(); };
+      el.innerHTML = '<div class="qx"><h1>Dashboard</h1><div class="sub">Overview of every style (IR) and the status of each QA Inspection process. Click a style to see its stage-by-stage details.</div>' + warnHTML(data) +
+        '<div class="qx-card"><div class="qx-filters"><div><label>SBU</label><select id="dSbu"></select></div><div><label>Buyer</label><select id="dBuyer"></select></div>' +
+        '<div><label>Show</label><select id="dShow"><option value="active">Active styles</option><option value="completed">Completed styles</option><option value="all">All styles</option></select></div>' +
+        '<div><label>IR / Style</label><input id="dQ" placeholder="Search IR or style"></div><div style="align-self:end"><button class="btn btn-ghost" id="dRef">↻ Refresh</button></div></div></div><div id="dBody"></div></div>';
+      var $ = function (id) { return el.querySelector("#" + id); };
+      $("dSbu").innerHTML = opts(uniq("sbu"), "", "All SBUs"); $("dBuyer").innerHTML = opts(uniq("buyer"), "", "All buyers");
+      function draw() {
+        var q = $("dQ").value.trim().toLowerCase(), show = $("dShow").value;
+        var list = all.filter(function (m) {
+          return (!$("dSbu").value || m.sbu === $("dSbu").value) && (!$("dBuyer").value || m.buyer === $("dBuyer").value) &&
+            (!q || m.ir.toLowerCase().indexOf(q) >= 0 || (m.style || "").toLowerCase().indexOf(q) >= 0) &&
+            (show === "all" || (show === "active" ? !m.completed : m.completed));
+        }).sort(function (a, b) { return a.last < b.last ? 1 : -1; });
+        var scope = all.filter(function (m) { return (!$("dSbu").value || m.sbu === $("dSbu").value) && (!$("dBuyer").value || m.buyer === $("dBuyer").value); });
+        var nAct = scope.filter(function (m) { return !m.completed; }).length, nIss = scope.filter(function (m) { return !m.completed && m.issues; }).length;
+        var kpi = function (n, l) { return '<div class="qx-card qx-kpi"><b>' + n + "</b><span>" + l + "</span></div>"; };
+        var stat = STAGES.map(function (s, i) {
+          var c = { Done: 0, "In Progress": 0, Issue: 0, Pending: 0 };
+          list.forEach(function (m) { var st = m.rows[i].status; c[st === "N/A" ? "Pending" : st] = (c[st === "N/A" ? "Pending" : st] || 0) + 1; });
+          return { label: s.label, c: c };
+        });
+        var seg = function (c, tot) {
+          return '<div class="qx-seg">' + ["Done", "In Progress", "Issue", "Pending"].map(function (k) {
+            return c[k] ? '<i style="width:' + (c[k] / tot * 100) + "%;background:" + STATUS_COL[k] + '" title="' + k + ": " + c[k] + '">' + c[k] + "</i>" : "";
+          }).join("") + "</div>";
+        };
+        $("dBody").innerHTML =
+          '<div class="qx-grid">' + kpi(scope.length, "Styles tracked") + kpi(nAct, "Active styles") + kpi(scope.length - nAct, "Completed styles") + kpi(nIss, "Active with issues") + "</div>" +
+          '<div class="qx-card"><b>Process-wise status' + (show === "all" ? "" : " — " + (show === "active" ? "active" : "completed") + " styles") + " (" + list.length + ')</b>' +
+          '<div class="qx-legend">' + ["Done", "In Progress", "Issue", "Pending"].map(function (k) { return '<span><i style="background:' + STATUS_COL[k] + '"></i>' + (k === "Pending" ? "Pending / N/A" : k) + "</span>"; }).join("") + "</div>" +
+          '<div class="qx-wrap"><table><thead><tr><th>#</th><th>Process</th><th>Done</th><th>In Progress</th><th>Issue</th><th>Pending / N/A</th><th>Status</th></tr></thead><tbody>' +
+          stat.map(function (r, i) { return "<tr><td>" + (i + 1) + "</td><td><b>" + esc(r.label) + "</b></td><td>" + r.c.Done + "</td><td>" + r.c["In Progress"] + "</td><td>" + r.c.Issue + "</td><td>" + r.c.Pending + "</td><td>" + (list.length ? seg(r.c, list.length) : "—") + "</td></tr>"; }).join("") +
+          "</tbody></table></div></div>" +
+          '<div class="qx-card"><b>Process status chart</b><div id="dChart"></div></div>' +
+          '<div class="qx-card qx-wrap"><b>' + (show === "completed" ? "Completed" : show === "all" ? "All" : "Active") + ' styles (' + list.length + (list.length > 300 ? ", latest 300 shown" : "") + ')</b>' +
+          '<div class="qx-legend"><span>Process order:</span>' + STAGES.map(function (s, i) { return "<span>" + (i + 1) + "." + esc(s.label) + "</span>"; }).join("") + "</div>" +
+          '<table><thead><tr><th>IR</th><th>SBU</th><th>Buyer</th><th>Style</th><th>Progress</th><th>Current stage</th><th>Processes</th><th>Last activity</th></tr></thead><tbody id="dRows">' +
+          (list.slice(0, 300).map(function (m, i) {
+            return '<tr class="qx-row" data-i="' + i + '"><td><b>' + esc(m.ir) + "</b></td><td>" + esc(m.sbu || "—") + "</td><td>" + esc(m.buyer || "—") + "</td><td>" + esc(m.style || "—") + "</td><td>" + m.done + "/" + STAGES.length +
+              (m.issues ? ' <span class="qx-chip st-Issue">' + m.issues + " issue" + (m.issues > 1 ? "s" : "") + "</span>" : "") + '<div class="qx-bar"><i style="width:' + Math.round(m.done / STAGES.length * 100) + '%"></i></div></td><td>' + esc(m.current) + "</td><td style=\"white-space:nowrap\">" + dotsHTML(m.rows) + "</td><td>" + esc(m.last || "—") + "</td></tr>";
+          }).join("") || '<tr><td colspan="8">No styles match.</td></tr>') + "</tbody></table></div>";
+        $("dChart").innerHTML = chartSvg("bar", stat.map(function (r) { return r.label; }), ["Done", "In Progress", "Issue", "Pending"].map(function (k) {
+          return { name: k === "Pending" ? "Pending / N/A" : k, color: STATUS_COL[k], data: stat.map(function (r) { return r.c[k]; }) };
+        }), true);
+        $("dRows").onclick = function (e) {
+          var tr = e.target.closest("tr.qx-row"); if (!tr) return;
+          var nx = tr.nextSibling;
+          if (nx && nx.classList && nx.classList.contains("qx-detail")) { nx.parentNode.removeChild(nx); return; }
+          var d = document.createElement("tr"); d.className = "qx-detail"; d.innerHTML = '<td colspan="8">' + detailHTML(list[+tr.dataset.i]) + "</td>";
+          tr.parentNode.insertBefore(d, tr.nextSibling);
+        };
+      }
+      ["dSbu", "dBuyer", "dShow"].forEach(function (id) { $(id).onchange = draw; });
+      $("dQ").oninput = draw;
+      $("dRef").onclick = function () { cache = null; renderOverview(el); };
+      draw();
+    });
+  }
+
   function renderSearch(el) {
     el.innerHTML = '<div class="qx"><h1>Search Reports</h1><div class="qx-card">Loading reports…</div></div>';
     loadAll().then(function (data) {
@@ -395,7 +507,7 @@
   }
 
   window.QAInsights = {
-    render: function (tab, el) { injectCss(); destroyCharts(); return tab === "dashboard" ? renderDashboard(el) : tab === "search" ? renderSearch(el) : renderTracking(el); },
+    render: function (tab, el) { injectCss(); destroyCharts(); return tab === "overview" ? renderOverview(el) : tab === "dashboard" ? renderDashboard(el) : tab === "search" ? renderSearch(el) : renderTracking(el); },
     _t: { tracking: tracking, aggregate: aggregate, outcomeOf: outcomeOf, normDate: normDate }
   };
 })();
