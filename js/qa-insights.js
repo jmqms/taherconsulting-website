@@ -63,7 +63,7 @@
     if (/draft/i.test(norm(r.status))) return "Draft";
     var d = norm(r.decision);
     if (/reject/i.test(d)) return "Fail";
-    if (/rework/i.test(d)) return "Rework";
+    if (/re-?work/i.test(d)) return "Rework";
     if (/accept/i.test(d)) return "Pass";
     var x = norm(r.result).toUpperCase();
     if (x === "PASS") return "Pass";
@@ -181,6 +181,11 @@
       ".qx-dot{display:inline-block;width:14px;height:14px;border-radius:3px;margin-right:3px;vertical-align:middle}.qx-dot.st-Pending,.qx-dot.st-NA{background:var(--line)}" +
       ".qx-seg{display:flex;height:18px;border-radius:3px;overflow:hidden;min-width:140px;background:var(--line)}.qx-seg i{display:flex;align-items:center;justify-content:center;font:bold 10px var(--mono);color:#fff;font-style:normal}" +
       ".qx-row{cursor:pointer}.qx-row:hover td{background:var(--line)}.qx-detail td{background:var(--paper);padding:10px 14px}" +
+      ".qx-trend{font:11px var(--mono);color:var(--ink-soft)}.qx-trend.up{color:#2f6e52}.qx-trend.down{color:#a5483b}" +
+      ".qx-pipe{display:flex;gap:6px;overflow-x:auto;padding-bottom:6px}.qx-step{flex:1 0 96px;border:1.5px solid var(--line-strong);border-radius:5px;padding:8px 8px 10px;background:var(--paper);text-align:center}.qx-step b{display:block;font-size:22px;font-family:var(--display)}.qx-step small{display:block;font:10px var(--mono);color:var(--ink-soft);text-transform:uppercase}.qx-step.hot{border-color:#a5483b;background:#fbeeea}.qx-step.hot b{color:#a5483b}" +
+      ".qx-sc{display:grid;gap:12px;grid-template-columns:repeat(auto-fill,minmax(250px,1fr));margin-bottom:16px}.qx-sc .qx-card{margin:0;cursor:pointer}.qx-sc .qx-card:hover{border-color:#2f6e52}.qx-sc .qx-card.sel{border-color:#2f6e52;box-shadow:0 0 0 2px #2f6e5233}.qx-sc h4{margin:0;font:700 14px var(--body)}.qx-sc .m{display:flex;justify-content:space-between;gap:8px;font-size:12.5px;margin-top:6px}.qx-sc .m span{color:var(--ink-soft)}" +
+      ".qx-cal{display:grid;grid-auto-flow:column;grid-template-rows:repeat(7,14px);gap:3px;overflow-x:auto;padding-bottom:6px}.qx-cal i{width:14px;height:14px;border-radius:3px;background:var(--line)}" +
+      ".qx-tag{display:inline-block;padding:1px 8px;border-radius:9px;font:10.5px var(--mono);margin:0 4px 3px 0;white-space:nowrap}.qx-tag.r{background:#f4d9d3;color:#a5483b}.qx-tag.a{background:#f5e9c8;color:#7a5a00}.qx-tag.g{background:#dcebe3;color:#2f6e52}" +
       ".qx-warn{font:12.5px var(--mono);background:var(--reject-dim);color:var(--reject);border:1px solid var(--reject);padding:9px 12px;border-radius:2px;margin-bottom:14px}";
     document.head.appendChild(s);
   }
@@ -258,6 +263,36 @@
     });
   }
 
+
+  // ---------------- helpers for the professional dashboards ----------------
+  function ymdOf(d) { return d.getFullYear() + "-" + ("0" + (d.getMonth() + 1)).slice(-2) + "-" + ("0" + d.getDate()).slice(-2); }
+  function addDays(ymd, n) { var p = ymd.split("-"), d = new Date(+p[0], +p[1] - 1, +p[2] + n); return ymdOf(d); }
+  function daysBetween(a, b) { if (!a || !b) return null; var x = a.split("-"), y = b.split("-"); return Math.round((new Date(+y[0], +y[1] - 1, +y[2]) - new Date(+x[0], +x[1] - 1, +x[2])) / 86400000); }
+  function store(k, v) { try { if (v === undefined) return localStorage.getItem("qx_" + k); localStorage.setItem("qx_" + k, v); } catch (e) {} return null; }
+  function spark(vals, color) {
+    var n = vals.length, W = 90, H = 26, mx = Math.max.apply(null, vals.concat([1]));
+    if (n < 2) return "";
+    var pts = vals.map(function (v, i) { return (i * (W - 2) / (n - 1) + 1).toFixed(1) + "," + (H - 3 - (H - 6) * v / mx).toFixed(1); }).join(" ");
+    return '<svg viewBox="0 0 ' + W + " " + H + '" style="width:90px;height:26px;display:block"><polyline fill="none" stroke-width="1.8" stroke="' + color + '" points="' + pts + '"/></svg>';
+  }
+  // trend vs previous period. invert = true when "up" is bad (fail rate).
+  function trendHTML(cur, prev, unit, invert) {
+    if (cur == null || prev == null) return '<span class="qx-trend">no earlier data</span>';
+    var d = cur - prev; if (unit === "%") d = Math.round(d); else d = prev ? Math.round(d / prev * 100) : (cur ? 100 : 0);
+    if (d === 0) return '<span class="qx-trend">▬ same as last month</span>';
+    var good = invert ? d < 0 : d > 0;
+    return '<span class="qx-trend ' + (good ? "up" : "down") + '">' + (d > 0 ? "▲ " : "▼ ") + Math.abs(d) + (unit === "%" ? " pts" : "%") + " vs last month</span>";
+  }
+  function monthStats(recs, ym) {
+    var rows = recs.filter(function (x) { return x.date && x.date.slice(0, 7) === ym; }), j = 0, p = 0, b = 0;
+    rows.forEach(function (x) { if (x.outcome === "Pass") { p++; j++; } else if (x.outcome === "Fail" || x.outcome === "Rework") { b++; j++; } });
+    return { n: rows.length, judged: j, pass: p, bad: b, pr: j ? p / j * 100 : null, br: j ? b / j * 100 : null };
+  }
+  function prevMonth(ym) { var p = ym.split("-"), d = new Date(+p[0], +p[1] - 2, 1); return d.getFullYear() + "-" + ("0" + (d.getMonth() + 1)).slice(-2); }
+  function kpiT(value, label, trend, sp) {
+    return '<div class="qx-card qx-kpi"><b>' + value + "</b><span>" + label + "</span>" + (trend ? "<div>" + trend + "</div>" : "") + (sp ? '<div style="margin-top:6px">' + sp + "</div>" : "") + "</div>";
+  }
+
   function destroyCharts() {}
   var PALETTE = ["#2f6e52", "#b8893a", "#3b6ea5", "#a5483b", "#6d5a9c", "#4d8f8f"];
 
@@ -322,8 +357,9 @@
       var f = { from: ymd(new Date(today.getFullYear(), today.getMonth() - 2, 1)), to: ymd(today), buyer: "", insp: "", type: "" };
       el.innerHTML = '<div class="qx"><h1>Inspector Dashboard</h1><div class="sub">Counts every saved (non-draft) report from 1st Bundle, Sewing Inline, Finishing Inline, 1st Carton, Pre-Final and Final.</div>' + warnHTML(data) +
         '<div class="qx-card"><div class="qx-filters"><div><label>From</label><input type="date" id="qxFrom"></div><div><label>To</label><input type="date" id="qxTo"></div>' +
-        '<div><label>Buyer</label><select id="qxB"></select></div><div><label>Inspector</label><select id="qxI"></select></div><div><label>Inspection</label><select id="qxT"></select></div>' +
-        '<div style="align-self:end"><label style="display:flex;gap:6px;align-items:center;text-transform:none;letter-spacing:0;margin-bottom:8px"><input type="checkbox" id="qxAll" style="width:auto"> Show all PSI members</label><button class="btn btn-ghost" id="qxRef">↻ Refresh</button></div></div></div><div id="qxBody"></div></div>';
+        '<div><label>Buyer</label><select id="qxB"></select></div><div><label>Inspector</label><select id="qxI"></select></div><div><label>Inspection</label><select id="qxT"></select></div><div><label>Monthly target / inspector</label><input id="qxTarget" type="number" min="1" value="' + (parseInt(store("target"), 10) || 20) + '"></div>' +
+        '<div style="align-self:end"><label style="display:flex;gap:6px;align-items:center;text-transform:none;letter-spacing:0;margin-bottom:8px"><input type="checkbox" id="qxAll" style="width:auto"> Show all PSI members</label><button class="btn btn-ghost" id="qxRef">↻ Refresh</button></div></div>' +
+        '<div style="margin-top:10px;display:flex;gap:6px;flex-wrap:wrap"><button class="btn btn-ghost qx-rng" data-r="0">Today</button><button class="btn btn-ghost qx-rng" data-r="7">Last 7 days</button><button class="btn btn-ghost qx-rng" data-r="m0">This month</button><button class="btn btn-ghost qx-rng" data-r="m1">Last month</button><button class="btn btn-ghost qx-rng" data-r="m3">Last 3 months</button></div></div><div id="qxBody"></div></div>';
       var $ = function (id) { return el.querySelector("#" + id); };
       $("qxFrom").value = f.from; $("qxTo").value = f.to;
       $("qxB").innerHTML = opts(buyers, "", "All buyers"); $("qxI").innerHTML = opts(insps, "", "All inspectors");
@@ -340,10 +376,41 @@
         var shownTypes = TYPES.map(function (t) { return t.key; }).filter(function (k) { return !f.type || k === f.type; });
         var tableKeys = inspKeys.slice();
         if ($("qxAll").checked && window.PSITeam) PSITeam.team.forEach(function (m) { if (!a.byInsp[m.name] && (!f.insp || f.insp === m.name)) tableKeys.push(m.name); });
+
+        // ----- scorecards, team comparison, activity calendar -----
+        var target = Math.max(1, parseInt($("qxTarget").value, 10) || 20); store("target", String(target));
+        var tAvg = judged ? pass / judged * 100 : null, toM = f.to ? f.to.slice(0, 7) : ymd(today).slice(0, 7);
+        var recsScope = recs.filter(function (x) { return x.date && (!f.buyer || x.buyer === f.buyer) && (!f.type || x.type === f.type); });
+        var endD = f.to || ymd(today);
+        var scHTML = '<div class="qx-sc">' + inspKeys.map(function (k) {
+          var o = a.byInsp[k], m = psiOf(k), mc = recsScope.filter(function (x) { return x.inspector === k && x.date.slice(0, 7) === toM; }).length;
+          var pr = o.judged ? o.pass / o.judged * 100 : null, bad = o.judged - o.pass, lastA = "";
+          a.rows.forEach(function (x) { if (x.inspector === k && x.date > lastA) lastA = x.date; });
+          var dc = {}; a.rows.forEach(function (x) { if (x.inspector === k) dc[x.date] = (dc[x.date] || 0) + 1; });
+          var sp = []; for (var q = 13; q >= 0; q--) sp.push(dc[addDays(endD, -q)] || 0);
+          var cmp = "";
+          if (pr != null && tAvg != null && o.judged >= 5) { var d = Math.round(pr - tAvg); cmp = d >= 0 ? '<span class="qx-tag g">▲ ' + d + " pts vs team</span>" : '<span class="qx-tag ' + (d <= -15 ? "r" : "a") + '">▼ ' + Math.abs(d) + " pts vs team</span>"; }
+          var pct = Math.min(100, Math.round(mc / target * 100));
+          return '<div class="qx-card" data-insp="' + esc(k) + '"><h4>' + esc(k) + '</h4><div style="font:11px var(--mono);color:var(--ink-soft)">' + esc(m ? m.designation + " · " + m.code : "Not in PSI list") + "</div>" +
+            '<div class="m"><span>Inspections (range)</span><b>' + o.n + '</b></div><div class="m"><span>Styles</span><b>' + Object.keys(o.set).length + '</b></div>' +
+            '<div class="m"><span>Pass rate</span><b>' + (pr == null ? "—" : Math.round(pr) + "%") + '</b></div><div class="m"><span>Fail / Re-work</span><b>' + bad + "</b></div>" +
+            '<div class="m"><span>This month vs target</span><b>' + mc + " / " + target + '</b></div><div class="qx-bar"><i style="width:' + pct + "%;background:" + (pct >= 100 ? "#2f6e52" : pct >= 60 ? "#b8893a" : "#a5483b") + '"></i></div>' +
+            '<div style="display:flex;justify-content:space-between;align-items:center;margin-top:8px"><div>' + cmp + '<div style="font:10.5px var(--mono);color:var(--ink-soft)">Last active ' + esc(lastA || "—") + "</div></div>" + spark(sp, "#2f6e52") + "</div></div>";
+        }).join("") + "</div>";
+        if (!inspKeys.length) scHTML = "";
+        // activity calendar (last up to 17 weeks ending at "To")
+        var calDays = []; for (var cd = 118; cd >= 0; cd--) calDays.push(addDays(endD, -cd));
+        var cnt = {}; a.rows.forEach(function (x) { cnt[x.date] = (cnt[x.date] || 0) + 1; });
+        var cmax = Math.max.apply(null, calDays.map(function (d) { return cnt[d] || 0; }).concat([1]));
+        var firstDow = (new Date(calDays[0].replace(/-/g, "/")).getDay() + 6) % 7, pad = "";
+        for (var pz = 0; pz < firstDow; pz++) pad += '<i style="background:transparent"></i>';
+        var calHTML = '<div class="qx-card"><b>Daily activity (last 17 weeks, ' + (f.insp ? esc(f.insp) : "all inspectors") + ')</b><div class="sub" style="margin:2px 0 8px">Each box is a day; darker = more inspections. Hover for the count.</div><div class="qx-cal">' + pad +
+          calDays.map(function (d) { var c = cnt[d] || 0, lv = c ? Math.max(0.25, c / cmax) : 0; return '<i title="' + d + ": " + c + '" style="' + (c ? "background:rgba(47,110,82," + lv.toFixed(2) + ")" : "") + '"></i>'; }).join("") + "</div></div>";
         var kpi = function (n, l) { return '<div class="qx-card qx-kpi"><b>' + n + "</b><span>" + l + "</span></div>"; };
         $("qxBody").innerHTML =
           '<div class="qx-grid">' + kpi(a.rows.length, "Inspections") + kpi(Object.keys(a.styles).length, "Styles checked") + kpi(inspKeys.length, "Inspectors") +
           kpi(judged ? Math.round(pass / judged * 100) + "%" : "—", "Pass rate") + "</div>" +
+          (scHTML ? '<h3 style="font:14px var(--display);margin:6px 0 8px">Inspector scorecards <span class="sub" style="font-weight:normal">— click a card for details</span></h3>' + scHTML + '<div id="qxDrill"></div>' : "") + calHTML +
           '<div class="qx-card"><b>Date-wise inspections</b><div id="cDay"></div></div>' +
           '<div class="qx-card"><b>Monthly — styles checked per inspection type</b><div id="cMon"></div></div>' +
           '<div class="qx-card"><b>Buyer-wise inspections</b><div id="cBuy"></div></div>' +
@@ -359,13 +426,42 @@
             return "<tr><td><b>" + esc(b) + "</b></td>" + inspKeys.map(function (k) { return "<td>" + (a.matrix[b][k] || "") + "</td>"; }).join("") + "<td>" + a.byBuyer[b].n + "</td></tr>";
           }).join("") || '<tr><td colspan="3">No data.</td></tr>') + "</tbody></table></div>";
 
+
+        el.querySelectorAll(".qx-sc .qx-card").forEach(function (c) {
+          c.onclick = function () {
+            var k = c.getAttribute("data-insp"), box = $("qxDrill"), was = c.classList.contains("sel");
+            el.querySelectorAll(".qx-sc .qx-card").forEach(function (x) { x.classList.remove("sel"); });
+            if (was) { box.innerHTML = ""; return; }
+            c.classList.add("sel");
+            var mine = a.rows.filter(function (x) { return x.inspector === k; }).sort(function (x, y) { return x.date < y.date ? 1 : -1; });
+            var mon = {}; mine.forEach(function (x) { var m = x.date.slice(0, 7); mon[m] = (mon[m] || 0) + 1; });
+            var ml = Object.keys(mon).sort(), tp = {}; mine.forEach(function (x) { tp[x.type] = (tp[x.type] || 0) + 1; });
+            box.innerHTML = '<div class="qx-card" style="border-color:#2f6e52"><b>' + esc(k) + " — " + mine.length + ' report(s) in range</b>' +
+              '<div style="margin:8px 0">' + Object.keys(tp).map(function (t) { return '<span class="qx-tag g">' + esc(t) + ": " + tp[t] + "</span>"; }).join("") + "</div>" +
+              (ml.length > 1 ? '<div style="margin-bottom:10px">' + chartSvg("line", ml, [{ name: "Inspections", color: PALETTE[0], data: ml.map(function (m) { return mon[m]; }) }], false) + "</div>" : "") +
+              '<div class="qx-wrap"><table><thead><tr><th>Date</th><th>Type</th><th>Buyer</th><th>IR</th><th>Style</th><th>Result</th><th>PDF</th></tr></thead><tbody>' +
+              mine.slice(0, 50).map(function (x) { return "<tr><td>" + esc(x.date) + "</td><td>" + esc(x.type) + "</td><td>" + esc(x.buyer) + "</td><td>" + esc(x.ir) + "</td><td>" + esc(x.style) + "</td><td>" + esc(x.decision || x.outcome) + "</td><td>" + pdfLink(x) + "</td></tr>"; }).join("") +
+              "</tbody></table></div>" + (mine.length > 50 ? '<div class="sub">Latest 50 shown.</div>' : "") + "</div>";
+            if (box.scrollIntoView) box.scrollIntoView({ behavior: "smooth", block: "nearest" });
+          };
+        });
         $("cDay").innerHTML = chartSvg("line", days, [{ name: "Inspections", color: PALETTE[0], data: days.map(function (d) { return a.byDay[d]; }) }], false);
         $("cMon").innerHTML = chartSvg("bar", months, shownTypes.map(function (t, i) {
           return { name: t, color: PALETTE[i % PALETTE.length], data: months.map(function (m) { return Object.keys((a.byMonth[m] || {})[t] || {}).length; }) };
         }), true);
         $("cBuy").innerHTML = chartSvg("bar", buyKeys, [{ name: "Inspections", color: PALETTE[1], data: buyKeys.map(function (b) { return a.byBuyer[b].n; }) }], false);
       }
-      ["qxFrom", "qxTo", "qxB", "qxI", "qxT", "qxAll"].forEach(function (id) { $(id).onchange = draw; });
+      ["qxFrom", "qxTo", "qxB", "qxI", "qxT", "qxAll", "qxTarget"].forEach(function (id) { $(id).onchange = draw; });
+      el.querySelectorAll(".qx-rng").forEach(function (b) {
+        b.onclick = function () {
+          var r = b.getAttribute("data-r"), t = new Date(), to = ymd(t), from = to;
+          if (r === "7") from = addDays(to, -6);
+          else if (r === "m0") from = ymd(new Date(t.getFullYear(), t.getMonth(), 1));
+          else if (r === "m1") { from = ymd(new Date(t.getFullYear(), t.getMonth() - 1, 1)); to = ymd(new Date(t.getFullYear(), t.getMonth(), 0)); }
+          else if (r === "m3") from = ymd(new Date(t.getFullYear(), t.getMonth() - 2, 1));
+          $("qxFrom").value = from; $("qxTo").value = to; draw();
+        };
+      });
       $("qxRef").onclick = function () { cache = null; renderDashboard(el); };
       draw();
     });
@@ -418,7 +514,7 @@
       el.innerHTML = '<div class="qx"><h1>Dashboard</h1><div class="sub">Overview of every style (IR) and the status of each QA Inspection process. Click a style to see its stage-by-stage details.</div>' + warnHTML(data) +
         '<div class="qx-card"><div class="qx-filters"><div><label>SBU</label><select id="dSbu"></select></div><div><label>Buyer</label><select id="dBuyer"></select></div>' +
         '<div><label>Show</label><select id="dShow"><option value="active">Active styles</option><option value="completed">Completed styles</option><option value="all">All styles</option></select></div>' +
-        '<div><label>IR / Style</label><input id="dQ" placeholder="Search IR or style"></div><div style="align-self:end"><button class="btn btn-ghost" id="dRef">↻ Refresh</button></div></div></div><div id="dBody"></div></div>';
+        '<div><label>IR / Style</label><input id="dQ" placeholder="Search IR or style"></div><div><label>Idle alert (days)</label><input id="dIdle" type="number" min="1" value="' + (parseInt(store("idle"), 10) || 7) + '"></div><div style="align-self:end"><button class="btn btn-ghost" id="dRef">↻ Refresh</button></div></div></div><div id="dBody"></div></div>';
       var $ = function (id) { return el.querySelector("#" + id); };
       $("dSbu").innerHTML = opts(uniq("sbu"), "", "All SBUs"); $("dBuyer").innerHTML = opts(uniq("buyer"), "", "All buyers");
       function draw() {
@@ -431,6 +527,31 @@
         var scope = all.filter(function (m) { return (!$("dSbu").value || m.sbu === $("dSbu").value) && (!$("dBuyer").value || m.buyer === $("dBuyer").value); });
         var nAct = scope.filter(function (m) { return !m.completed; }).length, nIss = scope.filter(function (m) { return !m.completed && m.issues; }).length;
         var kpi = function (n, l) { return '<div class="qx-card qx-kpi"><b>' + n + "</b><span>" + l + "</span></div>"; };
+        var idleD = Math.max(1, parseInt($("dIdle").value, 10) || 7); store("idle", String(idleD));
+        var tdy = ymdOf(new Date()), curM = tdy.slice(0, 7), prvM = prevMonth(curM);
+        var recsF = data.recs.filter(function (x) { return x.outcome !== "Draft" && (!$("dSbu").value || x.sbu === $("dSbu").value) && (!$("dBuyer").value || x.buyer === $("dBuyer").value); });
+        var cm = monthStats(recsF, curM), pm = monthStats(recsF, prvM);
+        var dayCount = {}; recsF.forEach(function (x) { if (x.date) dayCount[x.date] = (dayCount[x.date] || 0) + 1; });
+        var last14 = []; for (var di = 13; di >= 0; di--) last14.push(dayCount[addDays(tdy, -di)] || 0);
+        var activeScope = scope.filter(function (m) { return !m.completed; });
+        // pipeline: where are the active styles right now?
+        var atStage = {}; activeScope.forEach(function (m) { atStage[m.current] = (atStage[m.current] || 0) + 1; });
+        var hotMax = Math.max.apply(null, STAGES.map(function (s) { return atStage[s.label] || 0; }).concat([0]));
+        var pipeHTML = '<div class="qx-pipe">' + STAGES.map(function (s, i) {
+          var cnt = atStage[s.label] || 0, dn = scope.filter(function (m) { return m.rows[i].status === "Done"; }).length;
+          return '<div class="qx-step' + (cnt && cnt === hotMax && cnt > 1 ? " hot" : "") + '"><small>' + (i + 1) + ". " + esc(s.label) + "</small><b>" + cnt + "</b><small>waiting here</small><small style=\"color:#2f6e52\">" + dn + " done</small></div>";
+        }).join("") + "</div>" + (hotMax > 1 ? '<div class="sub" style="margin:6px 0 0">Red box = bottleneck (most active styles are waiting at this process).</div>' : "");
+        // needs attention
+        var att = activeScope.map(function (m) {
+          var idle = daysBetween(m.last, tdy), bad = m.rows.filter(function (r) { return r.status === "Issue"; }).map(function (r) { return r.s.label; });
+          return { m: m, idle: idle == null ? 0 : idle, bad: bad };
+        }).filter(function (x) { return x.bad.length || x.idle >= idleD; }).sort(function (a, b) { return (b.bad.length - a.bad.length) || (b.idle - a.idle); });
+        var attHTML = '<div class="qx-card qx-wrap"><b>⚠ Needs attention (' + att.length + ')</b><div class="sub" style="margin:2px 0 8px">Active styles with an Issue, or no inspection / test update for ' + idleD + '+ days.</div>' +
+          '<table><thead><tr><th>IR</th><th>Buyer</th><th>Style</th><th>Waiting at</th><th>Why</th><th>Last activity</th></tr></thead><tbody>' +
+          (att.slice(0, 20).map(function (x) {
+            return "<tr><td><b>" + esc(x.m.ir) + "</b></td><td>" + esc(x.m.buyer || "—") + "</td><td>" + esc(x.m.style || "—") + "</td><td>" + esc(x.m.current) + "</td><td>" +
+              x.bad.map(function (b) { return '<span class="qx-tag r">Issue: ' + esc(b) + "</span>"; }).join("") + (x.idle >= idleD ? '<span class="qx-tag ' + (x.idle >= idleD * 2 ? "r" : "a") + '">No update ' + x.idle + " days</span>" : "") + "</td><td>" + esc(x.m.last || "—") + "</td></tr>";
+          }).join("") || '<tr><td colspan="6"><span class="qx-tag g">All clear</span> No active style needs attention.</td></tr>') + "</tbody></table>" + (att.length > 20 ? '<div class="sub">Top 20 of ' + att.length + " shown.</div>" : "") + "</div>";
         var stat = STAGES.map(function (s, i) {
           var c = { Done: 0, "In Progress": 0, Issue: 0, Pending: 0 };
           list.forEach(function (m) { var st = m.rows[i].status; c[st === "N/A" ? "Pending" : st] = (c[st === "N/A" ? "Pending" : st] || 0) + 1; });
@@ -442,7 +563,12 @@
           }).join("") + "</div>";
         };
         $("dBody").innerHTML =
-          '<div class="qx-grid">' + kpi(scope.length, "Styles tracked") + kpi(nAct, "Active styles") + kpi(scope.length - nAct, "Completed styles") + kpi(nIss, "Active with issues") + "</div>" +
+          '<div class="qx-grid">' + kpiT(scope.length, "Styles tracked", "", "") + kpiT(nAct, "Active styles", '<span class="qx-trend">' + (scope.length - nAct) + " completed</span>", "") +
+          kpiT(cm.n, "Inspections this month", trendHTML(cm.n, pm.n, "", false), spark(last14, "#2f6e52")) +
+          kpiT(cm.pr == null ? "—" : Math.round(cm.pr) + "%", "First-pass rate", trendHTML(cm.pr, pm.pr, "%", false), "") +
+          kpiT(cm.br == null ? "—" : Math.round(cm.br) + "%", "Fail / Re-work rate", trendHTML(cm.br, pm.br, "%", true), "") +
+          kpiT(nIss, "Active with issues", '<span class="qx-trend">' + (nIss ? "see list below" : "none") + "</span>", "") + "</div>" +
+          '<div class="qx-card"><b>Process pipeline — where are the active styles now?</b>' + pipeHTML + "</div>" + attHTML +
           '<div class="qx-card"><b>Process-wise status' + (show === "all" ? "" : " — " + (show === "active" ? "active" : "completed") + " styles") + " (" + list.length + ')</b>' +
           '<div class="qx-legend">' + ["Done", "In Progress", "Issue", "Pending"].map(function (k) { return '<span><i style="background:' + STATUS_COL[k] + '"></i>' + (k === "Pending" ? "Pending / N/A" : k) + "</span>"; }).join("") + "</div>" +
           '<div class="qx-wrap"><table><thead><tr><th>#</th><th>Process</th><th>Done</th><th>In Progress</th><th>Issue</th><th>Pending / N/A</th><th>Status</th></tr></thead><tbody>' +
@@ -467,7 +593,7 @@
           tr.parentNode.insertBefore(d, tr.nextSibling);
         };
       }
-      ["dSbu", "dBuyer", "dShow"].forEach(function (id) { $(id).onchange = draw; });
+      ["dSbu", "dBuyer", "dShow", "dIdle"].forEach(function (id) { $(id).onchange = draw; });
       $("dQ").oninput = draw;
       $("dRef").onclick = function () { cache = null; renderOverview(el); };
       draw();
