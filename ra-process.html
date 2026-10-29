@@ -68,6 +68,7 @@
     .panel-grid,.form-grid{grid-template-columns:1fr;}
   }
 </style>
+<script src="js/tc-fetch.js"></script>
 </head>
 <body>
 <div id="tc-guard-bar" style="background:#1B211D;color:#F1F0EA;font-family:'IBM Plex Mono',monospace;font-size:12.5px;letter-spacing:.04em;padding:10px 20px;display:flex;justify-content:space-between;align-items:center;position:sticky;top:0;z-index:9999">
@@ -156,7 +157,7 @@ function registerDatalabelsWhenReady() {
   }
 }
 
-function esc(s){ return (s||"").toString().replace(/[&<>"]/g, c => ({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;"}[c])); }
+function esc(s){ return (s||"").toString().replace(/[&<>"']/g, c => ({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c])); }
 
 const EVENT_ICONS = { Fabric: "🧵", Cutting: "✂️", Printing: "💧", Embroidery: "🌀", Sewing: "🧷", Wash: "💧", Finishing: "📦" };
 document.getElementById("qaEventTabs").innerHTML = RA_EVENTS.map(ev =>

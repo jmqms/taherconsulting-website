@@ -71,6 +71,7 @@
 
   @media (max-width:700px){ .form-grid{grid-template-columns:1fr;} }
 </style>
+<script src="js/tc-fetch.js"></script>
 </head>
 <body>
 <div id="tc-guard-bar" style="background:#1B211D;color:#F1F0EA;font-family:'IBM Plex Mono',monospace;font-size:12.5px;letter-spacing:.04em;padding:10px 20px;display:flex;justify-content:space-between;align-items:center;position:sticky;top:0;z-index:9999">
@@ -205,7 +206,7 @@ let activeCat = "";          // "" = all categories
 let allDocs = [];
 let loadedOnce = false;
 
-function esc(s){ return (s==null?"":s).toString().replace(/[&<>"]/g, c => ({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;"}[c])); }
+function esc(s){ return (s==null?"":s).toString().replace(/[&<>"']/g, c => ({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c])); }
 function fmtDate(v){ const s = String(v||""); return /^\d{4}-\d{2}-\d{2}/.test(s) ? s.slice(0,10) : s; }
 function nz(v){ return String(v==null?"":v).trim().toLowerCase(); }
 

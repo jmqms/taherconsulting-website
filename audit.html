@@ -100,6 +100,8 @@
         .sbu-tab-btn:hover { background: #f1f5f9; }
         .sbu-tab-btn.active { background: var(--primary); color: white; border-color: var(--primary); }
     </style>
+<script src="js/tc-fetch.js"></script>
+<script>function esc(s){return (s==null?'':String(s)).replace(/[&<>"']/g,function(c){return {'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c];});}</script>
 </head>
 <body>
 <div id="tc-guard-bar" style="background:#1B211D;color:#F1F0EA;font-family:'IBM Plex Mono',monospace;font-size:12.5px;letter-spacing:.04em;padding:10px 20px;display:flex;justify-content:space-between;align-items:center;position:sticky;top:0;z-index:9999">
@@ -1297,10 +1299,10 @@
                 <tbody>
                     ${rows.map(r => `
                         <tr>
-                            <td style="border: 1px solid #ddd; padding: 7px; font-weight: bold; color: #475569;">${r.subcategory || '-'}</td>
-                            <td style="border: 1px solid #ddd; padding: 7px;">${r.question}</td>
-                            <td style="border: 1px solid #ddd; padding: 7px; text-align: center; font-weight: bold; color: ${r.status === 'Pass' ? 'green' : (r.status === 'Fail' ? 'red' : '#666')}">${r.status}</td>
-                            <td style="border: 1px solid #ddd; padding: 7px; font-style: italic; color: #dc2626;">${r.comment || '-'}</td>
+                            <td style="border: 1px solid #ddd; padding: 7px; font-weight: bold; color: #475569;">${esc(r.subcategory || '-')}</td>
+                            <td style="border: 1px solid #ddd; padding: 7px;">${esc(r.question)}</td>
+                            <td style="border: 1px solid #ddd; padding: 7px; text-align: center; font-weight: bold; color: ${r.status === 'Pass' ? 'green' : (r.status === 'Fail' ? 'red' : '#666')}">${esc(r.status)}</td>
+                            <td style="border: 1px solid #ddd; padding: 7px; font-style: italic; color: #dc2626;">${esc(r.comment || '-')}</td>
                         </tr>
                     `).join('')}
                 </tbody>
@@ -1357,12 +1359,12 @@
             let structuralFailMap = {};
 
             filteredData.forEach(row => {
-                const groupToken = `${row.sbu}|||${row.line}|||${row.section}`;
+                const groupToken = `${esc(row.sbu)}|||${esc(row.line)}|||${esc(row.section)}`;
                 if (!performanceMatrix[groupToken]) { performanceMatrix[groupToken] = { pass: 0, fail: 0 }; }
                 performanceMatrix[groupToken].pass += row.pass;
                 performanceMatrix[groupToken].fail += row.fail;
 
-                const questionToken = `${row.line}|||${row.section}|||${row.subcategory}|||${row.question}`;
+                const questionToken = `${esc(row.line)}|||${esc(row.section)}|||${esc(row.subcategory)}|||${esc(row.question)}`;
                 if (!structuralFailMap[questionToken]) { structuralFailMap[questionToken] = { total: 0, fail: 0 }; }
                 structuralFailMap[questionToken].total += row.total;
                 structuralFailMap[questionToken].fail += row.fail;
@@ -1436,15 +1438,15 @@
                 
                 tableBody.innerHTML += `
                     <tr>
-                        <td>${row.date || '-'}</td>
-                        <td>${row.auditor || '-'}</td>
-                        <td><span class="badge" style="background:#64748b">${row.sbu || '-'}</span></td>
-                        <td><strong>${row.line || '-'}</strong></td>
-                        <td>${row.section || '-'}</td>
-                        <td style="font-weight: 500; color: #475569;">${row.subcategory || '-'}</td>
-                        <td>${row.question || '-'}</td>
-                        <td><span class="badge ${itemBadge}" style="${backgroundRule}">${row.status || '-'}</span></td>
-                        <td><span class="${row.status === 'Fail' ? 'comment-text' : ''}">${row.comment || '-'}</span></td>
+                        <td>${esc(row.date || '-')}</td>
+                        <td>${esc(row.auditor || '-')}</td>
+                        <td><span class="badge" style="background:#64748b">${esc(row.sbu || '-')}</span></td>
+                        <td><strong>${esc(row.line || '-')}</strong></td>
+                        <td>${esc(row.section || '-')}</td>
+                        <td style="font-weight: 500; color: #475569;">${esc(row.subcategory || '-')}</td>
+                        <td>${esc(row.question || '-')}</td>
+                        <td><span class="badge ${itemBadge}" style="${backgroundRule}">${esc(row.status || '-')}</span></td>
+                        <td><span class="${row.status === 'Fail' ? 'comment-text' : ''}">${esc(row.comment || '-')}</span></td>
                     </tr>
                 `;
             });
@@ -1592,7 +1594,7 @@
     function buildSectionNCRanking(failRows, sectionName) {
         const counts = {};
         failRows.filter(r => r.section === sectionName).forEach(r => {
-            const key = `${r.subcategory}|||${r.question}`;
+            const key = `${esc(r.subcategory)}|||${esc(r.question)}`;
             if (!counts[key]) {
                 counts[key] = { subcategory: r.subcategory || '-', question: r.question, count: 0 };
             }
@@ -1612,8 +1614,8 @@
             return `
                 <tr>
                     <td><span class="badge" style="background:${badgeColor}">#${row.rank}</span></td>
-                    <td style="font-weight:600; color:#475569;">${row.subcategory}</td>
-                    <td style="font-size:14px;">${row.question}</td>
+                    <td style="font-weight:600; color:#475569;">${esc(row.subcategory)}</td>
+                    <td style="font-size:14px;">${esc(row.question)}</td>
                     <td style="text-align:center; font-weight:bold; color:var(--danger);">${row.count}</td>
                 </tr>
             `;
@@ -1727,12 +1729,12 @@
                     <tbody>
                         ${matches.map(row => `
                             <tr>
-                                <td style="border: 1px solid #e2e8f0; padding: 6px; font-weight: bold;">${row.line}</td>
-                                <td style="border: 1px solid #e2e8f0; padding: 6px;">${row.section}</td>
-                                <td style="border: 1px solid #e2e8f0; padding: 6px; font-weight: 600;">${row.subcategory || '-'}</td>
-                                <td style="border: 1px solid #e2e8f0; padding: 6px;">${row.question}</td>
-                                <td style="border: 1px solid #e2e8f0; padding: 6px; text-align: center; font-weight: bold; color: ${row.status === 'Pass' ? '#16a34a' : (row.status === 'Fail' ? '#dc2626' : '#64748b')}">${row.status}</td>
-                                <td style="border: 1px solid #e2e8f0; padding: 6px; font-style: italic; color: #dc2626;">${row.comment || '-'}</td>
+                                <td style="border: 1px solid #e2e8f0; padding: 6px; font-weight: bold;">${esc(row.line)}</td>
+                                <td style="border: 1px solid #e2e8f0; padding: 6px;">${esc(row.section)}</td>
+                                <td style="border: 1px solid #e2e8f0; padding: 6px; font-weight: 600;">${esc(row.subcategory || '-')}</td>
+                                <td style="border: 1px solid #e2e8f0; padding: 6px;">${esc(row.question)}</td>
+                                <td style="border: 1px solid #e2e8f0; padding: 6px; text-align: center; font-weight: bold; color: ${row.status === 'Pass' ? '#16a34a' : (row.status === 'Fail' ? '#dc2626' : '#64748b')}">${esc(row.status)}</td>
+                                <td style="border: 1px solid #e2e8f0; padding: 6px; font-style: italic; color: #dc2626;">${esc(row.comment || '-')}</td>
                             </tr>
                         `).join('')}
                     </tbody>
