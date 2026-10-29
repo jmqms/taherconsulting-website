@@ -19,9 +19,35 @@
 
   function norm(v) { return v === null || v === undefined ? "" : String(v).trim(); }
 
-  function getJson(u) {
-    return fetch(u, { cache: "no-cache" })
-      .then(function (r) { if (!r.ok) throw new Error("HTTP " + r.status); return r.json(); });
+  // Preferred source: the signed-in-only backend endpoint (files kept private in Drive).
+  // Fallback: the static file in the repo (used until the Drive files are configured).
+  var MASTER_API_URL = "https://script.google.com/macros/s/AKfycbzZ2Kn-5XlYWyJL2x9eYwtuQwm9dWNX8okS47B4Bjh8OcMQkMhwuZEJapfPaW68ZVIZ/exec";
+  var raw = null;
+
+  function whenToken() {
+    return new Promise(function (resolve) {
+      var n = 0;
+      (function check() {
+        if (window.tcPickToken && window.tcPickToken()) return resolve(true);
+        if (++n > 240) return resolve(false);   // ~2 minutes, then use the static fallback
+        setTimeout(check, 500);
+      })();
+    });
+  }
+
+  function getJson(u, name) {
+    return whenToken().then(function (ok) {
+      if (!ok) return null;
+      return fetch(MASTER_API_URL, { method: "POST", headers: { "Content-Type": "text/plain;charset=utf-8" },
+        body: JSON.stringify({ action: "masterFile", name: name }) })
+        .then(function (r) { return r.json(); })
+        .then(function (d) { return d && !d.error && d.ok !== false ? d : null; })
+        .catch(function () { return null; });
+    }).then(function (d) {
+      if (d) return d;
+      return fetch(u, { cache: "no-cache" })
+        .then(function (r) { if (!r.ok) throw new Error("HTTP " + r.status); return r.json(); });
+    });
   }
 
   // File 1 (masterOrders.json) is the primary source. File 2 (masterOrders2.json) is only
@@ -30,8 +56,9 @@
     if (loading) return loading;
     // cache:"no-cache" = browser asks GitHub "changed?" and gets a tiny 304 when not,
     // so data is always fresh but repeat visits cost almost nothing.
-    loading = Promise.all([getJson(URL).catch(function () { return null; }), getJson(URL2).catch(function () { return null; }), getJson(URL3).catch(function () { return {}; })])
+    loading = Promise.all([getJson(URL, "orders1").catch(function () { return null; }), getJson(URL2, "orders2").catch(function () { return null; }), getJson(URL3, "override").catch(function () { return {}; })])
       .then(function (res) {
+        raw = res;
         var a = res[0], b = res[1], ov = res[2] || {};
         if (!a && !b) throw new Error("no local master order data");
         var rows1 = (a && a.data) || [], rows2 = (b && b.data) || [];
@@ -128,6 +155,7 @@
   window.MasterOrder = {
     handles: function (action) { return !!ACTIONS[action]; },
     preload: load,
+    files: function () { return load().then(function () { return raw || [null, null, {}]; }); },
     handle: function (p, flavor) {
       return load().then(function (db) {
         if (!db) return null;

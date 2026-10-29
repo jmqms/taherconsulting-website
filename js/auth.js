@@ -70,8 +70,8 @@ async function handleLogin(event) {
         return;
       }
 
-      const session = { name: data.name, designation: data.designation || data.role || "", role: data.role || data.designation || "", loggedInAt: Date.now() };
-      const store = remember ? localStorage : sessionStorage;
+      const session = { name: data.name, designation: data.designation || data.role || "", role: data.role || data.designation || "", token: data.token || "", loggedInAt: Date.now() };
+      const store = remember ? localStorage : sessionStorage; // server token expires after 6h; user is asked to sign in again
       store.setItem("tc_session", JSON.stringify(session));
 
       msg.textContent = "Login successful — redirecting…";
@@ -102,7 +102,14 @@ async function handleLogin(event) {
 
 function getSession() {
   const raw = localStorage.getItem("tc_session") || sessionStorage.getItem("tc_session");
-  return raw ? JSON.parse(raw) : null;
+  if (!raw) return null;
+  try {
+    const s = JSON.parse(raw);
+    if (s && s.token) return s;
+  } catch (e) {}
+  localStorage.removeItem("tc_session");      // old / forged session with no server token
+  sessionStorage.removeItem("tc_session");
+  return null;
 }
 
 function requireLogin() {
