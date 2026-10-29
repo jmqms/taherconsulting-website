@@ -194,8 +194,6 @@
   .tpl-minimal .pill b{color:var(--ink);}
   .tpl-minimal .cc-seal{display:none;}
 </style>
-<script src="js/tc-fetch.js"></script>
-<script>function esc(s){return (s==null?'':String(s)).replace(/[&<>"']/g,function(c){return {'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c];});}</script>
 </head>
 <style>
   /* ================= AZURE PANEL TEMPLATE ================= */
@@ -784,9 +782,9 @@ function renderCompRows(){
     const row = document.createElement('div');
     row.className = 'three-col comp-row';
     row.innerHTML = `
-      <input type="text" value="${esc(c.name)}" data-idx="${i}" data-field="name">
-      <input type="number" value="${esc(c.total)}" data-idx="${i}" data-field="total" min="0">
-      <input type="number" value="${esc(c.achieved)}" data-idx="${i}" data-field="achieved" min="0">
+      <input type="text" value="${c.name}" data-idx="${i}" data-field="name">
+      <input type="number" value="${c.total}" data-idx="${i}" data-field="total" min="0">
+      <input type="number" value="${c.achieved}" data-idx="${i}" data-field="achieved" min="0">
       <button class="rm-btn" data-idx="${i}" title="Remove">×</button>
     `;
     compRows.appendChild(row);
@@ -834,9 +832,9 @@ function renderMatrixRows(){
     const div = document.createElement('div');
     div.className = 'matrix-row';
     div.innerHTML = `
-      <input type="text" value="${esc(row.name)}" data-idx="${i}" data-field="name">
-      <input type="number" value="${esc(row.min)}" data-idx="${i}" data-field="min" min="0" max="100">
-      <input type="color" value="${esc(row.color)}" data-idx="${i}" data-field="color">
+      <input type="text" value="${row.name}" data-idx="${i}" data-field="name">
+      <input type="number" value="${row.min}" data-idx="${i}" data-field="min" min="0" max="100">
+      <input type="color" value="${row.color}" data-idx="${i}" data-field="color">
     `;
     matrixRowsEl.appendChild(div);
   });
@@ -1061,7 +1059,7 @@ function render(){
   components.forEach(c=>{
     const p = c.total>0 ? (c.achieved/c.total*100) : 0;
     const tr = document.createElement('tr');
-    tr.innerHTML = `<td>${esc(c.name||'—')}</td><td>${esc(c.total)}</td><td>${esc(c.achieved)}</td><td>${c.total>0?p.toFixed(1)+'%':'—'}</td>`;
+    tr.innerHTML = `<td>${c.name||'—'}</td><td>${c.total}</td><td>${c.achieved}</td><td>${c.total>0?p.toFixed(1)+'%':'—'}</td>`;
     body.appendChild(tr);
   });
   document.getElementById('scFootTotal').textContent = total;

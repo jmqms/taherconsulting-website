@@ -2,10 +2,5 @@ User-agent: *
 Allow: /
 Disallow: /login.html
 Disallow: /dashboard.html
-Disallow: /audit.html
-Disallow: /combined-dashboard.html
-Disallow: /edit-requests.html
-Disallow: /login-history.html
-Disallow: /data/
 
 Sitemap: https://taherconsultingbd.com/sitemap.xml
