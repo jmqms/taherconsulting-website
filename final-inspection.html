@@ -272,7 +272,7 @@ const INSPECTION_LEVELS = ['General I','General II','General III','S-1','S-2','S
 const AQL_OPTIONS = [0,0.065,0.1,0.15,0.25,0.4,0.65,1.0,1.5,2.5,4.0,6.5,10];
 const DEFECT_GROUPS = ['Critical Red Flag','Group-A','Group-B','Group-C','Group-D'];
 const DEFECT_CATEGORIES = ['Assembling / Sewing','Finishing','Stitch & Seam','Fabric / Material','Embellishment / Print / Trims','Measurement-related','Packing-related','Other'];
-const SIGNOFF_ROLES = ['Inspector','Factory QA / Representative','Quality Manager (JMF)','Buyer / Client Representative'];
+const SIGNOFF_ROLES = ['Inspector','Factory QA / Representative','Quality Manager (JMF)','Production Responsible'];
 
 const QUANTITY_PACKING_CHECKPOINT_GROUPS = [
   {
@@ -1728,7 +1728,7 @@ async function generatePdfReport(srcData){
       if (st){ data.cell.styles.textColor = st.color; data.cell.styles.fillColor = st.fill; data.cell.styles.fontStyle = 'bold'; }
     }});
     table({ theme:'grid', head:[['Role','Name','Signature / Date']],
-      body: S.signOff.map(s=>[s.role,s.name||'-',s.signature||'-']) });
+      body: (syncInspectorSign_(), S.signOff).map(s=>[s.role,s.name||'-',s.signature||'-']) });
     if (S.remarks){
       heading('Overall Remarks');
       doc.setFont('helvetica','normal'); doc.setFontSize(9);
@@ -1778,7 +1778,12 @@ function filteredReports(){
 
 /* ============================= RENDER: SHELL ============================= */
 
+function syncInspectorSign_(){
+  const so = state.signOff && state.signOff[0];
+  if (so && so.role === 'Inspector' && state.header && state.header.inspectorName) so.name = state.header.inspectorName;
+}
 function render(){
+  syncInspectorSign_();
   const app = document.getElementById('app');
   app.innerHTML = `
     ${renderTopbar()}
@@ -2934,7 +2939,7 @@ async function saveCurrentReport_(isFinal){
     header: state.header, allQtyCheck: state.allQtyCheck, cartonSelection: state.cartonSelection, colorQty: state.colorQty,
     sampleOverview: state.sampleOverview, styleOverviewPics: state.styleOverviewPics, cartonQtySelection: state.cartonQtySelection, packingCheckpoints: state.packingCheckpoints,
     cartonDims: state.cartonDims, defects: state.defects, noDefectsFound: state.noDefectsFound, testCheckpoints: state.testCheckpoints, measurements: state.measurements,
-    signOff: state.signOff, remarks: state.remarks,
+    signOff: (syncInspectorSign_(), state.signOff), remarks: state.remarks,
   })));
   stripPictureData_(record);
   record.id = state.editingId || uid();

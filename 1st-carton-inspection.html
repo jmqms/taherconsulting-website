@@ -172,7 +172,7 @@ const CHECKLIST_GROUPS = [
   { group: 'Carton Marking Verification', items: ['Style/Color/PO Number Correct', 'Size Information Correct', 'Quantity Correct', 'Destination Correct', 'Shipping Mark Correct', 'Carton Numbering Correct', 'Barcode Label Correct'] }
 ];
 const SUMMARY_ROWS = [{ group: 'Documents & Packing Instruction Review', label: 'Documents & Packing Instruction Review' }, { group: 'Product Verification', label: 'Product Verification' }, { group: 'Polybag Inspection', label: 'Polybag Inspection' }, { group: 'Folding & Presentation Check', label: 'Folding & Presentation' }, { group: 'Label & Barcode Verification', label: 'Labeling & Barcode Verification' }, { group: 'Assortment Verification', label: 'Assortment Verification' }, { group: 'Carton Inspection (Weight & Dimension Verification)', label: 'Carton Inspection_Weight & Dimension' }, { group: 'Carton Marking Verification', label: 'Carton Marking Verification' }];  // [{group, label}] group = exact checklist group name
-const SIGNOFF_ROLES = ['Inspector','Factory QA / Representative','Quality Manager (JMF)','Buyer / Client Representative'];
+const SIGNOFF_ROLES = ['Inspector','Factory QA / Representative','Quality Manager (JMF)','Production Responsible'];
 // Only these two groups get a photo-capture control, pinned to the
 // top-right corner of their group header row in the checklist table.
 const PHOTO_GROUPS = CHECKLIST_GROUPS.slice(0,2).map(g=>g.group);
@@ -205,6 +205,7 @@ function emptyReportState(){
     comments:'',
     decision:'',
     signOff: SIGNOFF_ROLES.map(role => ({ role, name:'', signature:'' })),
+    decisionManual: false,
   };
 }
 let state = Object.assign({
@@ -407,6 +408,11 @@ function groupResult_(groupName){
   if (results.length < rows.length) return 'Hold';
   return 'Pass';
 }
+function autoDecision_(overall){
+  if (state.decisionManual) return;
+  if (overall === 'Pass') state.decision = 'Accepted';
+  else if (overall === 'Fail') state.decision = 'Rework Required';
+}
 function overallResult_(){
   const aql = aqlFor();
   const groupResults = SUMMARY_ROWS.map(r => groupResult_(r.group));
@@ -418,7 +424,12 @@ function overallResult_(){
 }
 
 /* ============================= RENDER ============================= */
+function syncInspectorSign_(){
+  const so = state.signOff && state.signOff[0];
+  if (so && so.role === 'Inspector' && state.header && state.header.inspectorName) so.name = state.header.inspectorName;
+}
 function render(){
+  syncInspectorSign_();
   const app = document.getElementById('app');
   const sy = window.scrollY;
   app.innerHTML = `
@@ -521,7 +532,7 @@ function renderOrderInfoPanel(h){
         </select>` : `<input type="text" data-color-type placeholder="Type color, press Enter to add">`}
       </div>
       <div class="f"><span class="field-label">Fiber / Fabric Composition</span><input type="text" data-hf="fiberComposition" value="${esc(h.fiberComposition)}"></div>
-      <div class="f"><span class="field-label">Product Type</span><input type="text" data-hf="productType" value="${esc(h.productType)}"></div>
+      <div class="f"><span class="field-label">Product Type</span><select data-hf="productType"><option value="">-- select --</option>${['Wash','Non-Wash'].concat(h.productType && ['Wash','Non-Wash'].indexOf(h.productType)<0 ? [h.productType] : []).map(o=>`<option value="${esc(o)}" ${h.productType===o?'selected':''}>${esc(o)}</option>`).join('')}</select></div>
       <div class="f"><span class="field-label">Carton Number</span><input type="text" data-hf="cartonNumber" value="${esc(h.cartonNumber)}"></div>
     </div>
   </div>`;
@@ -630,6 +641,7 @@ function renderSummaryPanel(aql){
   }).join('');
   const workResult = aql.result==='FAIL'?'Fail':(aql.result==='PASS'?'Pass':'Hold');
   const overall = overallResult_();
+  autoDecision_(overall);
   return `
   <div class="panel panel-pad section-block">
     <h2 class="section-title">Summary</h2>
@@ -795,7 +807,7 @@ function bindEvents(){
   const commentsEl = document.getElementById('f_comments');
   if (commentsEl) commentsEl.addEventListener('input', ()=>{ state.comments = commentsEl.value; });
   const decisionEl = document.getElementById('f_decision');
-  if (decisionEl) decisionEl.addEventListener('change', ()=>{ state.decision = decisionEl.value; render(); });
+  if (decisionEl) decisionEl.addEventListener('change', ()=>{ state.decision = decisionEl.value; state.decisionManual = true; render(); });
 
   const saveBtn = document.getElementById('saveBtn');
   if (saveBtn) saveBtn.addEventListener('click', saveInspection);
@@ -842,6 +854,7 @@ function openReport_(r){
   if (r.header && !r.header.colors) r.header.colors = r.header.color ? String(r.header.color).split(/\s*,\s*/) : [];
   Object.assign(state, JSON.parse(JSON.stringify({ header:r.header, checklist:r.checklist, groupPictures:r.groupPictures||PHOTO_GROUPS.reduce((o,g)=>{o[g]=[];return o;},{}), defects:r.defects, noDefectsFound:r.noDefectsFound, comments:r.comments, decision:r.decision, signOff:r.signOff||SIGNOFF_ROLES.map(role=>({role,name:'',signature:''})) })));
   state.editingId = r.id;
+  { const ov = overallResult_(); state.decisionManual = !!state.decision && state.decision !== (ov==='Pass'?'Accepted':ov==='Fail'?'Rework Required':state.decision); }
   state.anySbu = !!(r.header && r.header.prodSbuDiffers);
   state.tab = 'entry';
   render();
@@ -871,7 +884,7 @@ function saveInspection(){
     noDefectsFound: state.noDefectsFound,
     comments: state.comments,
     decision: state.decision,
-    signOff: JSON.parse(JSON.stringify(state.signOff)),
+    signOff: (syncInspectorSign_(), JSON.parse(JSON.stringify(state.signOff))),
     overall: overallResult_(),
     aql: (function(){ const a = aqlFor(), t = defectTotals();
       return { sampleSize:a.sampleSize, codeLetter:a.codeLetter, critAllowed:a.critAllowed, majAllowed:a.majAllowed, minAllowed:a.minAllowed,
@@ -1058,7 +1071,7 @@ async function exportPdf(){
   doc.autoTable({
     startY: y, margin:{left:marginX, right:marginX}, theme:'grid', styles:{ fontSize:8.5, cellPadding:3, minCellHeight:10 },
     head: [['Role','Name','Signature / Date']],
-    body: state.signOff.map(s=>[s.role, s.name||'', s.signature||'']),
+    body: (syncInspectorSign_(), state.signOff).map(s=>[s.role, s.name||'', s.signature||'']),
     headStyles:{ fillColor:[246,245,241], textColor:[31,29,26], fontSize:8 },
   });
   y = doc.lastAutoTable.finalY + 10;
