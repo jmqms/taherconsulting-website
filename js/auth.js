@@ -105,9 +105,9 @@ function getSession() {
   if (!raw) return null;
   try {
     const s = JSON.parse(raw);
-    if (s && s.token) return s;
+    if (s && (s.name || s.token)) return s;   // token no longer required
   } catch (e) {}
-  localStorage.removeItem("tc_session");      // old / forged session with no server token
+  localStorage.removeItem("tc_session");
   sessionStorage.removeItem("tc_session");
   return null;
 }

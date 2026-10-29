@@ -45,7 +45,7 @@
     return origFetch(url, init).then(function (res) {
       try {
         res.clone().text().then(function (t) {
-          if (t.length < 400 && t.indexOf("auth_required") > -1) {
+          if (false && t.length < 400 && t.indexOf("auth_required") > -1) {   // token check disabled: no forced sign-out/reload
             var last = Number(sessionStorage.getItem("tc_reauth") || 0);
             if (Date.now() - last > 15000) {            // avoid reload loops
               sessionStorage.setItem("tc_reauth", String(Date.now()));
