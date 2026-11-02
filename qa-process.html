@@ -82,6 +82,7 @@
   }
 </style>
 <script src="js/edit-guard.js"></script>
+<script src="js/tc-fetch.js"></script>
 </head>
 <body>
 <div id="tc-guard-bar" style="background:#1B211D;color:#F1F0EA;font-family:'IBM Plex Mono',monospace;font-size:12.5px;letter-spacing:.04em;padding:10px 20px;display:flex;justify-content:space-between;align-items:center;position:sticky;top:0;z-index:9999">
@@ -176,7 +177,7 @@ const ALL_STAGES = [...PROCESS_STAGES, ...QA_STAGES];
 
 const QA_API_URL = "https://script.google.com/macros/s/AKfycbzZ2Kn-5XlYWyJL2x9eYwtuQwm9dWNX8okS47B4Bjh8OcMQkMhwuZEJapfPaW68ZVIZ/exec";
 
-function esc(s){ return (s||"").toString().replace(/[&<>"]/g, c => ({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;"}[c])); }
+function esc(s){ return (s||"").toString().replace(/[&<>"']/g, c => ({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c])); }
 
 // ---- Sidebar nav build ----
 const processNav = document.getElementById("processNav");
@@ -702,7 +703,7 @@ async function ovLoadIrMap() {
   ovIrMap = {};
   try {
     // file 1 first; file 2 only supplies IRs that file 1 does not have
-    const [j1, j2, ov] = await Promise.all(["data/masterOrders.json", "data/masterOrders2.json", "data/sbuOverride.json"].map(u => fetch(u).then(r => r.ok ? r.json() : { data: [] }).catch(() => ({ data: [] }))));
+    let [j1, j2, ov] = await window.MasterOrder.files(); j1 = j1 || { data: [] }; j2 = j2 || { data: [] }; ov = ov || {};
     const have = {}; (j1.data || []).forEach(r => { have[String(r["IR No"] || "").trim()] = 1; });
     const j = { data: (j1.data || []).concat((j2.data || []).filter(r => !have[String(r["IR No"] || "").trim()])) };
     (j.data || []).forEach(r => {
