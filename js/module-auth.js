@@ -126,13 +126,16 @@ function tcInitModuleAuth(opts) {
       pwEl.focus();
     });
     if (allowGuest) {
-      document.getElementById("tc-module-guest").addEventListener("click", () => {
-        // note the guest visit in the login history (fire-and-forget; never blocks the page)
+      document.getElementById("tc-module-guest").addEventListener("click", async () => {
+        // logs the guest visit and gets a view-only token (the server refuses every write for it)
+        let token = "";
         try {
-          fetch(MODULE_AUTH_API_URLS[0], { method: "POST", headers: { "Content-Type": "text/plain;charset=utf-8" },
-            body: JSON.stringify({ action: "logGuest", sheet: opts.sheetName, ua: navigator.userAgent }) }).catch(() => {});
+          const r = await fetch(MODULE_AUTH_API_URLS[0], { method: "POST", headers: { "Content-Type": "text/plain;charset=utf-8" },
+            body: JSON.stringify({ action: "logGuest", sheet: opts.sheetName, ua: navigator.userAgent }) });
+          const d = JSON.parse(await r.text());
+          if (d && d.token) token = d.token;
         } catch (e) {}
-        applySession({ name: "Guest", designation: "Guest", role: "guest" });
+        applySession({ name: "Guest", designation: "Guest", role: "guest", token: token });
       });
     }
     setTimeout(() => { const u = document.getElementById("tc-module-userid"); if (u) u.focus(); }, 50);
@@ -203,7 +206,8 @@ function tcInitModuleAuth(opts) {
     applySession({
       name: data.name,
       designation: data.designation || data.role || "",
-      role: data.role || data.designation || ""
+      role: data.role || data.designation || "",
+      token: data.token || ""
     });
   }
 
