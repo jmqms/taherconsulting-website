@@ -37,6 +37,35 @@
     } catch (e) {}
   }
 
+  function clearModuleSessions() {
+    var found = false;
+    try {
+      for (var i = sessionStorage.length - 1; i >= 0; i--) {
+        var k = sessionStorage.key(i);
+        if (k && k.indexOf("tc_module_") === 0) { sessionStorage.removeItem(k); found = true; }
+      }
+    } catch (e) {}
+    return found;
+  }
+
+  function showBanner() {
+    if (document.getElementById("tc-auth-banner") || !document.body) return;
+    var d = document.createElement("div");
+    d.id = "tc-auth-banner";
+    d.style.cssText = "position:fixed;top:0;left:0;right:0;z-index:99999;background:#b3261e;color:#fff;padding:10px 14px;font:13px sans-serif;text-align:center";
+    d.textContent = "The server could not verify your login. Please sign out and sign in again. If this keeps happening, tell the administrator (backend not authorized / not deployed).";
+    document.body.appendChild(d);
+  }
+
+  function onAuthRequired() {
+    var last = Number(sessionStorage.getItem("tc_reauth") || 0);
+    if (Date.now() - last < 60000) { showBanner(); return; }   // second time within a minute: stop, show message (no loop)
+    sessionStorage.setItem("tc_reauth", String(Date.now()));
+    // Prefer to drop only the module login so the person stays signed in to the main portal.
+    if (!clearModuleSessions()) clearSessions();
+    location.reload();
+  }
+
   window.fetch = function (input, init) {
     var url = typeof input === "string" ? input : (input instanceof URL ? input.href : null);
     if (!url || url.indexOf("https://script.google.com/") !== 0) return origFetch(input, init);
@@ -45,14 +74,7 @@
     return origFetch(url, init).then(function (res) {
       try {
         res.clone().text().then(function (t) {
-          if (t.length < 400 && t.indexOf("auth_required") > -1) {
-            var last = Number(sessionStorage.getItem("tc_reauth") || 0);
-            if (Date.now() - last > 15000) {            // avoid reload loops
-              sessionStorage.setItem("tc_reauth", String(Date.now()));
-              clearSessions();
-              location.reload();
-            }
-          }
+          if (t.length < 400 && t.indexOf("auth_required") > -1) onAuthRequired();
         }).catch(function () {});
       } catch (e) {}
       return res;
