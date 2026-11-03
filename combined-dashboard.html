@@ -133,6 +133,7 @@
   </div>
 </div>
 
+<script>function tcEsc(s){return String(s==null?"":s).replace(/[&<>"']/g,function(c){return {"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c];});}</script>
 <script>
 const AUDIT_API_URL = "https://script.google.com/macros/s/AKfycbyXBkqRch0vlUkcGnYiJDKsxjXtRe4cA2q_eeJJ1Q659MIW1FTzVowOfNJBo0bYTes-/exec";
 const QC_API_URL = "https://script.google.com/macros/s/AKfycbwoIMazpyWoPHFQ6ZzgTgebECKPcRk0YOR5sjje18P5U93-9ZBsdPtkCN8ZrMBRv9Eg/exec";
@@ -212,7 +213,7 @@ async function loadNC(start, end, sbuFilter){
       `<tr><td>${l}</td><td>${values[i]}</td></tr>`
     ).join("") || `<tr><td colspan="2" class="loading">No data.</td></tr>`;
   } catch (err) {
-    document.querySelector("#ncTable tbody").innerHTML = `<tr><td colspan="2" class="err">${err.message}</td></tr>`;
+    document.querySelector("#ncTable tbody").innerHTML = `<tr><td colspan="2" class="err">${tcEsc(err.message)}</td></tr>`;
   }
 }
 
@@ -285,7 +286,7 @@ async function loadDHU(start, end, sbuFilter){
       `<tr><td>${l}</td><td>${sewingDhu[i].toFixed(1)}%</td><td>${finishingDhu[i].toFixed(1)}%</td></tr>`
     ).join("") || `<tr><td colspan="3" class="loading">No data.</td></tr>`;
   } catch (err) {
-    document.querySelector("#dhuTable tbody").innerHTML = `<tr><td colspan="3" class="err">${err.message}</td></tr>`;
+    document.querySelector("#dhuTable tbody").innerHTML = `<tr><td colspan="3" class="err">${tcEsc(err.message)}</td></tr>`;
   }
 }
 
@@ -323,7 +324,7 @@ async function loadQAOverview(startVal, endVal){
       options: { plugins: { legend: { position: "bottom" } } }
     });
   } catch (err) {
-    document.getElementById("qaStageChart").outerHTML = `<div class="err">${err.message}</div>`;
+    document.getElementById("qaStageChart").outerHTML = `<div class="err">${tcEsc(err.message)}</div>`;
   }
 }
 

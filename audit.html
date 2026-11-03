@@ -1416,7 +1416,7 @@
         })
         .catch(err => {
             if (thisRequestId !== dashboardRequestSeq) return;
-            tableBody.innerHTML = `<tr><td colspan="6" style="text-align:center; color:var(--danger);">Cloud API Exception: ${err.message}</td></tr>`;
+            tableBody.innerHTML = `<tr><td colspan="6" style="text-align:center; color:var(--danger);">Cloud API Exception: ${esc(err.message)}</td></tr>`;
         });
     }
 
@@ -1452,7 +1452,7 @@
             });
         })
         .catch(err => {
-            tableBody.innerHTML = `<tr><td colspan="9" style="text-align:center; color:var(--danger);">Endpoint Sync Exception: ${err.message}</td></tr>`;
+            tableBody.innerHTML = `<tr><td colspan="9" style="text-align:center; color:var(--danger);">Endpoint Sync Exception: ${esc(err.message)}</td></tr>`;
         });
     }
 
@@ -1570,7 +1570,7 @@
         })
         .catch(err => {
             if (thisRequestId !== analysisRequestSeq) return;
-            mainAnalyticsTable.innerHTML = `<tr><td colspan="5" style="text-align:center; color:var(--danger);">Analysis processing error: ${err.message}</td></tr>`;
+            mainAnalyticsTable.innerHTML = `<tr><td colspan="5" style="text-align:center; color:var(--danger);">Analysis processing error: ${esc(err.message)}</td></tr>`;
         });
     }
 
@@ -1650,8 +1650,8 @@
         })
         .catch(err => {
             if (thisRequestId !== ncRequestSeq) return;
-            sewingBody.innerHTML = `<tr><td colspan="4" style="text-align:center; color:var(--danger);">NC Analysis error: ${err.message}</td></tr>`;
-            finishingBody.innerHTML = `<tr><td colspan="4" style="text-align:center; color:var(--danger);">NC Analysis error: ${err.message}</td></tr>`;
+            sewingBody.innerHTML = `<tr><td colspan="4" style="text-align:center; color:var(--danger);">NC Analysis error: ${esc(err.message)}</td></tr>`;
+            finishingBody.innerHTML = `<tr><td colspan="4" style="text-align:center; color:var(--danger);">NC Analysis error: ${esc(err.message)}</td></tr>`;
         });
     }
 
