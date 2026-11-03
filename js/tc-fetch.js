@@ -7,6 +7,12 @@
   var origFetch = window.fetch.bind(window);
 
   function pickToken() {
+    try { // this page's own module session first (never another module's token)
+      if (window.__tcModuleKey) {
+        var own = JSON.parse(sessionStorage.getItem("tc_module_" + window.__tcModuleKey));
+        if (own && own.token) return own.token;
+      }
+    } catch (e) {}
     try { // a module's own session first (so a Guest module session stays read-only on the server)
       for (var i = 0; i < sessionStorage.length; i++) {
         var k = sessionStorage.key(i);

@@ -33,6 +33,7 @@ const MODULE_AUTH_API_URLS = [
 
 function tcInitModuleAuth(opts) {
   const sessionKey = "tc_module_" + opts.moduleKey;
+  window.__tcModuleKey = opts.moduleKey;
   window.TC_IS_GUEST = false;
   window.TC_MODULE_SESSION = null;
 
