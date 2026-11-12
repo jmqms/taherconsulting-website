@@ -71,6 +71,10 @@
     return "Done";
   }
 
+  // Sample size of a saved report: the AQL plan's sample size (1st Bundle / Sewing / Finishing / 1st Carton
+  // keep it in r.aql.sampleSize; Pre-Final / Final keep it in r.sampleSize).
+  function sampleOf(r) { return Number(r && r.aql && r.aql.sampleSize) || Number(r && r.sampleSize) || 0; }
+
   function loadAll(force) {
     if (cache && !force) return Promise.resolve(cache);
     var jobs = TYPES.map(function (t) {
@@ -91,7 +95,7 @@
           if (h.inspectionType && h.inspectionType !== x.t.name) return;
           data.recs.push({
             type: x.t.key, ir: norm(h.ir), sbu: norm(h.sbu), buyer: norm(h.buyer), style: norm(h.styleName),
-            id: r.id || "", page: x.t.page, decision: norm(r.decision), date: normDate(h.date), inspector: canonInsp(h.inspectorName), outcome: outcomeOf(r), r: r
+            id: r.id || "", page: x.t.page, decision: norm(r.decision), date: normDate(h.date), inspector: canonInsp(h.inspectorName), outcome: outcomeOf(r), samples: sampleOf(r), r: r
           });
         });
       });
@@ -140,8 +144,15 @@
         (!f.from || x.date >= f.from) && (!f.to || x.date <= f.to) &&
         (!f.buyer || x.buyer === f.buyer) && (!f.insp || x.inspector === f.insp) && (!f.type || x.type === f.type);
     });
-    var out = { rows: rows, byDay: {}, byMonth: {}, byBuyer: {}, byInsp: {}, matrix: {}, styles: {} };
+    var out = { rows: rows, byDay: {}, byMonth: {}, byBuyer: {}, byInsp: {}, matrix: {}, styles: {}, byType: {}, byStyle: {}, totalSamples: 0 };
     rows.forEach(function (x) {
+      var sm = x.samples || 0;
+      out.totalSamples += sm;
+      var bt = out.byType[x.type] = out.byType[x.type] || { n: 0, samples: 0 };
+      bt.n++; bt.samples += sm;
+      var sk = x.ir || "(no IR)", bs = out.byStyle[sk] = out.byStyle[sk] || { label: x.style || x.ir || "(no IR)", n: 0, samples: 0, types: {} };
+      if (!bs.label || bs.label === "(no IR)") bs.label = x.style || bs.label;
+      bs.n++; bs.samples += sm; bs.types[x.type] = (bs.types[x.type] || 0) + 1;
       out.byDay[x.date] = (out.byDay[x.date] || 0) + 1;
       var m = x.date.slice(0, 7);
       out.byMonth[m] = out.byMonth[m] || {};
@@ -157,6 +168,25 @@
       out.matrix[b][x.inspector] = (out.matrix[b][x.inspector] || 0) + 1;
     });
     return out;
+  }
+
+  // Style File / Risk Assessment / Techpack / PP Meeting / Size Set are ticked inside the 1st Bundle
+  // report. For every style (IR) in the filtered rows, read its latest 1st Bundle report.
+  function docChecks(rows) {
+    var latest = {};
+    rows.forEach(function (x) { if (x.type === "1st Bundle" && x.ir && (!latest[x.ir] || x.date > latest[x.ir].date)) latest[x.ir] = x; });
+    var irs = Object.keys(latest);
+    return {
+      total: irs.length,
+      items: STAGES.filter(function (s) { return s.doc; }).map(function (s) {
+        var c = { yes: 0, no: 0, na: 0, open: 0 };
+        irs.forEach(function (ir) {
+          var it = (latest[ir].r.checklist || []).filter(function (k) { return k.label === s.doc; })[0], v = it ? norm(it.status) : "";
+          if (v === "Yes") c.yes++; else if (v === "No") c.no++; else if (v === "N/A") c.na++; else c.open++;
+        });
+        return { label: s.label, c: c };
+      })
+    };
   }
 
   // ---------------- UI ----------------
@@ -341,9 +371,23 @@
         var tableKeys = inspKeys.slice();
         if ($("qxAll").checked && window.PSITeam) PSITeam.team.forEach(function (m) { if (!a.byInsp[m.name] && (!f.insp || f.insp === m.name)) tableKeys.push(m.name); });
         var kpi = function (n, l) { return '<div class="qx-card qx-kpi"><b>' + n + "</b><span>" + l + "</span></div>"; };
+        var dc = docChecks(a.rows);
+        var docKpi = function (it) {
+          var extra = [it.c.no ? it.c.no + " issue" + (it.c.no > 1 ? "s" : "") : "", it.c.open ? it.c.open + " not marked" : "", it.c.na ? it.c.na + " N/A" : ""].filter(Boolean).join(" · ");
+          return '<div class="qx-card qx-kpi"><b>' + it.c.yes + '<small style="font-size:13px;color:var(--ink-soft)"> / ' + dc.total + "</small></b><span>" + esc(it.label) + ' checked</span><div style="font:11px var(--mono);color:' + (it.c.no ? "var(--reject)" : "var(--ink-soft)") + ';margin-top:5px">' + (esc(extra) || "all clear") + "</div></div>";
+        };
+        var styKeys = Object.keys(a.byStyle).sort(function (x, y) { return a.byStyle[y].n - a.byStyle[x].n; });
+        var styTop = styKeys.slice(0, 15);
+        var typeName = f.type ? (TYPES.filter(function (t) { return t.key === f.type; })[0] || {}).name || f.type : "";
         $("qxBody").innerHTML =
           '<div class="qx-grid">' + kpi(a.rows.length, "Inspections") + kpi(Object.keys(a.styles).length, "Styles checked") + kpi(inspKeys.length, "Inspectors") +
           kpi(judged ? Math.round(pass / judged * 100) + "%" : "—", "Pass rate") + "</div>" +
+          '<div class="qx-sdt">Documents verified at 1st Bundle <span style="font:11px var(--mono);color:var(--ink-soft)">(' + dc.total + " style" + (dc.total === 1 ? "" : "s") + " with a 1st Bundle report in this filter)</span></div>" +
+          '<div class="qx-grid">' + dc.items.map(docKpi).join("") + "</div>" +
+          '<div class="qx-card"><b>Samples checked</b><div class="sub" style="margin:2px 0 12px">Pieces sampled per the AQL plan in every saved report in this filter.</div>' +
+          '<div class="qx-grid">' + kpi(a.totalSamples.toLocaleString(), "Total samples checked") + kpi(a.rows.length.toLocaleString(), "Total inspections") +
+          shownTypes.map(function (t) { var o = a.byType[t] || { n: 0, samples: 0 }; return kpi(o.samples.toLocaleString(), esc(t) + " samples (" + o.n + " insp.)"); }).join("") + "</div>" +
+          '<div id="cSam"></div></div>' +
           '<div class="qx-card"><b>Date-wise inspections</b><div id="cDay"></div></div>' +
           '<div class="qx-card"><b>Monthly — styles checked per inspection type</b><div id="cMon"></div></div>' +
           '<div class="qx-card"><b>Buyer-wise inspections</b><div id="cBuy"></div></div>' +
@@ -354,11 +398,17 @@
             return "<tr><td><b>" + esc(k) + "</b></td><td>" + esc(m ? m.code : "—") + "</td><td>" + esc(m ? m.designation : "Not in PSI list") + "</td>" + shownTypes.map(function (t) { return "<td>" + (o.types[t] || 0) + "</td>"; }).join("") +
               "<td>" + o.n + "</td><td>" + Object.keys(o.set).length + "</td><td>" + (o.judged ? Math.round(o.pass / o.judged * 100) + "%" : "—") + "</td></tr>";
           }).join("") || '<tr><td colspan="' + (shownTypes.length + 6) + '">No inspections in this range.</td></tr>') + "</tbody></table></div>" +
+          '<div class="qx-card"><b>' + (f.type ? "Styles checked in " + esc(typeName) + " (" + styKeys.length + " style" + (styKeys.length === 1 ? "" : "s") + ")" : "Style-wise inspections by type (" + styKeys.length + " style" + (styKeys.length === 1 ? "" : "s") + ")") + "</b>" +
+          (styKeys.length > styTop.length ? '<div class="sub" style="margin:2px 0 8px">Top ' + styTop.length + " styles by number of inspections shown.</div>" : "") + '<div id="cSty"></div></div>' +
           '<div class="qx-card qx-wrap"><b>Buyer-wise × Inspector-wise (inspections)</b><table><thead><tr><th>Buyer</th>' + inspKeys.map(function (k) { return "<th>" + esc(k) + "</th>"; }).join("") + "<th>Total</th></tr></thead><tbody>" +
           (buyKeys.map(function (b) {
             return "<tr><td><b>" + esc(b) + "</b></td>" + inspKeys.map(function (k) { return "<td>" + (a.matrix[b][k] || "") + "</td>"; }).join("") + "<td>" + a.byBuyer[b].n + "</td></tr>";
           }).join("") || '<tr><td colspan="3">No data.</td></tr>') + "</tbody></table></div>";
 
+        $("cSam").innerHTML = chartSvg("bar", shownTypes, [{ name: "Samples checked", color: PALETTE[2], data: shownTypes.map(function (t) { return (a.byType[t] || { samples: 0 }).samples; }) }], false);
+        $("cSty").innerHTML = f.type
+          ? chartSvg("bar", styTop.map(function (k) { return a.byStyle[k].label; }), [{ name: "Inspections", color: PALETTE[0], data: styTop.map(function (k) { return a.byStyle[k].n; }) }], false)
+          : chartSvg("bar", styTop.map(function (k) { return a.byStyle[k].label; }), shownTypes.map(function (t, i) { return { name: t, color: PALETTE[i % PALETTE.length], data: styTop.map(function (k) { return a.byStyle[k].types[t] || 0; }) }; }), true);
         $("cDay").innerHTML = chartSvg("line", days, [{ name: "Inspections", color: PALETTE[0], data: days.map(function (d) { return a.byDay[d]; }) }], false);
         $("cMon").innerHTML = chartSvg("bar", months, shownTypes.map(function (t, i) {
           return { name: t, color: PALETTE[i % PALETTE.length], data: months.map(function (m) { return Object.keys((a.byMonth[m] || {})[t] || {}).length; }) };
@@ -508,6 +558,6 @@
 
   window.QAInsights = {
     render: function (tab, el) { injectCss(); destroyCharts(); return tab === "overview" ? renderOverview(el) : tab === "dashboard" ? renderDashboard(el) : tab === "search" ? renderSearch(el) : renderTracking(el); },
-    _t: { tracking: tracking, aggregate: aggregate, outcomeOf: outcomeOf, normDate: normDate }
+    _t: { tracking: tracking, aggregate: aggregate, docChecks: docChecks, sampleOf: sampleOf, outcomeOf: outcomeOf, normDate: normDate }
   };
 })();
