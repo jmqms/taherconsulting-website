@@ -75,6 +75,15 @@
   // keep it in r.aql.sampleSize; Pre-Final / Final keep it in r.sampleSize).
   function sampleOf(r) { return Number(r && r.aql && r.aql.sampleSize) || Number(r && r.sampleSize) || 0; }
 
+  // Pre-Final / Final can be done by the buyer or a 3rd party in THEIR portal and only the outcome is entered here.
+  function sourceOf(r) { var s = norm(r && r.source); return s && s !== "Self" ? s : "Self"; }
+  function inspectorOf(r, h) {
+    var src = sourceOf(r);
+    if (src === "Self") return canonInsp(h.inspectorName);
+    var ex = (r && r.external) || {};
+    return src + " — " + (norm(ex.party) || norm(h.buyer) || "external");
+  }
+
   function loadAll(force) {
     if (cache && !force) return Promise.resolve(cache);
     var jobs = TYPES.map(function (t) {
@@ -95,7 +104,7 @@
           if (h.inspectionType && h.inspectionType !== x.t.name) return;
           data.recs.push({
             type: x.t.key, ir: norm(h.ir), sbu: norm(h.sbu), buyer: norm(h.buyer), style: norm(h.styleName), color: norm(h.color) || (r.colorQty || []).map(function (c) { return norm(c.color); }).filter(Boolean).join(", "),
-            id: r.id || "", page: x.t.page, decision: norm(r.decision), date: normDate(h.date), inspector: canonInsp(h.inspectorName), outcome: outcomeOf(r), samples: sampleOf(r), r: r
+            id: r.id || "", page: x.t.page, decision: norm(r.decision), date: normDate(h.date), inspector: inspectorOf(r, h), source: sourceOf(r), outcome: outcomeOf(r), samples: sampleOf(r), r: r
           });
         });
       });
@@ -133,7 +142,7 @@
       if (!L.last) return { s: s, status: "Pending" };
       var map = { Pass: "Done", Fail: "Issue", Rework: "In Progress", Done: "Done" };
       return { s: s, status: map[L.last.outcome] || "Done", rec: L.last, date: L.last.date, inspector: L.last.inspector,
-        note: L.last.outcome + (L.count > 1 ? " (" + L.count + " reports)" : "") };
+        note: L.last.outcome + (L.last.source !== "Self" ? " · " + L.last.source + " inspection" : "") + (L.count > 1 ? " (" + L.count + " reports)" : "") };
     });
   }
 
@@ -172,16 +181,58 @@
 
   // Inspection log (one table per inspection type) with an inline "See Details" row.
   var CHIP = { Pass: ["PASS", "Done"], Fail: ["FAIL", "Issue"], Rework: ["REWORK", "InProgress"], Done: ["DONE", "Done"] };
+  // Defects are saved two ways: {name,type,qty} (1st Bundle / Sewing / Finishing / 1st Carton)
+  // and {category,description,area,severity,qty} (Pre-Final / Final).
+  function defectList(r) {
+    return (r.defects || []).map(function (d) {
+      var name = norm(d.name) || [norm(d.category), norm(d.description)].filter(Boolean).join(" — ");
+      return { name: name || "(unnamed defect)", sev: norm(d.type || d.severity) || "—", qty: Number(d.qty) || (d.severity ? 1 : 0), area: norm(d.area) };
+    }).filter(function (d) { return d.name !== "(unnamed defect)" || d.qty; });
+  }
+  function failReasons(x) {
+    var r = x.r || {}, q = r.aql || {}, out = [], ds = defectList(r), tot = { Critical: 0, Major: 0, Minor: 0 };
+    if (x.source !== "Self") {
+      var ex = r.external || {};
+      out.push("Reported as " + (norm(ex.result) || x.outcome) + " by " + (norm(ex.party) || x.source) + (norm(ex.remarks) ? ": " + norm(ex.remarks) : ""));
+      return out;
+    }
+    ds.forEach(function (d) { if (tot[d.sev] !== undefined) tot[d.sev] += d.qty; });
+    if (q.result === "FAIL" && q.foundCritical != null) {
+      var over = [];
+      [["Critical", q.foundCritical, q.critAllowed], ["Major", q.foundMajor, q.majAllowed], ["Minor", q.foundMinor, q.minAllowed]].forEach(function (k) {
+        if (Number(k[1]) > Number(k[2])) over.push(k[0] + " " + k[1] + " found (allowed " + k[2] + ")");
+      });
+      out.push("AQL failed" + (over.length ? " — " + over.join(", ") : "") + (q.sampleSize ? " · sample " + q.sampleSize : ""));
+    } else if (/^fail/i.test(norm(r.result)) && ds.length) {
+      out.push("Defects found — Critical " + tot.Critical + ", Major " + tot.Major + ", Minor " + tot.Minor + (x.samples ? " · sample " + x.samples : ""));
+    }
+    (r.checklist || []).forEach(function (c) { if (norm(c.result) === "Fail") out.push("Checklist failed: " + norm(c.label) + (c.group ? " (" + norm(c.group) + ")" : "") + (norm(c.comments) ? " — " + norm(c.comments) : "")); });
+    (r.packingCheckpoints || []).forEach(function (c) { if (norm(c.result) === "Fail") out.push("Packing failed: " + norm(c.label) + (norm(c.comments) ? " — " + norm(c.comments) : "")); });
+    (r.testCheckpoints || []).forEach(function (c) { if (norm(c.result) === "Fail") out.push("Test failed: " + norm(c.label) + (norm(c.comments) ? " — " + norm(c.comments) : "")); });
+    var m = r.measurements || {}, oot = Number(m.ootReadingsManual) || 0;
+    if (oot > 0) out.push("Measurement: " + oot + " reading" + (oot > 1 ? "s" : "") + " out of tolerance" + (Number(m.readingsManual) ? " of " + m.readingsManual : ""));
+    if (/reject|rework/i.test(x.decision) && !out.length) out.push("Decision: " + x.decision);
+    return out;
+  }
   function detailGrid(x) {
     var r = x.r || {}, h = r.header || {}, q = r.aql || {};
     var lot = h.lotQty || q.lotQty || h.offerQty || h.orderQty || "";
-    var found = (q.foundCritical != null) ? "Cr " + q.foundCritical + " / Mj " + q.foundMajor + " / Mn " + q.foundMinor +
-      (q.critAllowed != null ? "  (allowed " + q.critAllowed + " / " + q.majAllowed + " / " + q.minAllowed + ")" : "") : (Array.isArray(r.defects) ? r.defects.length + " defect entr" + (r.defects.length === 1 ? "y" : "ies") : "");
-    var rows = [["Inspection", x.type], ["Date", x.date], ["SBU / Buyer", [x.sbu, x.buyer].filter(Boolean).join(" / ")], ["IR / Style", [x.ir, x.style].filter(Boolean).join(" / ")],
+    var ex = x.source !== "Self" ? (r.external || {}) : null;
+    var found = ex ? ((ex.critical || ex.major || ex.minor) ? "Cr " + (ex.critical || 0) + " / Mj " + (ex.major || 0) + " / Mn " + (ex.minor || 0) : "") : (q.foundCritical != null) ? "Cr " + q.foundCritical + " / Mj " + q.foundMajor + " / Mn " + q.foundMinor +
+      (q.critAllowed != null ? "  (allowed " + q.critAllowed + " / " + q.majAllowed + " / " + q.minAllowed + ")" : "") : "";
+    var rows = [["Inspection", x.type + (ex ? " — " + x.source + " inspection" : "")], ["Date", x.date], ["SBU / Buyer", [x.sbu, x.buyer].filter(Boolean).join(" / ")], ["IR / Style", [x.ir, x.style].filter(Boolean).join(" / ")],
       ["Color", x.color], ["Line", h.line], ["Lot / Carton Qty", lot], ["Sample size", x.samples || ""], ["Defects found", found],
-      ["AQL result", q.result || r.result || ""], ["Decision", x.decision], ["Inspector", x.inspector], ["Remarks", r.comments || r.remarks || ""]];
-    return '<div class="qx-sd">' + rows.filter(function (k) { return k[1] !== "" && k[1] != null; }).map(function (k) { return "<div><span>" + esc(k[0]) + "</span><b>" + esc(String(k[1])) + "</b></div>"; }).join("") + "</div>" +
-      '<div style="margin-top:8px">' + pdfLink(x) + "</div>";
+      ["AQL result", q.result || r.result || ""], ["Decision", x.decision], [ex ? "Inspected by" : "Inspector", x.inspector], ["Their inspector", ex ? ex.inspector : ""], ["Their report no.", ex ? ex.reportNo : ""], ["Remarks", ex ? "" : (r.comments || r.remarks || "")]];
+    var html = '<div class="qx-sd">' + rows.filter(function (k) { return k[1] !== "" && k[1] != null; }).map(function (k) { return "<div><span>" + esc(k[0]) + "</span><b>" + esc(String(k[1])) + "</b></div>"; }).join("") + "</div>";
+    var why = (x.outcome === "Fail" || x.outcome === "Rework") ? failReasons(x) : [];
+    if (why.length) html += '<div class="qx-sdt" style="color:var(--reject)">Why it failed</div><ul style="margin:0 0 4px 18px;font-size:13px">' + why.map(function (w) { return "<li>" + esc(w) + "</li>"; }).join("") + "</ul>";
+    var ds = defectList(r);
+    if (ex) return html + '<div style="margin-top:8px">' + pdfLink(x) + "</div>";
+    html += '<div class="qx-sdt">Defects' + (ds.length ? " (" + ds.length + ")" : "") + "</div>" +
+      (ds.length ? '<table><thead><tr><th>Defect</th><th>Severity</th><th>Qty</th><th>Area</th></tr></thead><tbody>' + ds.map(function (d) {
+        return "<tr><td>" + esc(d.name) + '</td><td><span class="qx-chip ' + (d.sev === "Critical" ? "st-Issue" : d.sev === "Major" ? "st-InProgress" : "st-Pending") + '">' + esc(d.sev) + "</span></td><td>" + d.qty + "</td><td>" + esc(d.area || "") + "</td></tr>";
+      }).join("") + "</tbody></table>" : '<div style="font-size:13px;color:var(--ink-soft)">' + (r.noDefectsFound ? "No defects found." : "No defects recorded.") + "</div>");
+    return html + '<div style="margin-top:8px">' + pdfLink(x) + "</div>";
   }
 
   // ---------------- UI ----------------
@@ -220,6 +271,10 @@
       '<div class="qx-total"><span>Total Style Order Qty</span><b>' + esc(String(d.totalQty || 0)) + "</b></div></div>";
   }
   function pdfLink(rec) {
+    if (rec && rec.source && rec.source !== "Self") {
+      var l = norm(rec.r && rec.r.external && rec.r.external.link);
+      return /^https?:\/\//i.test(l) ? '<a href="' + esc(l) + '" target="_blank" rel="noopener">Their report ↗</a>' : "—";
+    }
     return rec && rec.id && rec.page ? '<a href="' + rec.page + "?pdf=" + encodeURIComponent(rec.id) + '" target="_blank" rel="noopener">PDF ↓</a>' : "—";
   }
   function warnHTML(data) {
@@ -354,9 +409,12 @@
       $("qxB").innerHTML = opts(buyers, "", "All buyers"); $("qxI").innerHTML = opts(insps, "", "All inspectors");
       $("qxT").innerHTML = opts(TYPES.map(function (t) { return t.key; }), "", "All types");
 
+      var limits = {}, lastKey = "";
       function draw() {
         destroyCharts();
         f.from = $("qxFrom").value; f.to = $("qxTo").value; f.buyer = $("qxB").value; f.insp = $("qxI").value; f.type = $("qxT").value;
+        var key = [f.from, f.to, f.buyer, f.insp, f.type].join("|");
+        if (key !== lastKey) { limits = {}; lastKey = key; }
         var a = aggregate(recs, f), judged = 0, pass = 0;
         Object.keys(a.byInsp).forEach(function (k) { judged += a.byInsp[k].judged; pass += a.byInsp[k].pass; });
         var days = Object.keys(a.byDay).sort(), months = Object.keys(a.byMonth).sort();
@@ -375,14 +433,15 @@
           (shownTypes.map(function (t) {
             var list = a.rows.filter(function (x) { return x.type === t; }).sort(function (p, q) { return p.date < q.date ? 1 : p.date > q.date ? -1 : 0; });
             if (!list.length) return "";
-            var nm = (TYPES.filter(function (y) { return y.key === t; })[0] || {}).name || t;
-            return '<div class="qx-card qx-wrap"><b>' + esc(nm) + " (" + list.length + ")</b>" + (list.length > LOGMAX ? '<span style="font:11px var(--mono);color:var(--ink-soft)"> — latest ' + LOGMAX + " shown</span>" : "") +
+            var nm = (TYPES.filter(function (y) { return y.key === t; })[0] || {}).name || t, shown = limits[t] || LOGMAX;
+            return '<div class="qx-card qx-wrap"><b>' + esc(nm) + " (" + list.length + ")</b>" + (list.length > LOGMAX ? '<span style="font:11px var(--mono);color:var(--ink-soft)"> — latest ' + Math.min(shown, list.length) + " of " + list.length + " shown</span>" : "") +
               '<table style="margin-top:8px"><thead><tr><th>Date</th><th>SBU</th><th>Buyer</th><th>IR</th><th>Style</th><th>Color</th><th>By</th><th>Status</th><th></th></tr></thead><tbody>' +
-              list.slice(0, LOGMAX).map(function (x) {
+              list.slice(0, shown).map(function (x) {
                 var i = logRows.push(x) - 1, c = CHIP[x.outcome] || CHIP.Done;
                 return "<tr><td>" + esc(x.date) + "</td><td>" + esc(x.sbu || "—") + "</td><td>" + esc(x.buyer || "—") + "</td><td>" + esc(x.ir || "—") + "</td><td>" + esc(x.style || "—") + "</td><td>" + esc(x.color || "") +
                   "</td><td>" + esc(x.inspector) + '</td><td><span class="qx-chip st-' + c[1] + '">' + c[0] + '</span></td><td><button type="button" class="btn btn-ghost" data-qd="' + i + '">See details</button></td></tr>';
-              }).join("") + "</tbody></table></div>";
+              }).join("") + "</tbody></table>" +
+              (list.length > shown ? '<div style="text-align:center;margin-top:10px"><button type="button" class="btn btn-ghost" data-more="' + esc(t) + '">Show more (' + Math.min(LOGMAX, list.length - shown) + " more · " + (list.length - shown) + " remaining)</button></div>" : "") + "</div>";
           }).join("") || '<div class="qx-card"><div class="qx-empty">No inspection reports for this selection.</div></div>');
         var typeName = f.type ? (TYPES.filter(function (t) { return t.key === f.type; })[0] || {}).name || f.type : "";
         $("qxBody").innerHTML =
@@ -399,7 +458,7 @@
           "<th>Total</th><th>Styles</th><th>Pass rate</th></tr></thead><tbody>" +
           (tableKeys.map(function (k) {
             var o = a.byInsp[k] || { n: 0, pass: 0, judged: 0, set: {}, types: {} }, m = psiOf(k);
-            return "<tr><td><b>" + esc(k) + "</b></td><td>" + esc(m ? m.code : "—") + "</td><td>" + esc(m ? m.designation : "Not in PSI list") + "</td>" + shownTypes.map(function (t) { return "<td>" + (o.types[t] || 0) + "</td>"; }).join("") +
+            return "<tr><td><b>" + esc(k) + "</b></td><td>" + esc(m ? m.code : "—") + "</td><td>" + esc(m ? m.designation : (/^(Buyer|3rd Party) — /.test(k) ? "External inspection" : "Not in PSI list")) + "</td>" + shownTypes.map(function (t) { return "<td>" + (o.types[t] || 0) + "</td>"; }).join("") +
               "<td>" + o.n + "</td><td>" + Object.keys(o.set).length + "</td><td>" + (o.judged ? Math.round(o.pass / o.judged * 100) + "%" : "—") + "</td></tr>";
           }).join("") || '<tr><td colspan="' + (shownTypes.length + 6) + '">No inspections in this range.</td></tr>') + "</tbody></table></div>" +
           '<div class="qx-card"><b>' + (f.type ? "Styles checked in " + esc(typeName) + " (" + styKeys.length + " style" + (styKeys.length === 1 ? "" : "s") + ")" : "Style-wise inspections by type (" + styKeys.length + " style" + (styKeys.length === 1 ? "" : "s") + ")") + "</b>" +
@@ -410,6 +469,8 @@
           }).join("") || '<tr><td colspan="3">No data.</td></tr>') + "</tbody></table></div>" + logHTML;
 
         $("qxBody").onclick = function (e) {
+          var more = e.target.closest && e.target.closest("button[data-more]");
+          if (more) { var tk = more.getAttribute("data-more"); limits[tk] = (limits[tk] || LOGMAX) + LOGMAX; var y = window.pageYOffset; draw(); window.scrollTo(0, y); return; }
           var btn = e.target.closest && e.target.closest("button[data-qd]"); if (!btn) return;
           var tr = btn.closest("tr"), nx = tr.nextSibling;
           if (nx && nx.classList && nx.classList.contains("qx-detail")) { nx.parentNode.removeChild(nx); btn.textContent = "See details"; return; }
