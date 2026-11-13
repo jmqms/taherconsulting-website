@@ -94,7 +94,7 @@
           var h = r.header || {};
           if (h.inspectionType && h.inspectionType !== x.t.name) return;
           data.recs.push({
-            type: x.t.key, ir: norm(h.ir), sbu: norm(h.sbu), buyer: norm(h.buyer), style: norm(h.styleName),
+            type: x.t.key, ir: norm(h.ir), sbu: norm(h.sbu), buyer: norm(h.buyer), style: norm(h.styleName), color: norm(h.color) || (r.colorQty || []).map(function (c) { return norm(c.color); }).filter(Boolean).join(", "),
             id: r.id || "", page: x.t.page, decision: norm(r.decision), date: normDate(h.date), inspector: canonInsp(h.inspectorName), outcome: outcomeOf(r), samples: sampleOf(r), r: r
           });
         });
@@ -170,23 +170,18 @@
     return out;
   }
 
-  // Style File / Risk Assessment / Techpack / PP Meeting / Size Set are ticked inside the 1st Bundle
-  // report. For every style (IR) in the filtered rows, read its latest 1st Bundle report.
-  function docChecks(rows) {
-    var latest = {};
-    rows.forEach(function (x) { if (x.type === "1st Bundle" && x.ir && (!latest[x.ir] || x.date > latest[x.ir].date)) latest[x.ir] = x; });
-    var irs = Object.keys(latest);
-    return {
-      total: irs.length,
-      items: STAGES.filter(function (s) { return s.doc; }).map(function (s) {
-        var c = { yes: 0, no: 0, na: 0, open: 0 };
-        irs.forEach(function (ir) {
-          var it = (latest[ir].r.checklist || []).filter(function (k) { return k.label === s.doc; })[0], v = it ? norm(it.status) : "";
-          if (v === "Yes") c.yes++; else if (v === "No") c.no++; else if (v === "N/A") c.na++; else c.open++;
-        });
-        return { label: s.label, c: c };
-      })
-    };
+  // Inspection log (one table per inspection type) with an inline "See Details" row.
+  var CHIP = { Pass: ["PASS", "Done"], Fail: ["FAIL", "Issue"], Rework: ["REWORK", "InProgress"], Done: ["DONE", "Done"] };
+  function detailGrid(x) {
+    var r = x.r || {}, h = r.header || {}, q = r.aql || {};
+    var lot = h.lotQty || q.lotQty || h.offerQty || h.orderQty || "";
+    var found = (q.foundCritical != null) ? "Cr " + q.foundCritical + " / Mj " + q.foundMajor + " / Mn " + q.foundMinor +
+      (q.critAllowed != null ? "  (allowed " + q.critAllowed + " / " + q.majAllowed + " / " + q.minAllowed + ")" : "") : (Array.isArray(r.defects) ? r.defects.length + " defect entr" + (r.defects.length === 1 ? "y" : "ies") : "");
+    var rows = [["Inspection", x.type], ["Date", x.date], ["SBU / Buyer", [x.sbu, x.buyer].filter(Boolean).join(" / ")], ["IR / Style", [x.ir, x.style].filter(Boolean).join(" / ")],
+      ["Color", x.color], ["Line", h.line], ["Lot / Carton Qty", lot], ["Sample size", x.samples || ""], ["Defects found", found],
+      ["AQL result", q.result || r.result || ""], ["Decision", x.decision], ["Inspector", x.inspector], ["Remarks", r.comments || r.remarks || ""]];
+    return '<div class="qx-sd">' + rows.filter(function (k) { return k[1] !== "" && k[1] != null; }).map(function (k) { return "<div><span>" + esc(k[0]) + "</span><b>" + esc(String(k[1])) + "</b></div>"; }).join("") + "</div>" +
+      '<div style="margin-top:8px">' + pdfLink(x) + "</div>";
   }
 
   // ---------------- UI ----------------
@@ -304,7 +299,7 @@
       var vals = series.map(function (x) { return x.data[i] || 0; });
       return stacked ? vals.reduce(function (a, b) { return a + b; }, 0) : Math.max.apply(null, vals);
     });
-    var max = niceMax(Math.max.apply(null, tops)), g = "", t, every = Math.ceil(n / 12);
+    var max = Math.max(4, niceMax(Math.max.apply(null, tops))), g = "", t, every = Math.ceil(n / 12);
     for (t = 0; t <= 4; t++) {
       var y = T + ih - ih * t / 4;
       g += '<line x1="' + L + '" x2="' + (W - R) + '" y1="' + y + '" y2="' + y + '" style="stroke:var(--line)"/><text x="' + (L - 6) + '" y="' + (y + 3) + '" text-anchor="end">' + (Math.round(max * t / 4 * 10) / 10) + "</text>";
@@ -371,19 +366,28 @@
         var tableKeys = inspKeys.slice();
         if ($("qxAll").checked && window.PSITeam) PSITeam.team.forEach(function (m) { if (!a.byInsp[m.name] && (!f.insp || f.insp === m.name)) tableKeys.push(m.name); });
         var kpi = function (n, l) { return '<div class="qx-card qx-kpi"><b>' + n + "</b><span>" + l + "</span></div>"; };
-        var dc = docChecks(a.rows);
-        var docKpi = function (it) {
-          var extra = [it.c.no ? it.c.no + " issue" + (it.c.no > 1 ? "s" : "") : "", it.c.open ? it.c.open + " not marked" : "", it.c.na ? it.c.na + " N/A" : ""].filter(Boolean).join(" · ");
-          return '<div class="qx-card qx-kpi"><b>' + it.c.yes + '<small style="font-size:13px;color:var(--ink-soft)"> / ' + dc.total + "</small></b><span>" + esc(it.label) + ' checked</span><div style="font:11px var(--mono);color:' + (it.c.no ? "var(--reject)" : "var(--ink-soft)") + ';margin-top:5px">' + (esc(extra) || "all clear") + "</div></div>";
-        };
         var styKeys = Object.keys(a.byStyle).sort(function (x, y) { return a.byStyle[y].n - a.byStyle[x].n; });
         var styTop = styKeys.slice(0, 15);
+        // one report table per inspection type, newest first (only the selected buyer / inspector / dates / type)
+        var logRows = [], LOGMAX = 100;
+        var scopeTxt = [f.buyer, f.insp].filter(Boolean).join(" · ");
+        var logHTML = '<div class="qx-sdt" style="font:600 16px var(--body);margin:22px 0 8px">Inspection reports — type-wise' + (scopeTxt ? " <span style=\"font:12px var(--mono);color:var(--ink-soft)\">(" + esc(scopeTxt) + ")</span>" : "") + "</div>" +
+          (shownTypes.map(function (t) {
+            var list = a.rows.filter(function (x) { return x.type === t; }).sort(function (p, q) { return p.date < q.date ? 1 : p.date > q.date ? -1 : 0; });
+            if (!list.length) return "";
+            var nm = (TYPES.filter(function (y) { return y.key === t; })[0] || {}).name || t;
+            return '<div class="qx-card qx-wrap"><b>' + esc(nm) + " (" + list.length + ")</b>" + (list.length > LOGMAX ? '<span style="font:11px var(--mono);color:var(--ink-soft)"> — latest ' + LOGMAX + " shown</span>" : "") +
+              '<table style="margin-top:8px"><thead><tr><th>Date</th><th>SBU</th><th>Buyer</th><th>IR</th><th>Style</th><th>Color</th><th>By</th><th>Status</th><th></th></tr></thead><tbody>' +
+              list.slice(0, LOGMAX).map(function (x) {
+                var i = logRows.push(x) - 1, c = CHIP[x.outcome] || CHIP.Done;
+                return "<tr><td>" + esc(x.date) + "</td><td>" + esc(x.sbu || "—") + "</td><td>" + esc(x.buyer || "—") + "</td><td>" + esc(x.ir || "—") + "</td><td>" + esc(x.style || "—") + "</td><td>" + esc(x.color || "") +
+                  "</td><td>" + esc(x.inspector) + '</td><td><span class="qx-chip st-' + c[1] + '">' + c[0] + '</span></td><td><button type="button" class="btn btn-ghost" data-qd="' + i + '">See details</button></td></tr>';
+              }).join("") + "</tbody></table></div>";
+          }).join("") || '<div class="qx-card"><div class="qx-empty">No inspection reports for this selection.</div></div>');
         var typeName = f.type ? (TYPES.filter(function (t) { return t.key === f.type; })[0] || {}).name || f.type : "";
         $("qxBody").innerHTML =
           '<div class="qx-grid">' + kpi(a.rows.length, "Inspections") + kpi(Object.keys(a.styles).length, "Styles checked") + kpi(inspKeys.length, "Inspectors") +
           kpi(judged ? Math.round(pass / judged * 100) + "%" : "—", "Pass rate") + "</div>" +
-          '<div class="qx-sdt">Documents verified at 1st Bundle <span style="font:11px var(--mono);color:var(--ink-soft)">(' + dc.total + " style" + (dc.total === 1 ? "" : "s") + " with a 1st Bundle report in this filter)</span></div>" +
-          '<div class="qx-grid">' + dc.items.map(docKpi).join("") + "</div>" +
           '<div class="qx-card"><b>Samples checked</b><div class="sub" style="margin:2px 0 12px">Pieces sampled per the AQL plan in every saved report in this filter.</div>' +
           '<div class="qx-grid">' + kpi(a.totalSamples.toLocaleString(), "Total samples checked") + kpi(a.rows.length.toLocaleString(), "Total inspections") +
           shownTypes.map(function (t) { var o = a.byType[t] || { n: 0, samples: 0 }; return kpi(o.samples.toLocaleString(), esc(t) + " samples (" + o.n + " insp.)"); }).join("") + "</div>" +
@@ -403,8 +407,16 @@
           '<div class="qx-card qx-wrap"><b>Buyer-wise × Inspector-wise (inspections)</b><table><thead><tr><th>Buyer</th>' + inspKeys.map(function (k) { return "<th>" + esc(k) + "</th>"; }).join("") + "<th>Total</th></tr></thead><tbody>" +
           (buyKeys.map(function (b) {
             return "<tr><td><b>" + esc(b) + "</b></td>" + inspKeys.map(function (k) { return "<td>" + (a.matrix[b][k] || "") + "</td>"; }).join("") + "<td>" + a.byBuyer[b].n + "</td></tr>";
-          }).join("") || '<tr><td colspan="3">No data.</td></tr>') + "</tbody></table></div>";
+          }).join("") || '<tr><td colspan="3">No data.</td></tr>') + "</tbody></table></div>" + logHTML;
 
+        $("qxBody").onclick = function (e) {
+          var btn = e.target.closest && e.target.closest("button[data-qd]"); if (!btn) return;
+          var tr = btn.closest("tr"), nx = tr.nextSibling;
+          if (nx && nx.classList && nx.classList.contains("qx-detail")) { nx.parentNode.removeChild(nx); btn.textContent = "See details"; return; }
+          var d = document.createElement("tr"); d.className = "qx-detail";
+          d.innerHTML = '<td colspan="9">' + detailGrid(logRows[+btn.getAttribute("data-qd")]) + "</td>";
+          tr.parentNode.insertBefore(d, tr.nextSibling); btn.textContent = "Hide details";
+        };
         $("cSam").innerHTML = chartSvg("bar", shownTypes, [{ name: "Samples checked", color: PALETTE[2], data: shownTypes.map(function (t) { return (a.byType[t] || { samples: 0 }).samples; }) }], false);
         $("cSty").innerHTML = f.type
           ? chartSvg("bar", styTop.map(function (k) { return a.byStyle[k].label; }), [{ name: "Inspections", color: PALETTE[0], data: styTop.map(function (k) { return a.byStyle[k].n; }) }], false)
@@ -558,6 +570,6 @@
 
   window.QAInsights = {
     render: function (tab, el) { injectCss(); destroyCharts(); return tab === "overview" ? renderOverview(el) : tab === "dashboard" ? renderDashboard(el) : tab === "search" ? renderSearch(el) : renderTracking(el); },
-    _t: { tracking: tracking, aggregate: aggregate, docChecks: docChecks, sampleOf: sampleOf, outcomeOf: outcomeOf, normDate: normDate }
+    _t: { tracking: tracking, aggregate: aggregate, sampleOf: sampleOf, outcomeOf: outcomeOf, normDate: normDate }
   };
 })();
