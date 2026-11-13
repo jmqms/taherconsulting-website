@@ -76,11 +76,16 @@
   function sampleOf(r) { return Number(r && r.aql && r.aql.sampleSize) || Number(r && r.sampleSize) || 0; }
 
   // Pre-Final / Final can be done by the buyer or a 3rd party in THEIR portal and only the outcome is entered here.
-  function sourceOf(r) { var s = norm(r && r.source); return s && s !== "Self" ? s : "Self"; }
+  var OWN_PORTAL = "Self Inspection (Buyer Portal)";
+  function sourceOf(r) {
+    var s = norm(r && r.source);
+    if (!s || s === "Self") return "Self";
+    return norm(r.external && r.external.entryType) || s;      // 1st Party / 3rd Party / Self Inspection (Buyer Portal)
+  }
   function inspectorOf(r, h) {
-    var src = sourceOf(r);
+    var src = sourceOf(r), ex = (r && r.external) || {};
     if (src === "Self") return canonInsp(h.inspectorName);
-    var ex = (r && r.external) || {};
+    if (src === OWN_PORTAL) return canonInsp(ex.inspector || h.inspectorName);   // our own inspector, counted under their name
     return src + " — " + (norm(ex.party) || norm(h.buyer) || "external");
   }
 
@@ -193,7 +198,8 @@
     var r = x.r || {}, q = r.aql || {}, out = [], ds = defectList(r), tot = { Critical: 0, Major: 0, Minor: 0 };
     if (x.source !== "Self") {
       var ex = r.external || {};
-      out.push("Reported as " + (norm(ex.result) || x.outcome) + " by " + (norm(ex.party) || x.source) + (norm(ex.remarks) ? ": " + norm(ex.remarks) : ""));
+      var by = x.source === OWN_PORTAL ? x.inspector + (norm(ex.party) ? " (" + norm(ex.party) + ")" : "") : (norm(ex.party) || x.source);
+      out.push("Reported as " + (norm(ex.result) || x.outcome) + " by " + by + (norm(ex.remarks) ? ": " + norm(ex.remarks) : ""));
       return out;
     }
     ds.forEach(function (d) { if (tot[d.sev] !== undefined) tot[d.sev] += d.qty; });
@@ -220,9 +226,9 @@
     var ex = x.source !== "Self" ? (r.external || {}) : null;
     var found = ex ? ((ex.critical || ex.major || ex.minor) ? "Cr " + (ex.critical || 0) + " / Mj " + (ex.major || 0) + " / Mn " + (ex.minor || 0) : "") : (q.foundCritical != null) ? "Cr " + q.foundCritical + " / Mj " + q.foundMajor + " / Mn " + q.foundMinor +
       (q.critAllowed != null ? "  (allowed " + q.critAllowed + " / " + q.majAllowed + " / " + q.minAllowed + ")" : "") : "";
-    var rows = [["Inspection", x.type + (ex ? " — " + x.source + " inspection" : "")], ["Date", x.date], ["SBU / Buyer", [x.sbu, x.buyer].filter(Boolean).join(" / ")], ["IR / Style", [x.ir, x.style].filter(Boolean).join(" / ")],
+    var rows = [["Inspection", x.type + (ex ? " — " + x.source : "")], ["Date", x.date], ["SBU / Buyer", [x.sbu, x.buyer].filter(Boolean).join(" / ")], ["IR / Style", [x.ir, x.style].filter(Boolean).join(" / ")],
       ["Color", x.color], ["Line", h.line], ["Lot / Carton Qty", lot], ["Sample size", x.samples || ""], ["Defects found", found],
-      ["AQL result", q.result || r.result || ""], ["Decision", x.decision], [ex ? "Inspected by" : "Inspector", x.inspector], ["Their inspector", ex ? ex.inspector : ""], ["Their report no.", ex ? ex.reportNo : ""], ["Remarks", ex ? "" : (r.comments || r.remarks || "")]];
+      ["AQL result", q.result || r.result || ""], ["Decision", x.decision], [ex ? "Inspected by" : "Inspector", x.inspector], ["Their inspector", ex && x.source !== OWN_PORTAL ? ex.inspector : ""], ["Portal / Party", ex && x.source === OWN_PORTAL ? ex.party : ""], ["Their report no.", ex ? ex.reportNo : ""], ["Remarks", ex ? "" : (r.comments || r.remarks || "")]];
     var html = '<div class="qx-sd">' + rows.filter(function (k) { return k[1] !== "" && k[1] != null; }).map(function (k) { return "<div><span>" + esc(k[0]) + "</span><b>" + esc(String(k[1])) + "</b></div>"; }).join("") + "</div>";
     var why = (x.outcome === "Fail" || x.outcome === "Rework") ? failReasons(x) : [];
     if (why.length) html += '<div class="qx-sdt" style="color:var(--reject)">Why it failed</div><ul style="margin:0 0 4px 18px;font-size:13px">' + why.map(function (w) { return "<li>" + esc(w) + "</li>"; }).join("") + "</ul>";
@@ -439,7 +445,7 @@
               list.slice(0, shown).map(function (x) {
                 var i = logRows.push(x) - 1, c = CHIP[x.outcome] || CHIP.Done;
                 return "<tr><td>" + esc(x.date) + "</td><td>" + esc(x.sbu || "—") + "</td><td>" + esc(x.buyer || "—") + "</td><td>" + esc(x.ir || "—") + "</td><td>" + esc(x.style || "—") + "</td><td>" + esc(x.color || "") +
-                  "</td><td>" + esc(x.inspector) + '</td><td><span class="qx-chip st-' + c[1] + '">' + c[0] + '</span></td><td><button type="button" class="btn btn-ghost" data-qd="' + i + '">See details</button></td></tr>';
+                  "</td><td>" + esc(x.inspector) + (x.source !== "Self" ? '<div style="font:10.5px var(--mono);color:var(--ink-soft)">' + esc(x.source) + "</div>" : "") + '</td><td><span class="qx-chip st-' + c[1] + '">' + c[0] + '</span></td><td><button type="button" class="btn btn-ghost" data-qd="' + i + '">See details</button></td></tr>';
               }).join("") + "</tbody></table>" +
               (list.length > shown ? '<div style="text-align:center;margin-top:10px"><button type="button" class="btn btn-ghost" data-more="' + esc(t) + '">Show more (' + Math.min(LOGMAX, list.length - shown) + " more · " + (list.length - shown) + " remaining)</button></div>" : "") + "</div>";
           }).join("") || '<div class="qx-card"><div class="qx-empty">No inspection reports for this selection.</div></div>');
@@ -458,7 +464,7 @@
           "<th>Total</th><th>Styles</th><th>Pass rate</th></tr></thead><tbody>" +
           (tableKeys.map(function (k) {
             var o = a.byInsp[k] || { n: 0, pass: 0, judged: 0, set: {}, types: {} }, m = psiOf(k);
-            return "<tr><td><b>" + esc(k) + "</b></td><td>" + esc(m ? m.code : "—") + "</td><td>" + esc(m ? m.designation : (/^(Buyer|3rd Party) — /.test(k) ? "External inspection" : "Not in PSI list")) + "</td>" + shownTypes.map(function (t) { return "<td>" + (o.types[t] || 0) + "</td>"; }).join("") +
+            return "<tr><td><b>" + esc(k) + "</b></td><td>" + esc(m ? m.code : "—") + "</td><td>" + esc(m ? m.designation : (/^(1st Party|3rd Party|Buyer|External) — /.test(k) ? "External inspection" : "Not in PSI list")) + "</td>" + shownTypes.map(function (t) { return "<td>" + (o.types[t] || 0) + "</td>"; }).join("") +
               "<td>" + o.n + "</td><td>" + Object.keys(o.set).length + "</td><td>" + (o.judged ? Math.round(o.pass / o.judged * 100) + "%" : "—") + "</td></tr>";
           }).join("") || '<tr><td colspan="' + (shownTypes.length + 6) + '">No inspections in this range.</td></tr>') + "</tbody></table></div>" +
           '<div class="qx-card"><b>' + (f.type ? "Styles checked in " + esc(typeName) + " (" + styKeys.length + " style" + (styKeys.length === 1 ? "" : "s") + ")" : "Style-wise inspections by type (" + styKeys.length + " style" + (styKeys.length === 1 ? "" : "s") + ")") + "</b>" +

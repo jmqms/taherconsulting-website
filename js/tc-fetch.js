@@ -86,4 +86,41 @@
       return res;
     });
   };
+
+  /* ---- Presence: tell the server (users-backend) which page this signed-in tab is on, so an
+     administrator can see who is active in which module (Active Status page). ---- */
+  var PRESENCE_API = "https://script.google.com/macros/s/AKfycbx7Cwnp8hoKuxcQ57TlllwBaA7zr9S2bcFVi9-mzyyY8RhRL3YiUpbJMFohLmQZkf1a/exec";
+  var PAGE_MODULES = {
+    "dashboard.html": "Main Portal", "combined-dashboard.html": "Combined Dashboard",
+    "audit.html": "Daily QMS Floor Audit", "qc-inspection.html": "QC Inspection", "training.html": "Training and Competency",
+    "qa-process.html": "QA Process", "ra-process.html": "Risk Assessment", "document-archive.html": "Document Archive",
+    "qa-inspection.html": "QA Inspection", "1st-bundle-inspection.html": "QA Inspection — 1st Bundle",
+    "sewing-inline-inspection.html": "QA Inspection — Sewing Inline", "finishing-inline-inspection.html": "QA Inspection — Finishing Inline",
+    "1st-carton-inspection.html": "QA Inspection — 1st Carton", "pre-final-inspection.html": "QA Inspection — Pre-Final",
+    "final-inspection.html": "QA Inspection — Final", "login-history.html": "Admin pages", "edit-requests.html": "Admin pages", "active-status.html": "Admin pages"
+  };
+  var tabId = "";
+  try { tabId = sessionStorage.getItem("tc_tab") || ""; if (!tabId) { tabId = Math.random().toString(36).slice(2, 10); sessionStorage.setItem("tc_tab", tabId); } } catch (e) { tabId = "t" + Math.random().toString(36).slice(2, 8); }
+  var pageFile = (location.pathname.split("/").pop() || "index.html").toLowerCase();
+
+  function presencePayload(action) {
+    var tok = pickToken();
+    if (!tok) return null;
+    return JSON.stringify({ action: action, __token: tok, tab: tabId, page: pageFile, module: PAGE_MODULES[pageFile] || (document.title || pageFile).slice(0, 50) });
+  }
+  function beat() {
+    if (document.visibilityState === "hidden") return;      // background tab = not active
+    var body = presencePayload("heartbeat");
+    if (!body) return;
+    try { origFetch(PRESENCE_API, { method: "POST", headers: { "Content-Type": "text/plain;charset=utf-8" }, body: body, keepalive: true }).catch(function () {}); } catch (e) {}
+  }
+  function leave() {
+    var body = presencePayload("leave");
+    if (!body) return;
+    try { if (navigator.sendBeacon) navigator.sendBeacon(PRESENCE_API, new Blob([body], { type: "text/plain;charset=utf-8" })); } catch (e) {}
+  }
+  setTimeout(beat, 1500);
+  setInterval(beat, 45000);
+  document.addEventListener("visibilitychange", function () { if (document.visibilityState === "visible") beat(); });
+  window.addEventListener("pagehide", leave);
 })();
