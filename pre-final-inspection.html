@@ -525,7 +525,7 @@ function emptyReportState(){
     signOff: SIGNOFF_ROLES.map(role => ({ role, name:'', signature:'' })),
     remarks:'',
     source:'Self',
-    external:{ party:'', inspector:'', reportNo:'', sampleSize:'', result:'', critical:'', major:'', minor:'', remarks:'', link:'' },
+    external:{ entryType:'', party:'', inspector:'', reportNo:'', sampleSize:'', result:'', critical:'', major:'', minor:'', remarks:'', link:'' },
   };
 }
 
@@ -1921,34 +1921,50 @@ function drawDashboardCharts(){
 }
 
 
-/* ---- Inspection source: Self (full report) / Buyer / 3rd Party (outcome only, done in their own portal) ---- */
+/* ---- Inspection source: Self (full report) or External Entry (outcome only; done outside this system) ---- */
+const EXT_TYPES_ = ['1st Party', '3rd Party', 'Self Inspection (Buyer Portal)'];
 function isExternal_(S){ S = S || state; return !!S.source && S.source !== 'Self'; }
+function extLabel_(r){ return (r && r.external && r.external.entryType) || (r && r.source) || 'External'; }
 function renderSourcePanel(){
-  const src = state.source || 'Self';
-  const opts = [['Self','Self — J.M. Fabrics inspector (full report)'], ['Buyer','Buyer — done in the buyer’s own portal'], ['3rd Party','3rd Party — SGS / Intertek / BV etc.']];
+  const src = isExternal_() ? 'External' : 'Self';
+  const e = state.external || {};
+  const tabs = [['Self','Self — J.M. Fabrics Inspector (full report)'], ['External','External Entry']];
   return `
   <div class="panel panel-pad section-block">
-    <h2 class="section-title">Inspection Source <span class="tag">who did this inspection?</span></h2>
+    <h2 class="section-title">Inspection Entry <span class="tag">who did this inspection?</span></h2>
     <div class="tabs" style="display:inline-flex;flex-wrap:wrap;">
-      ${opts.map(o => `<button type="button" class="tab-btn ${src===o[0]?'active':''}" data-source="${o[0]}">${o[1]}</button>`).join('')}
+      ${tabs.map(o => `<button type="button" class="tab-btn ${src===o[0]?'active':''}" data-source="${o[0]}">${o[1]}</button>`).join('')}
     </div>
+    ${src==='External' ? `
+    <div class="header-grid" style="margin-top:12px;">
+      <div class="f"><span class="field-label">Inspection Entry Type</span>
+        <select data-ext="entryType">
+          <option value="">Select…</option>
+          ${EXT_TYPES_.map(x => `<option value="${esc(x)}" ${e.entryType===x?'selected':''}>${esc(x)}</option>`).join('')}
+        </select>
+      </div>
+    </div>` : ''}
     <div class="subtle-note" style="margin-top:8px;">
       ${src==='Self' ? 'Our own inspector fills the full report below.'
-        : 'Only record the outcome of the inspection the ' + (src==='Buyer'?'buyer':'third party') + ' did in their own portal. It then shows in Style Tracking and the Inspector Dashboard (labelled ' + esc(src) + '), so the style journey is complete.'}
+        : 'Enter only the outcome of an inspection done outside this form (buyer portal, 1st / 3rd party report). It shows in Style Tracking and the Inspector Dashboard so the style journey is complete.'}
     </div>
   </div>`;
 }
 function renderExternalPanel(){
-  const e = state.external || {}, src = state.source, h = state.header;
-  const f = (label, key, type, ph) => `<div class="f"><span class="field-label">${label}</span><input type="${type||'text'}" data-ext="${key}" value="${esc(e[key])}" ${ph?`placeholder="${esc(ph)}"`:''}></div>`;
+  const e = state.external || {}, h = state.header, type = e.entryType;
+  if (!type) return `<div class="panel panel-pad section-block"><div class="subtle-note">Select the <b>Inspection Entry Type</b> above to continue.</div></div>`;
+  const own = type === 'Self Inspection (Buyer Portal)';
+  const f = (label, key, kind, ph, extra) => `<div class="f"><span class="field-label">${label}</span><input type="${kind||'text'}" data-ext="${key}" value="${esc(e[key])}" ${ph?`placeholder="${esc(ph)}"`:''} ${extra||''}></div>`;
   return `
   <div class="panel panel-pad section-block">
-    <h2 class="section-title">${esc(src)} Inspection Result <span class="tag">entered from their report</span></h2>
+    <h2 class="section-title">${esc(type)} — Result <span class="tag">from the inspection report</span></h2>
     <div class="header-grid">
       <div class="f"><span class="field-label">Inspection Date</span><input type="date" data-ext-date value="${esc(h.date)}"></div>
-      ${f(src==='Buyer' ? 'Buyer / Inspecting Team' : 'Inspection Company', 'party', 'text', src==='Buyer' ? 'e.g. H&M QA' : 'e.g. SGS / Intertek / Bureau Veritas')}
-      ${f('Their Inspector Name (optional)', 'inspector')}
-      ${f('Their Report No. / Reference', 'reportNo')}
+      ${own ? f('Inspector Name (J.M. Fabrics)', 'inspector', 'text', 'Select or type the inspector', 'list="psiList"')
+            : f(type==='3rd Party' ? 'Inspection Company' : 'Inspecting Party / Team', 'party', 'text', type==='3rd Party' ? 'e.g. SGS / Intertek / Bureau Veritas' : 'e.g. Buyer QA team')}
+      ${own ? f('Buyer Portal / Buyer', 'party', 'text', 'e.g. H&M portal')
+            : f('Their Inspector Name (optional)', 'inspector')}
+      ${f(own ? 'Portal Report No. / Reference' : 'Their Report No. / Reference', 'reportNo')}
       ${f('Sample Size Checked (optional)', 'sampleSize', 'number')}
       <div class="f"><span class="field-label">Result</span>
         <select data-ext="result">
@@ -1961,16 +1977,18 @@ function renderExternalPanel(){
       ${f('Minor Defects (optional)', 'minor', 'number')}
     </div>
     <div class="f" style="margin-top:10px;"><span class="field-label">Reason / Findings ${e.result && e.result !== 'Pass' ? '<b style="color:#b02a2a">(required — why did it fail?)</b>' : '(optional)'}</span>
-      <textarea data-ext="remarks" rows="3" placeholder="What did they find? e.g. Major: open seam 5 pcs; measurement out of tolerance">${esc(e.remarks)}</textarea></div>
-    <div class="f" style="margin-top:10px;"><span class="field-label">Link to their report (optional, https://…)</span>
+      <textarea data-ext="remarks" rows="3" placeholder="What was found? e.g. Major: open seam 5 pcs; measurement out of tolerance">${esc(e.remarks)}</textarea></div>
+    <div class="f" style="margin-top:10px;"><span class="field-label">Link to the report (optional, https://…)</span>
       <input type="text" data-ext="link" value="${esc(e.link)}" placeholder="https://"></div>
   </div>`;
 }
 function externalProblems_(){
   const h = state.header, e = state.external || {};
+  if (!e.entryType) return 'Select the Inspection Entry Type (1st Party / 3rd Party / Self Inspection (Buyer Portal)).';
   if (!h.sbu || !h.buyer || !h.ir) return 'Select SBU → Buyer → IR first.';
   if (!h.date) return 'Enter the inspection date.';
-  if (!String(e.party||'').trim()) return 'Enter who did the inspection (' + (state.source==='Buyer' ? 'buyer / team' : 'company') + ').';
+  if (e.entryType === 'Self Inspection (Buyer Portal)'){ if (!String(e.inspector||'').trim()) return 'Enter the J.M. Fabrics inspector name.'; }
+  else if (!String(e.party||'').trim()) return 'Enter who did the inspection (' + (e.entryType==='3rd Party' ? 'company' : 'party / team') + ').';
   if (!e.result) return 'Select the result (Pass / Fail / Rework).';
   if (e.result !== 'Pass' && !String(e.remarks||'').trim()) return 'This is not a Pass — please write the reason / findings.';
   if (e.link && !/^https?:\/\//i.test(String(e.link).trim())) return 'The report link must start with http:// or https://';
@@ -1978,9 +1996,9 @@ function externalProblems_(){
 }
 function externalSummaryHtml_(r){
   const e = r.external || {};
-  return `<div class="subtle-note" style="margin-bottom:12px;"><b>${esc(r.source)} inspection</b> — ${esc(e.party||'')}${e.reportNo?' · Report '+esc(e.reportNo):''}${e.inspector?' · '+esc(e.inspector):''}
+  return `<div class="subtle-note" style="margin-bottom:12px;"><b>${esc(extLabel_(r))}</b> — ${esc(e.party||'')}${e.reportNo?' · Report '+esc(e.reportNo):''}${e.inspector?' · '+esc(e.inspector):''}
     <br>Result: <b>${esc(e.result||'')}</b>${e.sampleSize?' · Sample '+esc(e.sampleSize):''}${(e.critical||e.major||e.minor)?' · Cr '+esc(e.critical||0)+' / Mj '+esc(e.major||0)+' / Mn '+esc(e.minor||0):''}
-    ${e.remarks?'<br>'+esc(e.remarks):''}${/^https?:\/\//i.test(e.link||'')?'<br><a href="'+esc(e.link)+'" target="_blank" rel="noopener">Open their report ↗</a>':''}</div>`;
+    ${e.remarks?'<br>'+esc(e.remarks):''}${/^https?:\/\//i.test(e.link||'')?'<br><a href="'+esc(e.link)+'" target="_blank" rel="noopener">Open the report ↗</a>':''}</div>`;
 }
 
 /* ============================= RENDER: ENTRY FORM ============================= */
@@ -2616,7 +2634,7 @@ function renderLog(){
   const rows = state.reports.slice().sort((a,b)=> new Date(b.header.date)-new Date(a.header.date)).map(r => `
     <tr>
       <td>${esc(r.header.date)}</td>
-      <td><span class="pill ${r.header.inspectionType==='Final Inspection'?'final':'prefinal'}">${esc(r.header.inspectionType)}</span>${r.source && r.source!=='Self' ? ' <span class="pill">'+esc(r.source)+'</span>' : ''}</td>
+      <td><span class="pill ${r.header.inspectionType==='Final Inspection'?'final':'prefinal'}">${esc(r.header.inspectionType)}</span>${r.source && r.source!=='Self' ? ' <span class="pill">'+esc(extLabel_(r))+'</span>' : ''}</td>
       <td>${esc(r.header.buyer)}</td>
       <td>${esc(r.header.styleName)}</td>
       <td>${esc(r.header.ir)}</td>
@@ -2919,11 +2937,13 @@ function bindEvents(){
   // ---- Inspection source (Self / Buyer / 3rd Party) ----
   document.querySelectorAll('[data-source]').forEach(b => b.onclick = () => {
     state.source = b.dataset.source;
-    if (state.source === 'Buyer' && !state.external.party && state.header.buyer) state.external.party = state.header.buyer;
     render();
   });
   document.querySelectorAll('[data-ext]').forEach(el => {
-    const sync = () => { state.external[el.dataset.ext] = el.value; };
+    const sync = () => {
+      state.external[el.dataset.ext] = el.value;
+      if (el.dataset.ext === 'entryType' && el.value === 'Self Inspection (Buyer Portal)' && !state.external.party && state.header.buyer) state.external.party = state.header.buyer;
+    };
     el.addEventListener('input', sync);
     if (el.tagName === 'SELECT') el.addEventListener('change', () => { sync(); render(); });
   });
@@ -3044,6 +3064,7 @@ async function saveCurrentReport_(isFinal){
     record.result = ex.result === 'Pass' ? 'PASS' : ex.result === 'Fail' ? 'FAIL' : (ex.result ? 'REWORK' : 'PENDING');
     record.decision = ex.result === 'Pass' ? 'Accepted' : ex.result === 'Fail' ? 'Rejected' : (ex.result ? 'Rework Required' : '');
     record.sampleSize = Number(ex.sampleSize) || '';
+    if (ex.entryType === 'Self Inspection (Buyer Portal)' && ex.inspector) record.header.inspectorName = ex.inspector;
   }
   record.savedAt = new Date().toISOString();
 
@@ -3056,7 +3077,7 @@ async function saveCurrentReport_(isFinal){
   if (prevRec_ && prevRec_.status !== 'Draft' && isFinal && window.TCEG) TCEG.consume(prevRec_.id);
 
   if (isFinal && isExternal_(record)){
-    showToast(record.source + ' inspection saved — result: ' + record.result + '.');
+    showToast(extLabel_(record) + ' entry saved — result: ' + record.result + '.');
   } else if (isFinal){
     showToast('Report submitted — overall result: ' + record.result + '. Preparing PDF…');
     await generatePdfReport(record); // snapshot passed explicitly — the form gets reset right after

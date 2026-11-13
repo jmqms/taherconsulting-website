@@ -1,0 +1,176 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Active Status — Taher Consulting</title>
+<meta name="robots" content="noindex,nofollow">
+<style>
+:root{--bg:#F4F3EE;--panel:#fff;--ink:#1B211D;--soft:#5b655f;--line:#dcdad0;--accent:#1E6B4A;--gold:#A9832F;--bad:#B84226;--warn:#B7791F}
+*{box-sizing:border-box}
+body{margin:0;background:var(--bg);color:var(--ink);font:14px/1.5 'Segoe UI',system-ui,-apple-system,Arial,sans-serif}
+.top{background:#1B211D;color:#F1F0EA;padding:12px 20px;display:flex;justify-content:space-between;align-items:center;font-size:12.5px;letter-spacing:.04em}
+.top a{color:#F1F0EA;text-decoration:none}
+.wrap{max-width:1180px;margin:0 auto;padding:22px 16px 60px}
+h1{font-size:24px;margin:0 0 4px}
+.sub{color:var(--soft);margin:0 0 20px}
+.panel{background:var(--panel);border:1px solid var(--line);border-radius:12px;padding:18px;margin-bottom:18px}
+.panel h2{font-size:15px;margin:0 0 12px}
+.signin{max-width:400px;margin:60px auto}
+label{display:block;font-weight:600;font-size:13px;margin:0 0 6px}
+input,select{width:100%;height:42px;padding:0 12px;border:1.5px solid #d4d6de;border-radius:10px;font:inherit;background:#fff}
+input:focus,select:focus{outline:none;border-color:var(--accent)}
+.field{margin-bottom:16px;position:relative}
+.pw input{padding-right:70px}
+.pw button{position:absolute;right:6px;bottom:5px;border:none;background:none;color:var(--soft);font-weight:700;font-size:12px;letter-spacing:.06em;text-transform:uppercase;padding:8px 10px;cursor:pointer;border-radius:8px}
+.pw button:hover{background:#f0f0ee;color:var(--ink)}
+.btn{height:42px;padding:0 18px;border:none;border-radius:10px;background:var(--accent);color:#fff;font:inherit;font-weight:700;cursor:pointer}
+.btn.ghost{background:#fff;color:var(--ink);border:1.5px solid #d4d6de}
+.btn:disabled{opacity:.6;cursor:default}
+.err{background:#fdecea;color:#b3261e;border:1px solid #f3b8b3;border-radius:10px;padding:10px 12px;margin-bottom:14px;display:none}
+.filters{display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:12px;align-items:end}
+.filters .field{margin:0}
+.tiles{display:grid;grid-template-columns:repeat(auto-fit,minmax(170px,1fr));gap:12px;margin-bottom:18px}
+.tile{background:var(--panel);border:1px solid var(--line);border-radius:12px;padding:14px 16px}
+.tile .n{font-size:28px;font-weight:700;line-height:1.1}
+.tile .l{color:var(--soft);font-size:12.5px;margin-top:4px}
+table{width:100%;border-collapse:collapse;font-size:13px}
+th{text-align:left;background:#f1f0ea;font-size:11.5px;letter-spacing:.05em;text-transform:uppercase;color:var(--soft);padding:9px 10px;white-space:nowrap}
+td{padding:9px 10px;border-top:1px solid var(--line);vertical-align:top}
+.scroll{overflow-x:auto}
+.pill{display:inline-block;padding:2px 9px;border-radius:99px;font-size:11.5px;font-weight:700}
+.pill.Success{background:#e1f3e8;color:#1E6B4A}.pill.Failed{background:#fdecea;color:#b3261e}.pill.Guest{background:#eee;color:#555}
+.chip{display:inline-block;background:#f1f0ea;border-radius:6px;padding:1px 7px;margin:0 4px 3px 0;font-size:12px}
+.muted{color:var(--soft)}
+.row{display:flex;gap:10px;flex-wrap:wrap;align-items:center;justify-content:space-between}
+@media(max-width:600px){.wrap{padding:16px 12px}}
+.pill.Active{background:#e1f3e8;color:#1E6B4A}.pill.Idle{background:#fbf0d9;color:#8a5a00}.pill.Guest{background:#eee;color:#555}
+.dot{display:inline-block;width:9px;height:9px;border-radius:50%;background:#1E6B4A;margin-right:6px;box-shadow:0 0 0 0 rgba(30,107,74,.5);animation:pulse 1.8s infinite}
+@keyframes pulse{70%{box-shadow:0 0 0 8px rgba(30,107,74,0)}100%{box-shadow:0 0 0 0 rgba(30,107,74,0)}}
+.mods{display:grid;grid-template-columns:repeat(auto-fit,minmax(250px,1fr));gap:12px}
+.mod{border:1px solid var(--line);border-radius:12px;padding:12px 14px;background:#fcfcfa}
+.mod.on{border-color:#9bcab0;background:#f4faf6}
+.mod .t{display:flex;justify-content:space-between;align-items:baseline;gap:8px;font-weight:700}
+.mod .c{font-size:22px}
+.who{display:flex;justify-content:space-between;gap:8px;font-size:12.5px;padding:3px 0;border-top:1px dashed var(--line)}
+.who:first-of-type{border-top:none}
+.who .a{color:var(--soft);white-space:nowrap}
+</style>
+<script src="js/tc-fetch.js"></script>
+</head>
+<body>
+<div class="top"><span>TAHER CONSULTING &middot; ADMIN</span><a href="dashboard.html">&larr; Back to Dashboard</a></div>
+
+<div class="wrap" id="signinView" style="display:none">
+  <form class="panel signin" id="signinForm" autocomplete="off">
+    <h1>Active Status</h1>
+    <p class="sub">Administrators only. Sign in with your main portal administrator ID.</p>
+    <div class="err" id="siErr"></div>
+    <div class="field"><label for="siUser">User ID</label><input id="siUser" placeholder="Enter ID" autocapitalize="off"></div>
+    <div class="field pw"><label for="siPass">Password</label><input id="siPass" type="password" placeholder="Enter password"><button type="button" id="siToggle">Show</button></div>
+    <button class="btn" id="siBtn" style="width:100%">View Active Status</button>
+  </form>
+</div>
+
+<div class="wrap" id="mainView" style="display:none">
+  <div class="row" style="margin-bottom:16px">
+    <div><h1><span class="dot"></span>Active Status</h1><p class="sub" style="margin:0">Who is online right now and which module they are in — Bangladesh time. Only administrators can see this page.</p></div>
+    <div style="display:flex;gap:8px;align-items:center"><span class="muted" id="upd"></span><button class="btn ghost" id="btnPause">Pause</button><button class="btn ghost" id="btnRefresh">Refresh now</button></div>
+  </div>
+  <div class="tiles" id="tiles"></div>
+  <div class="panel"><h2>Active by module</h2><div class="mods" id="mods"></div></div>
+  <div class="panel"><div class="row"><h2 style="margin:0">Everyone online <span class="muted" style="font-weight:400" id="cnt"></span></h2>
+    <label style="display:flex;gap:6px;align-items:center;margin:0;font-weight:500"><input type="checkbox" id="chkIdle" checked style="width:auto;height:auto"> Show idle (2&ndash;10 min)</label></div>
+    <div class="scroll" style="margin-top:10px"><table id="tbl"></table></div>
+    <p class="muted" style="margin:12px 0 0;font-size:12.5px">Active = a page was open and visible in the last 2 minutes. Idle = open but in a background tab, or quiet for 2&ndash;10 minutes. Someone only appears after they have signed in and opened a module page.</p></div>
+</div>
+
+<script>
+const API = "https://script.google.com/macros/s/AKfycbx7Cwnp8hoKuxcQ57TlllwBaA7zr9S2bcFVi9-mzyyY8RhRL3YiUpbJMFohLmQZkf1a/exec";
+const ACTIVE_SEC = 120, IDLE_SEC = 600, REFRESH_MS = 10000;
+let CREDS = null, ROWS = [], timer = null, paused = false;
+const $ = id => document.getElementById(id);
+const esc = s => String(s == null ? "" : s).replace(/[&<>"']/g, c => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
+
+function ago(sec) { return sec < 10 ? "just now" : sec < 60 ? sec + " s ago" : Math.floor(sec / 60) + " min ago"; }
+
+async function fetchStatus() {
+  const body = { action: "activeStatus" };
+  let tok = "";   // the main-portal administrator session (module sessions are never admin)
+  try { const raw = localStorage.getItem("tc_session") || sessionStorage.getItem("tc_session"); const x = raw && JSON.parse(raw); if (x && x.token) tok = x.token; } catch (e) {}
+  if (CREDS) { body.userId = CREDS.u; body.password = CREDS.p; } else if (tok) body.__token = tok;
+  const res = await fetch(API, { method: "POST", headers: { "Content-Type": "text/plain;charset=utf-8" }, body: JSON.stringify(body) });
+  const d = JSON.parse(await res.text());
+  if (!d.ok) throw new Error(d.error || "Could not load Active Status.");
+  return d.rows || [];
+}
+
+async function tick(first) {
+  try { ROWS = await fetchStatus(); show(); render(); $("upd").textContent = "Updated " + new Date().toLocaleTimeString("en-GB", { timeZone: "Asia/Dhaka" }); }
+  catch (x) { if (first) throw x; $("upd").textContent = "Could not refresh — retrying"; }
+}
+function show() { $("signinView").style.display = "none"; $("mainView").style.display = "block"; }
+function start() { clearInterval(timer); timer = setInterval(() => { if (!paused && document.visibilityState === "visible") tick(false); }, REFRESH_MS); }
+
+// 1) try the signed-in administrator's session, 2) otherwise ask for the admin ID + password
+(async function init() {
+  try { await tick(true); start(); }
+  catch (e) { $("signinView").style.display = "block"; }
+})();
+
+$("siToggle").onclick = () => { const p = $("siPass"), sh = p.type === "text"; p.type = sh ? "password" : "text"; $("siToggle").textContent = sh ? "Show" : "Hide"; p.focus(); };
+$("signinForm").onsubmit = async e => {
+  e.preventDefault();
+  const err = $("siErr"), btn = $("siBtn"); err.style.display = "none";
+  const u = $("siUser").value, p = $("siPass").value;
+  if (!String(u).trim() || !p) { err.textContent = "Enter your User ID and password."; err.style.display = "block"; return; }
+  btn.disabled = true; btn.textContent = "Checking…"; CREDS = { u, p };
+  try { await tick(true); start(); } catch (x) { CREDS = null; err.textContent = x.message || "Could not reach the server."; err.style.display = "block"; }
+  btn.disabled = false; btn.textContent = "View Active Status";
+};
+$("btnRefresh").onclick = () => tick(false);
+$("btnPause").onclick = () => { paused = !paused; $("btnPause").textContent = paused ? "Resume" : "Pause"; };
+$("chkIdle").onchange = render;
+document.addEventListener("visibilitychange", () => { if (document.visibilityState === "visible" && $("mainView").style.display === "block") tick(false); });
+
+// one line per person per module (several tabs of the same person collapse into one)
+function people(rows) {
+  const M = {};
+  rows.filter(r => r.secondsAgo <= IDLE_SEC).forEach(r => {
+    const k = (r.guest ? "guest:" + r.login : String(r.userId || r.name).toLowerCase()) + "|" + r.module;
+    const p = M[k] || (M[k] = Object.assign({}, r, { tabs: 0 }));
+    p.tabs++;
+    if (r.secondsAgo < p.secondsAgo) { p.secondsAgo = r.secondsAgo; p.lastSeen = r.lastSeen; p.page = r.page; }
+  });
+  return Object.values(M).sort((a, b) => a.secondsAgo - b.secondsAgo);
+}
+
+function render() {
+  const all = people(ROWS), isActive = p => p.secondsAgo <= ACTIVE_SEC;
+  const act = all.filter(isActive), idle = all.filter(p => !isActive(p));
+  const who = p => p.guest ? "Guest" : (p.name || p.userId);
+  const tile = (n, l) => `<div class="tile"><div class="n">${n}</div><div class="l">${l}</div></div>`;
+  const distinct = list => new Set(list.map(p => p.guest ? "g|" + p.login : String(p.userId || p.name).toLowerCase())).size;
+  $("tiles").innerHTML = tile(distinct(act), "Active now") + tile(distinct(idle.filter(p => !act.some(a => who(a) === who(p)))), "Idle (2–10 min)") +
+    tile(new Set(act.map(p => p.module)).size, "Modules in use") + tile(act.filter(p => p.guest).length, "Guests online");
+
+  // by module (active people only)
+  const mods = {};
+  act.forEach(p => (mods[p.module] = mods[p.module] || []).push(p));
+  const keys = Object.keys(mods).sort((a, b) => mods[b].length - mods[a].length || a.localeCompare(b));
+  $("mods").innerHTML = keys.length ? keys.map(m => `<div class="mod on"><div class="t"><span>${esc(m)}</span><span class="c">${mods[m].length}</span></div>` +
+    mods[m].map(p => `<div class="who"><span>${esc(who(p))}${p.guest ? ' <span class="pill Guest">guest</span>' : ""}</span><span class="a">${ago(p.secondsAgo)}</span></div>`).join("") + "</div>").join("")
+    : '<div class="muted">Nobody is active right now.</div>';
+
+  // table
+  const rows = $("chkIdle").checked ? all : act;
+  $("cnt").textContent = "— " + rows.length;
+  $("tbl").innerHTML = `<thead><tr><th>Name</th><th>User ID</th><th>Role</th><th>Module / page</th><th>Signed in via</th><th>Last seen</th><th>Status</th></tr></thead><tbody>` +
+    (rows.length ? rows.map(p => { const on = isActive(p); return `<tr><td><b>${esc(who(p))}</b>${p.tabs > 1 ? ` <span class="muted">(${p.tabs} tabs)</span>` : ""}</td><td>${esc(p.guest ? "" : p.userId)}</td><td>${esc(p.designation)}</td>` +
+      `<td>${esc(p.module)}<div class="muted">${esc(p.page)}</div></td><td>${esc(p.login)}</td><td style="white-space:nowrap">${ago(p.secondsAgo)}<div class="muted">${esc(String(p.lastSeen).slice(11))}</div></td>` +
+      `<td><span class="pill ${on ? "Active" : "Idle"}">${on ? "Active" : "Idle"}</span></td></tr>`; }).join("")
+      : '<tr><td colspan="7" class="muted">Nobody is online.</td></tr>') + "</tbody>";
+}
+</script>
+</body>
+</html>

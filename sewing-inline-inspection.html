@@ -929,6 +929,26 @@ async function exportPdf(){
   const marginX = 10;
   let y = 14;
 
+  // ---- Document control / version card (top-right, page 1) ----
+  {
+    const dcRows = [["JMF QA-Dept", "12"], ["Version No", "01"], ["Effective Date", "01-10-2026"], ["Revision Date", ""]];
+    doc.setFontSize(6.2);
+    doc.setFont(undefined,'bold');
+    const labW = Math.max.apply(null, dcRows.map(r => doc.getTextWidth(r[0]))) + 3;
+    doc.setFont(undefined,'normal');
+    const valW = Math.max.apply(null, dcRows.map(r => doc.getTextWidth(': ' + r[1]))) + 1;
+    const dcW = Math.max(44, labW + valW + 5), dcRowH = 3.6, dcH = dcRowH * dcRows.length + 2.6, dcX = pageW - marginX - dcW, dcY = 5;
+    doc.setDrawColor(150,150,150); doc.setLineWidth(0.3);
+    doc.rect(dcX, dcY, dcW, dcH);
+    let dcy = dcY + 3.8;
+    dcRows.forEach(r => {
+      doc.setFont(undefined,'bold'); doc.setTextColor(40,40,40); doc.text(r[0], dcX + 2, dcy);
+      doc.setFont(undefined,'normal'); doc.text(': ' + r[1], dcX + 2 + labW, dcy);
+      dcy += dcRowH;
+    });
+    doc.setTextColor(0,0,0); doc.setDrawColor(180,178,168); doc.setLineWidth(0.4);
+  }
+
   // ---- Letterhead ----
   const logoH = 17, logoW = logoH * 1.2427;
   try{ doc.addImage(JMF_LOGO, 'PNG', marginX, y-2, logoW, logoH); }catch(e){}

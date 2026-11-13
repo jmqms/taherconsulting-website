@@ -129,6 +129,10 @@
       b.href = "edit-requests.html"; b.textContent = "Edit Requests";
       b.style.cssText = a.style.cssText;
       document.getElementById("dashUser").appendChild(b);
+      const c = document.createElement("a");
+      c.href = "active-status.html"; c.textContent = "Active Status";
+      c.style.cssText = a.style.cssText;
+      document.getElementById("dashUser").appendChild(c);
     }
     document.getElementById("welcomeName").textContent = `, ${session.name.split(" ")[0]}`;
   }
