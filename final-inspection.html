@@ -524,6 +524,8 @@ function emptyReportState(){
     measurements: { poms: [ { description:'', size:'', tolMinus:'', tolPlus:'', spec:'', m:[] } ], pictures:[], pieceCount:0, readingsManual:'', ootReadingsManual:'' },
     signOff: SIGNOFF_ROLES.map(role => ({ role, name:'', signature:'' })),
     remarks:'',
+    source:'Self',
+    external:{ party:'', inspector:'', reportNo:'', sampleSize:'', result:'', critical:'', major:'', minor:'', remarks:'', link:'' },
   };
 }
 
@@ -1111,6 +1113,7 @@ function computeOverallResult_(S){
 
 async function generatePdfReport(srcData){
   const S = srcData || state;
+  if (isExternal_(S)){ showToast('No PDF for Buyer / 3rd Party records \u2014 open their report from the link in the entry.'); return; }
   if (!window.jspdf){ showToast('PDF library did not load \u2014 check your internet connection and retry.'); return; }
   showToast('Generating PDF\u2026');
   try{
@@ -1917,6 +1920,69 @@ function drawDashboardCharts(){
   });
 }
 
+
+/* ---- Inspection source: Self (full report) / Buyer / 3rd Party (outcome only, done in their own portal) ---- */
+function isExternal_(S){ S = S || state; return !!S.source && S.source !== 'Self'; }
+function renderSourcePanel(){
+  const src = state.source || 'Self';
+  const opts = [['Self','Self — J.M. Fabrics inspector (full report)'], ['Buyer','Buyer — done in the buyer’s own portal'], ['3rd Party','3rd Party — SGS / Intertek / BV etc.']];
+  return `
+  <div class="panel panel-pad section-block">
+    <h2 class="section-title">Inspection Source <span class="tag">who did this inspection?</span></h2>
+    <div class="tabs" style="display:inline-flex;flex-wrap:wrap;">
+      ${opts.map(o => `<button type="button" class="tab-btn ${src===o[0]?'active':''}" data-source="${o[0]}">${o[1]}</button>`).join('')}
+    </div>
+    <div class="subtle-note" style="margin-top:8px;">
+      ${src==='Self' ? 'Our own inspector fills the full report below.'
+        : 'Only record the outcome of the inspection the ' + (src==='Buyer'?'buyer':'third party') + ' did in their own portal. It then shows in Style Tracking and the Inspector Dashboard (labelled ' + esc(src) + '), so the style journey is complete.'}
+    </div>
+  </div>`;
+}
+function renderExternalPanel(){
+  const e = state.external || {}, src = state.source, h = state.header;
+  const f = (label, key, type, ph) => `<div class="f"><span class="field-label">${label}</span><input type="${type||'text'}" data-ext="${key}" value="${esc(e[key])}" ${ph?`placeholder="${esc(ph)}"`:''}></div>`;
+  return `
+  <div class="panel panel-pad section-block">
+    <h2 class="section-title">${esc(src)} Inspection Result <span class="tag">entered from their report</span></h2>
+    <div class="header-grid">
+      <div class="f"><span class="field-label">Inspection Date</span><input type="date" data-ext-date value="${esc(h.date)}"></div>
+      ${f(src==='Buyer' ? 'Buyer / Inspecting Team' : 'Inspection Company', 'party', 'text', src==='Buyer' ? 'e.g. H&M QA' : 'e.g. SGS / Intertek / Bureau Veritas')}
+      ${f('Their Inspector Name (optional)', 'inspector')}
+      ${f('Their Report No. / Reference', 'reportNo')}
+      ${f('Sample Size Checked (optional)', 'sampleSize', 'number')}
+      <div class="f"><span class="field-label">Result</span>
+        <select data-ext="result">
+          <option value="">Select…</option>
+          ${['Pass','Fail','Rework / Re-inspection'].map(x => `<option value="${x}" ${e.result===x?'selected':''}>${x}</option>`).join('')}
+        </select>
+      </div>
+      ${f('Critical Defects (optional)', 'critical', 'number')}
+      ${f('Major Defects (optional)', 'major', 'number')}
+      ${f('Minor Defects (optional)', 'minor', 'number')}
+    </div>
+    <div class="f" style="margin-top:10px;"><span class="field-label">Reason / Findings ${e.result && e.result !== 'Pass' ? '<b style="color:#b02a2a">(required — why did it fail?)</b>' : '(optional)'}</span>
+      <textarea data-ext="remarks" rows="3" placeholder="What did they find? e.g. Major: open seam 5 pcs; measurement out of tolerance">${esc(e.remarks)}</textarea></div>
+    <div class="f" style="margin-top:10px;"><span class="field-label">Link to their report (optional, https://…)</span>
+      <input type="text" data-ext="link" value="${esc(e.link)}" placeholder="https://"></div>
+  </div>`;
+}
+function externalProblems_(){
+  const h = state.header, e = state.external || {};
+  if (!h.sbu || !h.buyer || !h.ir) return 'Select SBU → Buyer → IR first.';
+  if (!h.date) return 'Enter the inspection date.';
+  if (!String(e.party||'').trim()) return 'Enter who did the inspection (' + (state.source==='Buyer' ? 'buyer / team' : 'company') + ').';
+  if (!e.result) return 'Select the result (Pass / Fail / Rework).';
+  if (e.result !== 'Pass' && !String(e.remarks||'').trim()) return 'This is not a Pass — please write the reason / findings.';
+  if (e.link && !/^https?:\/\//i.test(String(e.link).trim())) return 'The report link must start with http:// or https://';
+  return '';
+}
+function externalSummaryHtml_(r){
+  const e = r.external || {};
+  return `<div class="subtle-note" style="margin-bottom:12px;"><b>${esc(r.source)} inspection</b> — ${esc(e.party||'')}${e.reportNo?' · Report '+esc(e.reportNo):''}${e.inspector?' · '+esc(e.inspector):''}
+    <br>Result: <b>${esc(e.result||'')}</b>${e.sampleSize?' · Sample '+esc(e.sampleSize):''}${(e.critical||e.major||e.minor)?' · Cr '+esc(e.critical||0)+' / Mj '+esc(e.major||0)+' / Mn '+esc(e.minor||0):''}
+    ${e.remarks?'<br>'+esc(e.remarks):''}${/^https?:\/\//i.test(e.link||'')?'<br><a href="'+esc(e.link)+'" target="_blank" rel="noopener">Open their report ↗</a>':''}</div>`;
+}
+
 /* ============================= RENDER: ENTRY FORM ============================= */
 
 function renderEntry(){
@@ -1928,6 +1994,7 @@ function renderEntry(){
   return `
   <div id="printableReport">
 
+  ${renderSourcePanel()}
   ${renderOrderSourceModeToggle(h)}
   ${h.dataMode === 'manual' ? renderManualOrderInfoPanel(h) : `
   <div class="panel panel-pad section-block">
@@ -1943,7 +2010,7 @@ function renderEntry(){
           <option value="">${state.sbuLoading ? 'Loading…' : (state.sbuOptions.length ? 'Select SBU…' : 'Could not load SBUs')}</option>
           ${state.sbuOptions.map(s => `<option value="${esc(s)}" ${h.sbu===s?'selected':''}>${esc(s)}</option>`).join('')}
         </select>
-        ${(!state.sbuLoading && state.sbuLoadFailed) ? `<div class="subtle-note" style="color:#b02a2a;margin-top:4px;">Could not reach the Master Order Information sheet. <button type="button" class="btn ghost small" data-action="retry-sbu" style="padding:2px 8px;">Retry</button> or switch to <button type="button" class="btn ghost small" data-mode="manual" style="padding:2px 8px;">Manual Entry</button> above.</div>` : ''}
+        ${(!state.sbuLoading && state.sbuLoadFailed) ? `<div class="subtle-note" style="color:#b02a2a;margin-top:4px;">Could not reach the Master Order Information sheet. <button type="button" class="btn ghost small" data-action="retry-sbu" style="padding:2px 8px;">Retry</button>.</div>` : ''}
       </div>
       <div class="f"><span class="field-label">Buyer</span>
         <select data-h="buyer" ${(!h.sbu || state.buyerLoading) ? 'disabled' : ''}>
@@ -1963,6 +2030,7 @@ function renderEntry(){
   </div>
 
   ${renderOrderInfoPanel()}`}
+  ${isExternal_() ? renderExternalPanel() : `
   ${renderSection00(h, aql)}
   ${renderSection01(h, aql)}
   ${renderSection02()}
@@ -1971,7 +2039,7 @@ function renderEntry(){
   ${renderSection04(t, aql)}
   ${renderSection06()}
   ${renderSection07()}
-  ${renderSection08(aql)}
+  ${renderSection08(aql)}`}
 
   </div>
 
@@ -1979,7 +2047,7 @@ function renderEntry(){
     <div style="display:flex;gap:10px;flex-wrap:wrap;">
       <button class="btn ghost" data-action="save-draft">Save as Draft</button>
       <button class="btn" data-action="submit-final">✓ Submit Final Report</button>
-      <button class="btn ghost" data-action="download-pdf">⬇ Download PDF (current form)</button>
+      ${isExternal_() ? '' : '<button class="btn ghost" data-action="download-pdf">⬇ Download PDF (current form)</button>'}
       ${state.editingId ? '<button class="btn ghost" data-action="cancel-edit">Cancel Edit</button>' : ''}
     </div>
     <div class="subtle-note">Save as Draft any time — it stays in the Reports Log (marked "Draft") so you can log back in later and pick up where you left off. Submit Final Report locks it in as complete and offers the PDF download right away.</div>
@@ -2154,6 +2222,8 @@ function renderColourQtyTable(){
 
 /* ---- Auto / Manual toggle for Order/Style Information ---- */
 function renderOrderSourceModeToggle(h){
+  // Manual Entry removed: use "Different Production SBU" below instead. Old manual reports still open normally.
+  if (h.dataMode !== 'manual') return '';
   return `
   <div class="panel panel-pad section-block">
     <h2 class="section-title">Order/Style Information <span class="tag">Auto or Manual</span></h2>
@@ -2546,7 +2616,7 @@ function renderLog(){
   const rows = state.reports.slice().sort((a,b)=> new Date(b.header.date)-new Date(a.header.date)).map(r => `
     <tr>
       <td>${esc(r.header.date)}</td>
-      <td><span class="pill ${r.header.inspectionType==='Final Inspection'?'final':'prefinal'}">${esc(r.header.inspectionType)}</span></td>
+      <td><span class="pill ${r.header.inspectionType==='Final Inspection'?'final':'prefinal'}">${esc(r.header.inspectionType)}</span>${r.source && r.source!=='Self' ? ' <span class="pill">'+esc(r.source)+'</span>' : ''}</td>
       <td>${esc(r.header.buyer)}</td>
       <td>${esc(r.header.styleName)}</td>
       <td>${esc(r.header.ir)}</td>
@@ -2555,7 +2625,7 @@ function renderLog(){
       <td class="actions-cell">
         <button class="btn ghost small" data-view="${r.id}">View</button>
         ${editCell_(r)}
-        <button class="btn ghost small" data-download-pdf-saved="${r.id}">PDF</button>
+        ${r.source && r.source!=='Self' ? '' : `<button class="btn ghost small" data-download-pdf-saved="${r.id}">PDF</button>`}
         ${(window.TCEG && TCEG.isAdmin()) ? `<button class="btn danger small" data-delete="${r.id}">Delete</button>` : ''}
       </td>
     </tr>`).join('');
@@ -2597,6 +2667,7 @@ function renderReportModal(){
         </div>
       </div>
       <div class="modal-body">
+        ${r.source && r.source!=='Self' ? externalSummaryHtml_(r) : ''}
         <div class="header-grid">
           <div><div class="field-label">Type</div>${esc(r.header.inspectionType)}</div>
           <div><div class="field-label">Date</div>${esc(r.header.date)}</div>
@@ -2845,17 +2916,36 @@ function bindEvents(){
     render();
   });
 
+  // ---- Inspection source (Self / Buyer / 3rd Party) ----
+  document.querySelectorAll('[data-source]').forEach(b => b.onclick = () => {
+    state.source = b.dataset.source;
+    if (state.source === 'Buyer' && !state.external.party && state.header.buyer) state.external.party = state.header.buyer;
+    render();
+  });
+  document.querySelectorAll('[data-ext]').forEach(el => {
+    const sync = () => { state.external[el.dataset.ext] = el.value; };
+    el.addEventListener('input', sync);
+    if (el.tagName === 'SELECT') el.addEventListener('change', () => { sync(); render(); });
+  });
+  document.querySelectorAll('[data-ext-date]').forEach(el => el.addEventListener('input', () => { state.header.date = el.value; }));
+
   // ---- Save draft / submit final / PDF / cancel ----
   const draftBtn = document.querySelector('[data-action="save-draft"]');
   if (draftBtn) draftBtn.onclick = () => {
     if (tcBlockIfGuest('Saving a draft')) return;
-    state.remarks = document.getElementById('f_remarks').value;
+    { const fr = document.getElementById('f_remarks'); if (fr) state.remarks = fr.value; }
     saveCurrentReport_(false);
   };
   const submitBtn = document.querySelector('[data-action="submit-final"]');
   if (submitBtn) submitBtn.onclick = () => {
     if (tcBlockIfGuest('Submitting a report')) return;
-    state.remarks = document.getElementById('f_remarks').value;
+    { const fr = document.getElementById('f_remarks'); if (fr) state.remarks = fr.value; }
+    if (isExternal_()){
+      const problem = externalProblems_();
+      if (problem){ alert(problem); return; }
+      saveCurrentReport_(true);
+      return;
+    }
     const miss = missingCheckpoints_(state);
     if (miss.m03.length || miss.m04.length){
       state.showMissing = true;
@@ -2941,12 +3031,20 @@ async function saveCurrentReport_(isFinal){
     sampleOverview: state.sampleOverview, styleOverviewPics: state.styleOverviewPics, cartonQtySelection: state.cartonQtySelection, packingCheckpoints: state.packingCheckpoints,
     cartonDims: state.cartonDims, defects: state.defects, noDefectsFound: state.noDefectsFound, testCheckpoints: state.testCheckpoints, measurements: state.measurements,
     signOff: (syncInspectorSign_(), state.signOff), remarks: state.remarks,
+    source: state.source || 'Self', external: state.external,
   })));
   stripPictureData_(record);
   record.id = state.editingId || uid();
   record.sampleSize = aql.sampleSize;
   record.result = overall === 'PENDING' ? (aql.result || 'PENDING') : overall;
   record.status = isFinal ? 'Submitted' : 'Draft';
+  if (isExternal_(record)){
+    // Buyer / 3rd-party inspection: the outcome comes from their report, not from our checklists.
+    const ex = record.external || {};
+    record.result = ex.result === 'Pass' ? 'PASS' : ex.result === 'Fail' ? 'FAIL' : (ex.result ? 'REWORK' : 'PENDING');
+    record.decision = ex.result === 'Pass' ? 'Accepted' : ex.result === 'Fail' ? 'Rejected' : (ex.result ? 'Rework Required' : '');
+    record.sampleSize = Number(ex.sampleSize) || '';
+  }
   record.savedAt = new Date().toISOString();
 
   if (state.editingId){
@@ -2957,7 +3055,9 @@ async function saveCurrentReport_(isFinal){
   persistReports();
   if (prevRec_ && prevRec_.status !== 'Draft' && isFinal && window.TCEG) TCEG.consume(prevRec_.id);
 
-  if (isFinal){
+  if (isFinal && isExternal_(record)){
+    showToast(record.source + ' inspection saved — result: ' + record.result + '.');
+  } else if (isFinal){
     showToast('Report submitted — overall result: ' + record.result + '. Preparing PDF…');
     await generatePdfReport(record); // snapshot passed explicitly — the form gets reset right after
   } else {

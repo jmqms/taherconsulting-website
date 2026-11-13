@@ -470,10 +470,10 @@ function renderOrderInfoPanel(h){
   return `
   <div class="panel panel-pad section-block">
     <h2 class="section-title">Order Information</h2>
-    <div class="row" style="margin-bottom:12px;">
-      <button type="button" class="tab-btn ${h.dataMode!=='manual'?'active':''}" data-mode="auto">Auto &mdash; from Master Order Information Sheet</button>
-      <button type="button" class="tab-btn ${h.dataMode==='manual'?'active':''}" data-mode="manual">Manual Entry</button>
-    </div>
+    ${h.dataMode==='manual' ? `<div class="row" style="margin-bottom:12px;">
+      <button type="button" class="tab-btn" data-mode="auto">Auto &mdash; from Master Order Information Sheet</button>
+      <button type="button" class="tab-btn active" data-mode="manual">Manual Entry (old report)</button>
+    </div>` : ''}
     ${h.dataMode==='manual' ? `
     <div class="header-grid">
       <div class="f"><span class="field-label">SBU</span><input type="text" data-hf="sbu" value="${esc(h.sbu)}"></div>
