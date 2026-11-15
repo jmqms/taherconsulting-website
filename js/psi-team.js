@@ -46,7 +46,9 @@
     ["Md Al Amin", "PSI035", "JMF013210", "Executive"],
     ["Md Tuhin Mia", "PSI036", "JMF014882", "Quality Auditor (Staff)"],
     ["Md Shohidul Islam", "PSI037", "JMF001860", "Executive"],
-    ["Md. Abdur Rahman Koraishi", "PSI038", "JMF009982", "Quality Auditor (Staff)"]
+    ["Md. Abdur Rahman Koraishi", "PSI038", "JMF009982", "Quality Auditor (Staff)"],
+    ["Md. Afaz Uddin", "PSI039", "JMF020166", "Senior Executive"],
+    ["Rokshana Akter", "PSI040", "JMF013349", "Junior Quality Inspector"]
   ];
 
   function key(s) { return String(s == null ? "" : s).toLowerCase().replace(/[^a-z0-9]+/g, " ").trim(); }

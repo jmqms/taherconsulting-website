@@ -76,7 +76,7 @@
     var url = typeof input === "string" ? input : (input instanceof URL ? input.href : null);
     if (!url || url.indexOf("https://script.google.com/") !== 0) return origFetch(input, init);
     var tok = pickToken();
-    if (tok) { var u = new URL(url); u.searchParams.set("tcToken", tok); url = u.href; }
+    if (tok) { var u = new URL(url); if (!u.searchParams.get("tcToken")) u.searchParams.set("tcToken", tok); url = u.href; }
     return origFetch(url, init).then(function (res) {
       try {
         res.clone().text().then(function (t) {
@@ -103,21 +103,22 @@
   try { tabId = sessionStorage.getItem("tc_tab") || ""; if (!tabId) { tabId = Math.random().toString(36).slice(2, 10); sessionStorage.setItem("tc_tab", tabId); } } catch (e) { tabId = "t" + Math.random().toString(36).slice(2, 8); }
   var pageFile = (location.pathname.split("/").pop() || "index.html").toLowerCase();
 
+  function presenceUrl() { var t = pickToken(); return t ? PRESENCE_API + "?tcToken=" + encodeURIComponent(t) : ""; }
   function presencePayload(action) {
     var tok = pickToken();
     if (!tok) return null;
-    return JSON.stringify({ action: action, __token: tok, tab: tabId, page: pageFile, module: PAGE_MODULES[pageFile] || (document.title || pageFile).slice(0, 50) });
+    return JSON.stringify({ action: action, tab: tabId, page: pageFile, module: PAGE_MODULES[pageFile] || (document.title || pageFile).slice(0, 50) });
   }
   function beat() {
     if (document.visibilityState === "hidden") return;      // background tab = not active
     var body = presencePayload("heartbeat");
     if (!body) return;
-    try { origFetch(PRESENCE_API, { method: "POST", headers: { "Content-Type": "text/plain;charset=utf-8" }, body: body, keepalive: true }).catch(function () {}); } catch (e) {}
+    try { origFetch(presenceUrl(), { method: "POST", headers: { "Content-Type": "text/plain;charset=utf-8" }, body: body }).catch(function () {}); } catch (e) {}
   }
   function leave() {
     var body = presencePayload("leave");
     if (!body) return;
-    try { if (navigator.sendBeacon) navigator.sendBeacon(PRESENCE_API, new Blob([body], { type: "text/plain;charset=utf-8" })); } catch (e) {}
+    try { if (navigator.sendBeacon) navigator.sendBeacon(presenceUrl(), new Blob([body], { type: "text/plain;charset=utf-8" })); } catch (e) {}
   }
   setTimeout(beat, 1500);
   setInterval(beat, 45000);
