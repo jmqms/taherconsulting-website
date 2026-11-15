@@ -98,8 +98,8 @@ async function fetchStatus() {
   const body = { action: "activeStatus" };
   let tok = "";   // the main-portal administrator session (module sessions are never admin)
   try { const raw = localStorage.getItem("tc_session") || sessionStorage.getItem("tc_session"); const x = raw && JSON.parse(raw); if (x && x.token) tok = x.token; } catch (e) {}
-  if (CREDS) { body.userId = CREDS.u; body.password = CREDS.p; } else if (tok) body.__token = tok;
-  const res = await fetch(API, { method: "POST", headers: { "Content-Type": "text/plain;charset=utf-8" }, body: JSON.stringify(body) });
+  if (CREDS) { body.userId = CREDS.u; body.password = CREDS.p; }
+  const res = await fetch(API + (!CREDS && tok ? "?tcToken=" + encodeURIComponent(tok) : ""), { method: "POST", headers: { "Content-Type": "text/plain;charset=utf-8" }, body: JSON.stringify(body) });
   const d = JSON.parse(await res.text());
   if (!d.ok) throw new Error(d.error || "Could not load Active Status.");
   return d.rows || [];
