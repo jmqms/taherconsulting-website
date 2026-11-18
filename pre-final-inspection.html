@@ -526,6 +526,7 @@ function emptyReportState(){
     remarks:'',
     source:'Self',
     external:{ entryType:'', party:'', inspector:'', reportNo:'', sampleSize:'', result:'', critical:'', major:'', minor:'', remarks:'', link:'' },
+    draftName:'',
   };
 }
 
@@ -631,6 +632,7 @@ async function loadReports(){
     showToast(QA_API_URL.indexOf("PASTE_YOUR")===0 ? 'Backend not connected yet — saving to this browser only' : 'Could not reach server — showing this browser\'s last saved copy');
   }
   state.storageReady = true;
+  restoreLocalDraft_();
   // loadSbuOptions() must run unconditionally, before render() — a rendering
   // bug (e.g. a CDN script failing to load) must never be able to block the
   // Master Order Information lookup again, which is exactly what happened
@@ -1770,7 +1772,7 @@ async function generatePdfReport(srcData){
 }
 
 function filteredReports(){
-  let list = state.reports.slice();
+  let list = state.reports.filter(r=>!isDraft_(r));
   if (state.dashType !== 'All') list = list.filter(r => r.header.inspectionType === state.dashType);
   if (state.dashRange !== 'all'){
     const days = Number(state.dashRange);
@@ -1794,6 +1796,7 @@ function render(){
     ${state.tab==='dashboard' ? renderDashboard() : ''}
     ${state.tab==='entry' ? renderEntry() : ''}
     ${state.tab==='log' ? renderLog() : ''}
+    ${state.tab==='drafts' ? renderDrafts() : ''}
     ${state.viewingId ? renderReportModal() : ''}
     ${state.toast ? `<div class="toast"><span class="d"></span>${esc(state.toast)}</div>` : ''}
   `;
@@ -1813,6 +1816,7 @@ function renderTopbar(){
       <button class="tab-btn ${state.tab==='dashboard'?'active':''}" data-tab="dashboard">Dashboard</button>
       <button class="tab-btn ${state.tab==='entry'?'active':''}" data-tab="entry">New Inspection</button>
       <button class="tab-btn ${state.tab==='log'?'active':''}" data-tab="log">Reports Log</button>
+      <button class="tab-btn ${state.tab==='drafts'?'active':''}" data-tab="drafts">Drafts${state.reports.filter(isDraft_).length ? ' ('+state.reports.filter(isDraft_).length+')' : ''}</button>
     </div>
   </div>`;
 }
@@ -2010,6 +2014,7 @@ function renderEntry(){
   const aql = aqlFor(state);
 
   return `
+  ${draftBar_()}
   <div id="printableReport">
 
   ${renderSourcePanel()}
@@ -2066,7 +2071,7 @@ function renderEntry(){
       <button class="btn ghost" data-action="save-draft">Save as Draft</button>
       <button class="btn" data-action="submit-final">✓ Submit Final Report</button>
       ${isExternal_() ? '' : '<button class="btn ghost" data-action="download-pdf">⬇ Download PDF (current form)</button>'}
-      ${state.editingId ? '<button class="btn ghost" data-action="cancel-edit">Cancel Edit</button>' : ''}
+      ${state.editingId ? '<button class="btn ghost" data-action="cancel-edit">'+(isDraftId_(state.editingId) ? 'Close Draft / Start New' : 'Cancel Edit')+'</button>' : ''}
     </div>
     <div class="subtle-note">Save as Draft any time — it stays in the Reports Log (marked "Draft") so you can log back in later and pick up where you left off. Submit Final Report locks it in as complete and offers the PDF download right away.</div>
   </div>`;
@@ -2631,7 +2636,7 @@ function editCell_(r){
   return G.requestButton(r.id, label);
 }
 function renderLog(){
-  const rows = state.reports.slice().sort((a,b)=> new Date(b.header.date)-new Date(a.header.date)).map(r => `
+  const rows = state.reports.filter(r=>!isDraft_(r)).sort((a,b)=> new Date(b.header.date)-new Date(a.header.date)).map(r => `
     <tr>
       <td>${esc(r.header.date)}</td>
       <td><span class="pill ${r.header.inspectionType==='Final Inspection'?'final':'prefinal'}">${esc(r.header.inspectionType)}</span>${r.source && r.source!=='Self' ? ' <span class="pill">'+esc(extLabel_(r))+'</span>' : ''}</td>
@@ -3033,6 +3038,7 @@ function loadReportIntoForm_(reportId, thenDownloadPdf){
 }
 
 function resetEntryForm_(){
+  draftTouched_ = false; draftLastSig_ = ''; state.draftMsg = '';
   Object.assign(state, emptyReportState());
   state.editingId = null;
   state.showMissing = false;
@@ -3051,7 +3057,7 @@ async function saveCurrentReport_(isFinal){
     sampleOverview: state.sampleOverview, styleOverviewPics: state.styleOverviewPics, cartonQtySelection: state.cartonQtySelection, packingCheckpoints: state.packingCheckpoints,
     cartonDims: state.cartonDims, defects: state.defects, noDefectsFound: state.noDefectsFound, testCheckpoints: state.testCheckpoints, measurements: state.measurements,
     signOff: (syncInspectorSign_(), state.signOff), remarks: state.remarks,
-    source: state.source || 'Self', external: state.external,
+    source: state.source || 'Self', external: state.external, draftName: state.draftName || '',
   })));
   stripPictureData_(record);
   record.id = state.editingId || uid();
@@ -3067,6 +3073,7 @@ async function saveCurrentReport_(isFinal){
     if (ex.entryType === 'Self Inspection (Buyer Portal)' && ex.inspector) record.header.inspectorName = ex.inspector;
   }
   record.savedAt = new Date().toISOString();
+  if (!isFinal) record.draftSavedAt = record.savedAt; else delete record.draftName;
 
   if (state.editingId){
     state.reports = state.reports.map(r => r.id===state.editingId ? record : r);
@@ -3074,6 +3081,7 @@ async function saveCurrentReport_(isFinal){
     state.reports.push(record);
   }
   persistReports();
+  clearLocalDraft_(); draftLastSig_ = ''; draftTouched_ = false;
   if (prevRec_ && prevRec_.status !== 'Draft' && isFinal && window.TCEG) TCEG.consume(prevRec_.id);
 
   if (isFinal && isExternal_(record)){
@@ -3082,12 +3090,152 @@ async function saveCurrentReport_(isFinal){
     showToast('Report submitted — overall result: ' + record.result + '. Preparing PDF…');
     await generatePdfReport(record); // snapshot passed explicitly — the form gets reset right after
   } else {
-    showToast('Draft saved — you can resume it any time from the Reports Log.');
+    showToast('Draft saved — resume it any time from the Drafts tab.');
   }
   resetEntryForm_();
-  state.tab = 'log';
+  state.tab = isFinal ? 'log' : 'drafts';
   render();
 }
+
+
+/* ============================= DRAFT AUTO-SAVE ============================= */
+const DRAFT_EVERY_MS = 3000;
+let draftLastSig_ = '', draftBusy_ = false, draftTouched_ = false;
+function isDraft_(r){ return !!r && r.status === 'Draft'; }
+function isDraftId_(id){ return !!id && isDraft_(state.reports.find(x=>x.id===id)); }
+function draftTitle_(r){
+  const h = (r && r.header) || {};
+  return (r && r.draftName) || [h.buyer, h.ir || h.styleName, h.inspectionType].filter(Boolean).join(' · ') || 'Untitled draft';
+}
+function sigFrom_(S){
+  try{ return JSON.stringify([S.header,S.allQtyCheck,S.cartonSelection,S.colorQty,S.sampleOverview,S.styleOverviewPics,S.cartonQtySelection,S.packingCheckpoints,S.cartonDims,S.defects,S.noDefectsFound,S.testCheckpoints,S.measurements,S.signOff,S.remarks,S.source,S.external,S.draftName],
+    function(k,v){ return k==='dataUrl' ? (v ? String(v).length : 0) : v; }); }catch(e){ return ''; }
+}
+const DRAFT_BLANK_SIG_ = sigFrom_(emptyReportState());
+function buildDraftRecord_(){
+  let overall = 'PENDING', aql = {};
+  try{ const o = computeOverallResult_(); overall = o.overall; aql = o.aql || {}; }catch(e){}
+  const rec = Object.assign({}, JSON.parse(JSON.stringify(emptyReportState())), JSON.parse(JSON.stringify({
+    header: state.header, allQtyCheck: state.allQtyCheck, cartonSelection: state.cartonSelection, colorQty: state.colorQty,
+    sampleOverview: state.sampleOverview, styleOverviewPics: state.styleOverviewPics, cartonQtySelection: state.cartonQtySelection, packingCheckpoints: state.packingCheckpoints,
+    cartonDims: state.cartonDims, defects: state.defects, noDefectsFound: state.noDefectsFound, testCheckpoints: state.testCheckpoints, measurements: state.measurements,
+    signOff: (syncInspectorSign_(), state.signOff), remarks: state.remarks,
+    source: state.source || 'Self', external: state.external, draftName: state.draftName || '',
+  })));
+  stripPictureData_(rec);
+  rec.id = state.editingId || uid();
+  rec.sampleSize = aql.sampleSize;
+  rec.result = overall === 'PENDING' ? (aql.result || 'PENDING') : overall;
+  rec.status = 'Draft';
+  rec.savedAt = rec.draftSavedAt = new Date().toISOString();
+  return rec;
+}
+async function persistDraft_(rec){        // saves ONLY this draft (never re-sends other people's reports)
+  try{
+    const res = await qaApiRaw({ action:'savePreFinal', reports:[rec], deletedIds:[] });
+    return !!(res && res.ok);
+  }catch(e){ return false; }
+}
+async function deleteDraftRemote_(id){
+  try{ await qaApiRaw({ action:'savePreFinal', reports:[], deletedIds:[id] }); }catch(e){}
+}
+function localDraftKey_(){ return MODULE_STORAGE_KEY + '_draft'; }
+function clearLocalDraft_(){ try{ localStorage.removeItem(localDraftKey_()); }catch(e){} }
+function setDraftMsg_(m){ state.draftMsg = m; const el = document.getElementById('draftStatus'); if (el) el.textContent = m; }
+async function saveDraft_(force){
+  if (window.TC_IS_GUEST || draftBusy_ || state.tab !== 'entry' || !draftTouched_) return;
+  const cur = state.editingId ? state.reports.find(x=>x.id===state.editingId) : null;
+  if (cur && !isDraft_(cur)) return;                    // editing a submitted report: no drafts
+  const sig = sigFrom_(state);
+  if (!sig || sig === DRAFT_BLANK_SIG_) return;         // nothing entered yet
+  if (!force && sig === draftLastSig_) return;
+  draftBusy_ = true;
+  try{
+    const rec = buildDraftRecord_();
+    state.editingId = rec.id;
+    const i = state.reports.findIndex(x=>x.id===rec.id);
+    if (i>=0) state.reports[i] = rec; else state.reports.push(rec);
+    draftLastSig_ = sig;
+    try{ localStorage.setItem(localDraftKey_(), JSON.stringify(rec)); }catch(e){}
+    const ok = await persistDraft_(rec);
+    setDraftMsg_(ok ? 'Draft auto-saved ' + new Date().toLocaleTimeString('en-GB',{hour:'2-digit',minute:'2-digit'}) : 'Draft kept on this browser only (server not reachable) — will retry');
+    if (!ok) draftLastSig_ = '';
+  }catch(e){ console.error('[draft]', e); }
+  finally{ draftBusy_ = false; }
+}
+setInterval(function(){ saveDraft_(false); }, DRAFT_EVERY_MS);
+document.addEventListener('visibilitychange', function(){ if (document.visibilityState === 'hidden') saveDraft_(false); });
+window.addEventListener('pagehide', function(){ saveDraft_(false); });
+['input','change'].forEach(function(ev){ document.addEventListener(ev, function(e){
+  const t = e.target;
+  if (t && t.id === 'f_draftName') state.draftName = t.value;
+  if (t && t.closest && t.closest('#app') && state.tab === 'entry') draftTouched_ = true;
+}, true); });
+
+function restoreLocalDraft_(){      // a draft that never reached the server (connection dropped / tab closed)
+  try{
+    const raw = localStorage.getItem(localDraftKey_()); if (!raw) return;
+    const d = JSON.parse(raw); if (!d || !d.id || d.status !== 'Draft') return;
+    const i = state.reports.findIndex(x=>x.id===d.id);
+    if (i < 0){ state.reports.push(d); persistDraft_(d); }
+    else if (isDraft_(state.reports[i]) && String(d.draftSavedAt||'') > String(state.reports[i].draftSavedAt||'')){ state.reports[i] = d; persistDraft_(d); }
+  }catch(e){}
+}
+
+function draftBar_(){
+  if (window.TC_IS_GUEST) return '';
+  const cur = state.editingId ? state.reports.find(x=>x.id===state.editingId) : null;
+  if (cur && !isDraft_(cur)) return '';
+  return `
+  <div class="panel panel-pad section-block" style="padding-top:12px;padding-bottom:12px;">
+    <div class="row" style="align-items:flex-end;">
+      <div style="max-width:380px;flex:1;min-width:220px;">
+        <span class="field-label">Draft Name (optional)</span>
+        <input type="text" id="f_draftName" value="${esc(state.draftName||'')}" placeholder="e.g. IR-123 — cartons 1-5 checked">
+      </div>
+      <div class="subtle-note" id="draftStatus" style="padding-bottom:8px;margin:0;">${esc(state.draftMsg || 'Auto-saves as a draft while you work — see the Drafts tab.')}</div>
+    </div>
+  </div>`;
+}
+function renderDrafts(){
+  const ds = state.reports.filter(isDraft_).sort((a,b)=>String(b.draftSavedAt||b.savedAt||'').localeCompare(String(a.draftSavedAt||a.savedAt||'')));
+  const guest = !!window.TC_IS_GUEST;
+  const rows = ds.map(r=>{
+    const h = r.header || {};
+    const cps = (r.packingCheckpoints||[]).concat(r.testCheckpoints||[]);
+    const done = cps.filter(c=>c.result).length;
+    const when = (r.draftSavedAt||r.savedAt) ? new Date(r.draftSavedAt||r.savedAt).toLocaleString('en-GB',{timeZone:'Asia/Dhaka',day:'2-digit',month:'short',hour:'2-digit',minute:'2-digit'}) : '';
+    return `<tr>
+      <td><b>${esc(draftTitle_(r))}</b></td>
+      <td>${esc(h.inspectionType||'')}</td><td>${esc(h.buyer||'')}</td><td>${esc(h.ir||'')}</td><td>${esc(h.inspectorName||'')}</td>
+      <td>${done}/${cps.length}</td><td>${esc(when)}</td>
+      <td>${guest ? '<span class="subtle-note">View only</span>' : `<button type="button" class="btn ghost small" data-open-draft="${esc(r.id)}">Continue</button> <button type="button" class="btn danger small" data-delete-draft="${esc(r.id)}">Delete</button>`}</td>
+    </tr>`;
+  }).join('') || `<tr><td colspan="8" class="subtle-note">No drafts. Anything you start is saved here automatically so you can finish it later.</td></tr>`;
+  return `
+  <div class="panel panel-pad">
+    <h2 class="section-title">Drafts</h2>
+    <div class="subtle-note" style="margin:0 0 10px;">Incomplete inspections. Open one with <b>Continue</b> to finish it; once you Submit it moves to the Reports Log.</div>
+    <table class="log">
+      <tr><th>Draft Name</th><th>Type</th><th>Buyer</th><th>IR</th><th>Inspector</th><th>Checked</th><th>Last saved</th><th></th></tr>
+      ${rows}
+    </table>
+  </div>`;
+}
+document.addEventListener('click', function(e){
+  const b = e.target && e.target.closest ? e.target.closest('[data-open-draft],[data-delete-draft]') : null; if (!b) return;
+  if (tcBlockIfGuest('Working on a draft')) return;
+  if (b.dataset.openDraft){
+    loadReportIntoForm_(b.dataset.openDraft);
+    draftLastSig_ = sigFrom_(state); draftTouched_ = false; setDraftMsg_('Draft opened — changes save automatically.');
+  } else {
+    const id = b.dataset.deleteDraft;
+    if (!confirm('Delete this draft? This cannot be undone.')) return;
+    state.reports = state.reports.filter(x=>x.id!==id);
+    if (state.editingId === id) resetEntryForm_();
+    clearLocalDraft_(); deleteDraftRemote_(id); render();
+  }
+});
 
 /* ============================= INIT ============================= */
 

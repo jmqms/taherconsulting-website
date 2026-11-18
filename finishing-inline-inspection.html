@@ -64,6 +64,8 @@ table.rep-table{width:100%;border-collapse:collapse;}
 .grp-pic-thumbs img{width:22px;height:22px;object-fit:cover;border-radius:4px;border:1px solid var(--line);cursor:pointer;}
 .cam-btn{border:1px solid var(--line);background:#fff;border-radius:6px;padding:3px 8px;font-size:11px;cursor:pointer;white-space:nowrap;}
 .sign-table input{min-width:120px;}
+.grp-ctl{display:flex;align-items:center;gap:10px;}
+.grp-all{font-size:12px;padding:3px 6px;border:1px solid var(--line);border-radius:6px;background:#fff;}
 </style>
 <script src="js/edit-guard.js"></script>
 <script src="js/tc-fetch.js"></script>
@@ -206,6 +208,7 @@ function emptyReportState(){
     decision:'',
     signOff: SIGNOFF_ROLES.map(role => ({ role, name:'', signature:'' })),
     decisionManual: false,
+    draftName: '',
   };
 }
 let state = Object.assign({
@@ -265,6 +268,7 @@ async function loadReports(){
     showToast('Could not reach server — showing this browser\'s last saved copy');
   }
   state.storageReady = true;
+  restoreLocalDraft_();
   loadSbuOptions();
   try{ render(); }catch(e){ console.error('[loadReports] render threw:', e); }
   autoPdfFromUrl_();
@@ -274,13 +278,15 @@ function stripPics_(r){
   Object.keys(c.groupPictures||{}).forEach(g => (c.groupPictures[g]||[]).forEach(p => { if (p.fileId) delete p.dataUrl; }));
   return c;
 }
-async function persistReports(){
+async function persistReports(quiet){
   try{
     const res = await qaApi({ action:"saveFinishingInline", reports: state.reports.map(stripPics_) });
     if (!res.ok) throw new Error(res.error||"Save failed");
+    return true;
   }catch(e){
     try{ localStorage.setItem(MODULE_STORAGE_KEY, JSON.stringify(state.reports)); }catch(e2){}
-    showToast('Could not reach server — saved to this browser only');
+    if (!quiet) showToast('Could not reach server — saved to this browser only');
+    return false;
   }
 }
 
@@ -406,6 +412,7 @@ function groupResult_(groupName){
   const results = rows.map(r=>r.result).filter(Boolean);
   if (results.includes('Fail')) return 'Fail';
   if (results.length < rows.length) return 'Hold';
+  if (results.length && results.every(x=>x==='N/A')) return 'N/A';   // every check point in the section is N/A
   return 'Pass';
 }
 function autoDecision_(overall){
@@ -417,11 +424,170 @@ function overallResult_(){
   const aql = aqlFor();
   const groupResults = SUMMARY_ROWS.map(r => groupResult_(r.group));
   const workResult = aql.result === 'FAIL' ? 'Fail' : (aql.result === 'PASS' ? 'Pass' : 'Hold');
-  const all = groupResults.concat([workResult]);
+  const all = groupResults.filter(g=>g!=='N/A').concat([workResult]);   // an all-N/A section does not count
   if (all.includes('Fail')) return 'Fail';
   if (all.includes('Hold')) return 'Hold';
   return 'Pass';
 }
+
+
+/* ============================= DRAFT AUTO-SAVE + SECTION "SET ALL" ============================= */
+const DRAFT_EVERY_MS = 3000;
+let draftLastSig_ = '', draftBusy_ = false;
+function isDraft_(r){ return !!(r && r.draft); }
+function isDraftId_(id){ return !!id && isDraft_(state.reports.find(x=>x.id===id)); }
+function draftTitle_(r){
+  const h = (r && r.header) || {};
+  return (r && r.draftName) || [h.buyer, h.ir || h.styleName, h.line].filter(Boolean).join(' · ') || 'Untitled draft';
+}
+function draftSig_(){
+  try{ return JSON.stringify([state.header, state.checklist, state.defects, state.noDefectsFound, state.comments, state.decision, state.signOff, state.draftName,
+    Object.keys(state.groupPictures||{}).map(g=>(state.groupPictures[g]||[]).length)]); }catch(e){ return ''; }
+}
+function draftHasContent_(){
+  const h = state.header;
+  return !!(h.sbu||h.buyer||h.ir||h.line||h.inspectorName||h.size||h.color||h.lotQty||h.startTime) ||
+    state.checklist.some(c=>c.status||c.result||c.comments) || state.defects.length>0 || !!state.comments || !!state.noDefectsFound ||
+    Object.keys(state.groupPictures||{}).some(g=>(state.groupPictures[g]||[]).length>0);
+}
+function buildReport_(){
+  const report = {
+    id: state.editingId || ('r'+Date.now()),
+    header: JSON.parse(JSON.stringify(state.header)),
+    checklist: JSON.parse(JSON.stringify(state.checklist)),
+    groupPictures: JSON.parse(JSON.stringify(state.groupPictures)),
+    defects: JSON.parse(JSON.stringify(state.defects)),
+    noDefectsFound: state.noDefectsFound,
+    comments: state.comments,
+    decision: state.decision,
+    signOff: (syncInspectorSign_(), JSON.parse(JSON.stringify(state.signOff))),
+    overall: overallResult_(),
+    aql: (function(){ const a = aqlFor(), t = defectTotals();
+      return { sampleSize:a.sampleSize, codeLetter:a.codeLetter, critAllowed:a.critAllowed, majAllowed:a.majAllowed, minAllowed:a.minAllowed,
+               foundCritical:t.Critical, foundMajor:t.Major, foundMinor:t.Minor, result:a.result }; })(),
+  };
+  report.header.inspectionType = INSPECTION_TYPE;
+  return report;
+}
+async function persistDraft_(rep){       // saves ONLY this draft (never re-sends other people's reports)
+  try{
+    const res = await qaApiRaw(Object.assign({ action:'saveFinishingInline', reports:[stripPics_(rep)], deletedIds:[] }, (typeof TEAM!=='undefined' && TEAM) ? { team:TEAM } : {}));
+    return !!(res && res.ok);
+  }catch(e){ return false; }
+}
+async function deleteDraftRemote_(id){
+  try{ await qaApiRaw(Object.assign({ action:'saveFinishingInline', reports:[], deletedIds:[id] }, (typeof TEAM!=='undefined' && TEAM) ? { team:TEAM } : {})); }catch(e){}
+}
+function localDraftKey_(){ return MODULE_STORAGE_KEY + '_draft'; }
+function clearLocalDraft_(){ try{ localStorage.removeItem(localDraftKey_()); }catch(e){} }
+function setDraftMsg_(m){ state.draftMsg = m; const el = document.getElementById('draftStatus'); if (el) el.textContent = m; }
+async function saveDraft_(force){
+  if (window.TC_IS_GUEST || draftBusy_ || state.tab !== 'entry') return;
+  const cur = state.editingId ? state.reports.find(x=>x.id===state.editingId) : null;
+  if (state.editingId && !isDraft_(cur) && cur) return;          // editing an already-saved report: no drafts
+  if (!draftHasContent_()) return;
+  const sig = draftSig_();
+  if (!force && sig === draftLastSig_) return;
+  draftBusy_ = true;
+  try{
+    const rep = buildReport_();
+    rep.id = state.editingId || ('d'+Date.now());
+    rep.draft = true; rep.draftName = (state.draftName||'').trim(); rep.draftSavedAt = new Date().toISOString();
+    state.editingId = rep.id;
+    const i = state.reports.findIndex(x=>x.id===rep.id);
+    if (i>=0) state.reports[i] = rep; else state.reports.push(rep);
+    draftLastSig_ = sig;
+    try{ localStorage.setItem(localDraftKey_(), JSON.stringify(rep)); }catch(e){}     // safety copy in this browser
+    const ok = await persistDraft_(rep);
+    setDraftMsg_(ok ? 'Draft auto-saved ' + new Date().toLocaleTimeString('en-GB',{hour:'2-digit',minute:'2-digit'}) : 'Draft kept on this browser only (server not reachable) — will retry');
+    if (!ok) draftLastSig_ = '';
+  }catch(e){ console.error('[draft]', e); }
+  finally{ draftBusy_ = false; }
+}
+setInterval(function(){ saveDraft_(false); }, DRAFT_EVERY_MS);
+document.addEventListener('visibilitychange', function(){ if (document.visibilityState === 'hidden') saveDraft_(false); });
+window.addEventListener('pagehide', function(){ saveDraft_(false); });
+
+function restoreLocalDraft_(){      // a draft that never reached the server (connection dropped / tab closed)
+  try{
+    const raw = localStorage.getItem(localDraftKey_()); if (!raw) return;
+    const d = JSON.parse(raw); if (!d || !d.id || !d.draft) return;
+    const i = state.reports.findIndex(x=>x.id===d.id);
+    if (i < 0){ state.reports.push(d); persistDraft_(d); }
+    else if (isDraft_(state.reports[i]) && String(d.draftSavedAt||'') > String(state.reports[i].draftSavedAt||'')){ state.reports[i] = d; persistDraft_(d); }
+  }catch(e){}
+}
+
+function draftBar_(){
+  if (window.TC_IS_GUEST) return '';
+  const cur = state.editingId ? state.reports.find(x=>x.id===state.editingId) : null;
+  if (cur && !isDraft_(cur)) return '';
+  return `
+  <div class="panel panel-pad section-block" style="padding-top:10px;padding-bottom:10px;">
+    <div class="row" style="align-items:flex-end;gap:14px;">
+      <div class="f" style="max-width:380px;flex:1;">
+        <span class="field-label">Draft Name (optional)</span>
+        <input type="text" id="f_draftName" value="${esc(state.draftName||'')}" placeholder="e.g. IR-123 Line 4 — morning">
+      </div>
+      <div class="subtle-note" id="draftStatus" style="padding-bottom:8px;">${esc(state.draftMsg || 'Auto-saves as a draft while you work — see the Drafts tab.')}</div>
+    </div>
+  </div>`;
+}
+function renderDrafts(){
+  const ds = state.reports.filter(isDraft_).sort((a,b)=>String(b.draftSavedAt||'').localeCompare(String(a.draftSavedAt||'')));
+  const guest = !!window.TC_IS_GUEST;
+  const rows = ds.map(r=>{
+    const h = r.header || {}, cl = r.checklist || [];
+    const done = cl.filter(c=>c.result||c.status).length;
+    const when = r.draftSavedAt ? new Date(r.draftSavedAt).toLocaleString('en-GB',{timeZone:'Asia/Dhaka',day:'2-digit',month:'short',hour:'2-digit',minute:'2-digit'}) : '';
+    return `<tr>
+      <td><b>${esc(draftTitle_(r))}</b></td>
+      <td>${esc(h.buyer||'')}</td><td>${esc(h.ir||'')}</td><td>${esc(h.line||'')}</td><td>${esc(h.inspectorName||'')}</td>
+      <td>${done}/${cl.length}</td><td>${esc(when)}</td>
+      <td>${guest ? '<span class="subtle-note">View only</span>' : `<button type="button" class="btn ghost small" data-open-draft="${esc(r.id)}">Continue</button> <button type="button" class="btn danger small" data-delete-draft="${esc(r.id)}">Delete</button>`}</td>
+    </tr>`;
+  }).join('') || `<tr><td colspan="8" class="subtle-note">No drafts. Anything you start is saved here automatically so you can finish it later.</td></tr>`;
+  return `
+  <div class="panel panel-pad section-block">
+    <h2 class="section-title">Drafts</h2>
+    <p class="subtle-note" style="margin:0 0 10px;">Incomplete inspections. Open one with <b>Continue</b> to finish it; once you press Save Inspection it moves to the Reports Log.</p>
+    <div class="overflow-x">
+    <table class="rep-table">
+      <thead><tr><th>Draft Name</th><th>Buyer</th><th>IR</th><th>Line</th><th>Inspector</th><th>Checked</th><th>Last saved</th><th></th></tr></thead>
+      <tbody>${rows}</tbody>
+    </table>
+    </div>
+  </div>`;
+}
+function setAllSel_(group){
+  const rows = state.checklist.filter(c=>c.group===group);
+  const set = new Set(rows.map(r=>r.status||''));
+  const cur = set.size === 1 ? Array.from(set)[0] : '';
+  return `<select class="grp-all" data-grp-all="${esc(group)}" title="Set every check point in this section at once"><option value="">Set all…</option>${['Yes','No','N/A'].map(v=>`<option value="${v}" ${cur===v?'selected':''}>All ${v}</option>`).join('')}</select>`;
+}
+document.addEventListener('input', function(e){
+  const t = e.target; if (t && t.id === 'f_draftName') state.draftName = t.value;
+});
+document.addEventListener('change', function(e){
+  const t = e.target; if (!t || !t.matches || !t.matches('[data-grp-all]') || !t.value) return;
+  const g = t.dataset.grpAll, v = t.value;
+  state.checklist.forEach(c=>{ if (c.group === g){ c.status = v; c.result = STATUS_RESULT_MAP[v] || ''; } });
+  render();
+});
+document.addEventListener('click', function(e){
+  const b = e.target && e.target.closest ? e.target.closest('[data-open-draft],[data-delete-draft]') : null; if (!b) return;
+  if (window.TC_IS_GUEST){ showToast('Guest accounts are view only.'); return; }
+  if (b.dataset.openDraft){
+    const r = state.reports.find(x=>x.id===b.dataset.openDraft); if (!r) return;
+    openReport_(r); draftLastSig_ = draftSig_(); setDraftMsg_('Draft opened — changes save automatically.'); render();
+  } else {
+    const id = b.dataset.deleteDraft;
+    if (!confirm('Delete this draft? This cannot be undone.')) return;
+    state.reports = state.reports.filter(x=>x.id!==id);
+    if (state.editingId === id){ Object.assign(state, emptyReportState()); state.editingId = null; }
+    clearLocalDraft_(); deleteDraftRemote_(id); render();
+  }
+});
 
 /* ============================= RENDER ============================= */
 function syncInspectorSign_(){
@@ -439,9 +605,10 @@ function render(){
         <div class="tabs">
           <button class="tab-btn ${state.tab==='entry'?'active':''}" data-tab="entry">New Inspection</button>
           <button class="tab-btn ${state.tab==='log'?'active':''}" data-tab="log">Reports Log</button>
+          <button class="tab-btn ${state.tab==='drafts'?'active':''}" data-tab="drafts">Drafts${state.reports.filter(isDraft_).length ? ' ('+state.reports.filter(isDraft_).length+')' : ''}</button>
         </div>
       </div>
-      ${state.tab==='entry' ? renderEntry() : renderLog()}
+      ${state.tab==='entry' ? renderEntry() : state.tab==='drafts' ? renderDrafts() : renderLog()}
     </div>
     ${state.toast ? `<div class="toast">${esc(state.toast)}</div>` : ''}
   `;
@@ -452,6 +619,7 @@ function render(){
 function renderEntry(){
   const h = state.header, aql = aqlFor();
   return `
+  ${draftBar_()}
   ${renderOrderInfoPanel(h)}
   ${renderAqlPanel(h, aql)}
   ${renderChecklistPanel()}
@@ -583,7 +751,7 @@ function renderAqlPanel(h, aql){
 function renderChecklistPanel(){
   let lastGroup=null;
   const rows = state.checklist.map((c,i)=>{
-    const hd = c.group!==lastGroup ? `<tr class="rep-group-hd"><td colspan="4"><div class="grp-hd-row"><span>${esc(c.group)}</span>${PHOTO_GROUPS.indexOf(c.group)!==-1 ? groupPictureWidget(c.group) : ''}</div></td></tr>` : '';
+    const hd = c.group!==lastGroup ? `<tr class="rep-group-hd"><td colspan="4"><div class="grp-hd-row"><span>${esc(c.group)}</span><span class="grp-ctl">${setAllSel_(c.group)}${PHOTO_GROUPS.indexOf(c.group)!==-1 ? groupPictureWidget(c.group) : ''}</span></div></td></tr>` : '';
     lastGroup = c.group;
     return hd + `
     <tr>
@@ -638,7 +806,7 @@ function renderCommentsPanel(){
 function renderSummaryPanel(aql){
   const rows = SUMMARY_ROWS.map(sr => {
     const r = groupResult_(sr.group);
-    return `<tr><td>${esc(sr.label)}</td><td><span class="badge ${r==='Fail'?'fail':r==='Pass'?'pass':''}">${r}</span></td></tr>`;
+    return `<tr><td>${esc(sr.label)}</td><td><span class="badge ${r==='Fail'?'fail':r==='Pass'?'pass':''}"${r==='N/A'?' style="background:#eee;color:#555"':''}>${r}</span></td></tr>`;
   }).join('');
   const workResult = aql.result==='FAIL'?'Fail':(aql.result==='PASS'?'Pass':'Hold');
   const overall = overallResult_();
@@ -695,7 +863,7 @@ function logActions_(r){
 }
 async function pdfFromLog_(id){
   const r = state.reports.find(x=>x.id===id); if (!r) return;
-  const keys = ['header','checklist','groupPictures','defects','noDefectsFound','comments','decision','signOff','editingId','anySbu','tab'], snap = {};
+  const keys = ['header','checklist','groupPictures','defects','noDefectsFound','comments','decision','signOff','editingId','anySbu','tab','draftName'], snap = {};
   keys.forEach(k=>{ snap[k] = state[k]; });
   openReport_(r);
   try{ await exportPdf(); showToast('PDF downloaded.'); }catch(e){ console.error(e); showToast('Could not create the PDF.'); }
@@ -704,7 +872,7 @@ async function pdfFromLog_(id){
 }
 
 function renderLog(){
-  const rows = state.reports.slice().sort((a,b)=> new Date(b.header.date)-new Date(a.header.date)).map(r=>{
+  const rows = state.reports.filter(r=>!isDraft_(r)).sort((a,b)=> new Date(b.header.date)-new Date(a.header.date)).map(r=>{
     const aql = computeAQL(r.header.lotQty, 0,0,0, r.header.aqlCritical, r.header.aqlMajor, r.header.aqlMinor, r.header.inspectionLevel, true);
     return `
     <tr>
@@ -811,7 +979,9 @@ function bindEvents(){
   if (pdfBtn) pdfBtn.addEventListener('click', exportPdf);
   const newBtn = document.getElementById('newBtn');
   if (newBtn) newBtn.addEventListener('click', ()=>{
-    if (confirm('Clear the current form and start a new inspection?')){
+    if (confirm('Clear the current form and start a new inspection? (Its auto-saved draft will be removed too.)')){
+      if (isDraftId_(state.editingId)){ const dId = state.editingId; state.reports = state.reports.filter(x=>x.id!==dId); deleteDraftRemote_(dId); }
+      clearLocalDraft_(); draftLastSig_ = '';
       Object.assign(state, emptyReportState());
       state.editingId = null;
       render();
@@ -847,7 +1017,7 @@ async function mirrorToStyleTracking_(report){
 }
 
 function openReport_(r){
-  Object.assign(state, JSON.parse(JSON.stringify({ header:r.header, checklist:r.checklist, groupPictures:r.groupPictures||PHOTO_GROUPS.reduce((o,g)=>{o[g]=[];return o;},{}), defects:r.defects, noDefectsFound:r.noDefectsFound, comments:r.comments, decision:r.decision, signOff:r.signOff||SIGNOFF_ROLES.map(role=>({role,name:'',signature:''})) })));
+  Object.assign(state, JSON.parse(JSON.stringify({ header:r.header, checklist:r.checklist, groupPictures:r.groupPictures||PHOTO_GROUPS.reduce((o,g)=>{o[g]=[];return o;},{}), defects:r.defects, noDefectsFound:r.noDefectsFound, comments:r.comments, decision:r.decision, signOff:r.signOff||SIGNOFF_ROLES.map(role=>({role,name:'',signature:''})), draftName:r.draftName||'' })));
   state.editingId = r.id;
   { const ov = overallResult_(); state.decisionManual = !!state.decision && state.decision !== (ov==='Pass'?'Accepted':ov==='Fail'?'Rework Required':state.decision); }
   state.anySbu = !!(r.header && r.header.prodSbuDiffers);
@@ -867,7 +1037,7 @@ async function autoPdfFromUrl_(){
 
 function saveInspection(){
   if (window.TC_IS_GUEST){ showToast('Guest accounts are view only — saving is disabled.'); return; }
-  if (state.editingId && window.TCEG && !TCEG.canEdit(state.editingId)){ showToast('This report is locked. Ask an administrator for an edit (Reports Log > Request Edit).'); return; }
+  if (state.editingId && !isDraftId_(state.editingId) && window.TCEG && !TCEG.canEdit(state.editingId)){ showToast('This report is locked. Ask an administrator for an edit (Reports Log > Request Edit).'); return; }
   const h = state.header;
   if (!h.buyer || !h.line){ showToast('Please fill in at least Buyer and Line before saving.'); return; }
   const report = {
@@ -887,13 +1057,14 @@ function saveInspection(){
   };
   report.header.inspectionType = INSPECTION_TYPE;
   const idx = state.reports.findIndex(r=>r.id===report.id);
-  const isNew = idx < 0;
+  const isNew = idx < 0 || isDraft_(state.reports[idx]);   // a finished draft counts as a new report
+  clearLocalDraft_(); draftLastSig_ = '';
   if (idx>=0) state.reports[idx]=report; else state.reports.push(report);
   persistReports();
   if (isNew) mirrorToStyleTracking_(report);
   if (!isNew && window.TCEG) TCEG.consume(report.id);
   // a saved report is locked: clear the form and show the log (PDF / Request Edit live there)
-  Object.assign(state, emptyReportState()); state.editingId = null; state.anySbu = false; state.tab = 'log';
+  Object.assign(state, emptyReportState()); state.editingId = null; state.anySbu = false; state.tab = 'log'; state.draftMsg = '';
   showToast('Inspection saved. Find it in the Reports Log.');
   render();
 }
