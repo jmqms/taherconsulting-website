@@ -93,7 +93,7 @@
     if (cache && !force) return Promise.resolve(cache);
     var jobs = TYPES.map(function (t) {
       return post({ action: t.action })
-        .then(function (r) { if (!r.ok) throw new Error(r.error || "failed"); return { t: t, rows: r.reports || [] }; })
+        .then(function (r) { if (!r.ok) throw new Error(r.error || "failed"); return { t: t, rows: (r.reports || []).filter(function (x) { return !(x && (x.draft || x.status === 'Draft')); }) }; /* drafts are not inspections yet */ })
         .catch(function (e) { return { t: t, err: e.message || "failed" }; });
     });
     jobs.push(post({ action: "listTesting" })
