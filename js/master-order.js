@@ -7,12 +7,15 @@
  * and returns the same response shapes. If the JSON cannot be loaded, handle()
  * returns null and the module falls back to its normal Apps Script call.
  *
- * To update the data: replace data/masterOrders.json (primary) and/or data/masterOrders2.json
- * (fallback for styles that are not in the primary file) in the repo.
+ * To update the data: replace data/masterOrders.json (primary) and/or data/masterOrders2.json and
+ * data/masterOrders3.json (fallbacks for IRs that are not in the files before them) in the repo.
+ * Which file wins when an IR is in more than one is set by PRIORITY below.
  */
 (function () {
   var URL = "data/masterOrders.json";
   var URL2 = "data/masterOrders2.json"; // fallback: used only for IRs missing from file 1
+  var URL4 = "data/masterOrders3.json"; // fallback 2: used only for IRs missing from files 1 and 2
+  var PRIORITY = [1, 2, 3];             // first file listed wins for an IR; use [3, 1, 2] to make file 3 the newest-wins file
   var URL3 = "data/sbuOverride.json";   // { "IR No": "Production SBU" } for IRs produced in a different SBU than allocated
   var ACTIONS = { listSbus: 1, listBuyers: 1, listIrs: 1, getOrderDetail: 1, listBuyersOther: 1, listIrsOther: 1 };
   var loading = null;
@@ -56,16 +59,19 @@
     if (loading) return loading;
     // cache:"no-cache" = browser asks GitHub "changed?" and gets a tiny 304 when not,
     // so data is always fresh but repeat visits cost almost nothing.
-    loading = Promise.all([getJson(URL, "orders1").catch(function () { return null; }), getJson(URL2, "orders2").catch(function () { return null; }), getJson(URL3, "override").catch(function () { return {}; })])
+    loading = Promise.all([getJson(URL, "orders1").catch(function () { return null; }), getJson(URL2, "orders2").catch(function () { return null; }), getJson(URL3, "override").catch(function () { return {}; }), getJson(URL4, "orders3").catch(function () { return null; })])
       .then(function (res) {
         raw = res;
-        var a = res[0], b = res[1], ov = res[2] || {};
-        if (!a && !b) throw new Error("no local master order data");
-        var rows1 = (a && a.data) || [], rows2 = (b && b.data) || [];
-        var have = {};
-        rows1.forEach(function (r) { have[norm(r["IR No"])] = 1; });
-        var extra = rows2.filter(function (r) { return !have[norm(r["IR No"])]; });
-        var rows = rows1.concat(extra).map(function (r) {
+        var a = res[0], b = res[1], ov = res[2] || {}, c = res[3];
+        if (!a && !b && !c) throw new Error("no local master order data");
+        var byId = { 1: a, 2: b, 3: c }, have = {}, merged = [], extra = [];
+        PRIORITY.forEach(function (id, n) {      // an IR is taken whole from the first file (in PRIORITY order) that has it
+          var f = byId[id]; if (!f || !f.data) return;
+          var mine = {};
+          f.data.forEach(function (r) { var k = norm(r["IR No"]); if (have[k]) return; mine[k] = 1; merged.push(r); if (n) extra.push(r); });
+          for (var k in mine) have[k] = 1;
+        });
+        var rows = merged.map(function (r) {
           var p = ov[norm(r["IR No"])];
           p = norm(p);
           if (!p || p === norm(r["SBU"])) return r;
@@ -78,7 +84,7 @@
           var k = norm(r["SBU"]) + "\u0001" + norm(r["Buyer"]) + "\u0001" + norm(r["IR No"]);
           (groups[k] = groups[k] || []).push(r);
         });
-        return { rows: rows.filter(function (r) { return norm(r["SBU"]); }), groups: groups, updated: (a || b).updated, fromFile2: extra.length };
+        return { rows: rows.filter(function (r) { return norm(r["SBU"]); }), groups: groups, updated: (a || b || c).updated, fromFile2: extra.length };
       })
       .catch(function (e) { loading = null; console.warn("[MasterOrder] local data unavailable, using backend:", e); return null; });
     return loading;
