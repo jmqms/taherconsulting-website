@@ -515,13 +515,13 @@ function emptyReportState(){
     orderColors: [],
     sampleOverview: [ { styleId:'', styleName:'', orderQty:'', availableQty:'', cartonsAvailable:'', cartonsSelected:'', actualSampleInspected:'', remarks:'' } ],
     styleOverviewPics: { pictures:[] },
-    cartonQtySelection: { totalCartonsPackingList:'', randomSelectionPerformed:'Yes', selectedCartonNumbers:'', pictures:[] },
+    cartonQtySelection: { totalCartonsPackingList:'', totalCartonsSelected:'', randomSelectionPerformed:'Yes', selectedCartonNumbers:'', pictures:[] },
     packingCheckpoints: flatPackingCheckpoints().map(c => ({ group:c.group, label:c.label, result:'', comments:'', pictures:[] })),
     cartonDims: [ { poNumber:'', cartonNo:'', dims:'', comments:'' } ],
     defects: [],
     noDefectsFound: false,
     testCheckpoints: flatTestCheckpoints().map(c => ({ group:c.group, subgroup:c.subgroup, label:c.label, isReport:c.isReport, applicable:'', result:'', comments:'', testReportNumber:'', pictures:[] })),
-    measurements: { poms: [ { description:'', size:'', tolMinus:'', tolPlus:'', spec:'', m:[] } ], pictures:[], pieceCount:0, readingsManual:'', ootReadingsManual:'' },
+    measurements: { poms: [], pictures:[], pieceCount:0, readingsManual:'', ootReadingsManual:'', ootPiecesManual:'', sampleOverride:'' },
     signOff: SIGNOFF_ROLES.map(role => ({ role, name:'', signature:'' })),
     remarks:'',
     source:'Self',
@@ -836,34 +836,37 @@ function computeMeasurement(S){
   const level = h.inspectionLevelMeasurements || 'S-2';
   const code = codeLetterFor(lot, level);
   const plan = singlePlan(code, h.aqlMajor) || { n:0, ac:0, re:1, code:code };
-  const pieces = Number(m.pieceCount) || plan.n || 0;
+  // Older reports (saved with the POM table) have no manual "pieces out of tolerance"; they keep their table-based count.
+  const legacy = m.ootPiecesManual === undefined;
+  const override = Number(m.sampleOverride) || 0;
+  const pieces = override || (legacy ? (Number(m.pieceCount) || plan.n || 0) : (plan.n || 0));
 
-  // One garment is "out of tolerance" if ANY of its POMs is outside spec.
   const pieceOot = [];
-  for (let j = 0; j < pieces; j++){
-    let bad = false;
-    (m.poms||[]).forEach(p => {
-      const v = p.m[j];
-      if (v === '' || v === undefined || v === null) return;
-      if (p.spec === '' || p.spec === undefined) return;
-      const val = Number(v), spec = Number(p.spec);
-      const lo = p.tolMinus !== '' && p.tolMinus !== undefined ? spec + Number(p.tolMinus) : null;
-      const hi = p.tolPlus  !== '' && p.tolPlus  !== undefined ? spec + Number(p.tolPlus)  : null;
-      if ((lo !== null && val < lo) || (hi !== null && val > hi)) bad = true;
-    });
-    pieceOot.push(bad);
+  if (legacy){
+    for (let j = 0; j < pieces; j++){
+      let bad = false;
+      (m.poms||[]).forEach(p => {
+        const v = (p.m||[])[j];
+        if (v === '' || v === undefined || v === null) return;
+        if (p.spec === '' || p.spec === undefined) return;
+        const val = Number(v), spec = Number(p.spec);
+        const lo = p.tolMinus !== '' && p.tolMinus !== undefined ? spec + Number(p.tolMinus) : null;
+        const hi = p.tolPlus  !== '' && p.tolPlus  !== undefined ? spec + Number(p.tolPlus)  : null;
+        if ((lo !== null && val < lo) || (hi !== null && val > hi)) bad = true;
+      });
+      pieceOot.push(bad);
+    }
   }
-  const oot = pieceOot.filter(Boolean).length;
+  const manualSet = !legacy && m.ootPiecesManual !== '' && m.ootPiecesManual != null;
+  const oot = legacy ? pieceOot.filter(Boolean).length : (manualSet ? (Number(m.ootPiecesManual) || 0) : 0);
 
-  // Total POM Readings Taken / POM Readings Out of Tolerance are entered
-  // manually by the inspector rather than auto-counted from the table.
   const readings = (m.readingsManual === '' || m.readingsManual == null) ? 0 : (Number(m.readingsManual) || 0);
   const ootReadings = (m.ootReadingsManual === '' || m.ootReadingsManual == null) ? 0 : (Number(m.ootReadingsManual) || 0);
 
   const maxAllowed = plan.ac;
-  const result = readings ? (oot <= maxAllowed ? 'PASS' : 'FAIL') : '';
+  const result = (readings || manualSet) ? (oot <= maxAllowed ? 'PASS' : 'FAIL') : '';
   return {
-    level: level, codeLetter: plan.code || code, sampleSize: plan.n, pieces: pieces,
+    level: level, codeLetter: plan.code || code, sampleSize: plan.n, sampleAuto: plan.n, overridden: !!override, pieces: pieces,
     ac: plan.ac, re: plan.re, maxAllowed: maxAllowed,
     pieceOot: pieceOot, ootPieces: oot, readings: readings, ootReadings: ootReadings,
     pctOot: readings ? (ootReadings / readings * 100) : null, result: result
@@ -920,12 +923,18 @@ function resolvePictureTarget(section, idx){
 function pictureWidget(section, idx){
   const target = resolvePictureTarget(section, idx);
   const pics = (target && target.pictures) || [];
+  const key = section + ':' + idx;
   return `
     <div class="pic-widget">
-      <input type="file" accept="image/*" capture="environment" style="display:none" data-pic-input="${section}:${idx}">
-      <button type="button" class="btn ghost small" data-pic-add="${section}:${idx}">&#128247; ${pics.length ? pics.length + ' photo' + (pics.length>1?'s':'') : 'Add Photo'}</button>
+      <input type="file" accept="image/*" capture="environment" style="display:none" data-pic-input="${key}" data-src="camera">
+      <input type="file" accept="image/*" style="display:none" data-pic-input="${key}" data-src="file">
+      <div style="display:flex;gap:6px;flex-wrap:wrap;align-items:center;">
+        <button type="button" class="btn ghost small" data-pic-add="${key}" data-src="camera">&#128247; Camera</button>
+        <button type="button" class="btn ghost small" data-pic-add="${key}" data-src="file">&#128444; Gallery</button>
+        ${pics.length ? `<span class="subtle-note" style="margin:0;">${pics.length} photo${pics.length>1?'s':''}</span>` : ''}
+      </div>
       <div class="pic-thumbs">
-        ${pics.map((p,pi)=>`<span class="pic-thumb"><img src="${esc(picThumbSrc_(p))}" onclick="window.open('${esc(p.url||'')}','_blank')"><button type="button" class="pic-del" data-pic-del="${section}:${idx}:${pi}">&times;</button></span>`).join('')}
+        ${pics.map((p,pi)=>`<span class="pic-thumb"><img src="${esc(picThumbSrc_(p))}" onclick="window.open('${esc(p.url||'')}','_blank')"><button type="button" class="pic-del" data-pic-del="${key}:${pi}">&times;</button></span>`).join('')}
       </div>
     </div>`;
 }
@@ -1666,7 +1675,7 @@ async function generatePdfReport(srcData){
       const packTotal_ = Number(S.cartonQtySelection.totalCartonsPackingList) || 0;
       table({ theme:'grid', head:[['Total Cartons on Packing List','Total Cartons Selected (sqrt)','Random Selection','Selected Carton Numbers']],
         body:[[ S.cartonQtySelection.totalCartonsPackingList||'-',
-                packTotal_ ? Math.round(Math.sqrt(packTotal_)) : '-',
+                cartonsSelected_(S) || '-',
                 S.cartonQtySelection.randomSelectionPerformed||'-',
                 S.cartonQtySelection.selectedCartonNumbers||'-' ]] });
     }
@@ -1703,6 +1712,7 @@ async function generatePdfReport(srcData){
     // ---------------- 06 measurements -------------------------------------------
     heading('06. Measurements \u2014 Result: ' + (measResult||'N/A'));
     const pieceCols = Array.from({length: meas.pieces}, (_,j)=>'#'+(j+1));
+    if ((S.measurements.poms||[]).some(p => p.description || (p.m||[]).some(v => v !== '' && v != null)))
     table({ theme:'grid', head:[['POM Description','Size','Tol(-)','Tol(+)','Spec'].concat(pieceCols).concat(['OOT'])],
       body: S.measurements.poms.map(p => {
         const cells = p.m.slice(0, meas.pieces).map(v => (v===''||v==null) ? '' : String(v));
@@ -1717,7 +1727,7 @@ async function generatePdfReport(srcData){
         return [p.description,p.size,p.tolMinus,p.tolPlus,p.spec].concat(cells).concat([bad?'OOT':'']);
       }), styles:{ fontSize: meas.pieces > 8 ? 6.5 : 8, cellPadding: 1.2 } });
     table({ theme:'grid', head:[['Insp. Level','Code','Sample Size','POM Readings','Readings OOT','Pieces OOT','Max Allowed (Ac)','% OOT','Result']],
-      body:[[ meas.level, meas.codeLetter||'-', meas.sampleSize||'-', meas.readings, meas.ootReadings,
+      body:[[ meas.level, meas.codeLetter||'-', meas.pieces||meas.sampleSize||'-', meas.readings, meas.ootReadings,
               meas.ootPieces, meas.maxAllowed, meas.pctOot!=null?fmt1(meas.pctOot)+'%':'-', measResult||'N/A' ]] });
     // ---------------- 07 summary & sign-off --------------------------------------
     heading('07. Summary & Sign-Off');
@@ -2293,16 +2303,17 @@ function renderOrderInfoPanel(){
 }
 
 /* ---- 02. SAMPLE SELECTION & AQL PLAN ---- */
+function cartonsAuto_(S){ const t = Number(((S||state).cartonQtySelection||{}).totalCartonsPackingList) || 0; return t ? Math.round(Math.sqrt(t)) : ''; }
+function cartonsSelected_(S){ const q = (S||state).cartonQtySelection || {}; return (q.totalCartonsSelected !== undefined && q.totalCartonsSelected !== '' && q.totalCartonsSelected != null) ? q.totalCartonsSelected : cartonsAuto_(S); }
 function renderSection02(){
-  const packListTotal = Number(state.cartonQtySelection.totalCartonsPackingList) || 0;
-  const totalCartonsSel = packListTotal ? Math.round(Math.sqrt(packListTotal)) : '';
+  const totalCartonsSel = cartonsSelected_(state), cartonsOv = totalCartonsSel !== '' && String(totalCartonsSel) !== String(cartonsAuto_(state));
   return `
   <div class="panel panel-pad section-block">
     <h2 class="section-title">02. Sample Selection & AQL Plan</h2>
     <h3 class="section-title" style="font-size:12.5px;">Carton / Quantity Selection</h3>
     <div class="header-grid">
       <div class="f"><span class="field-label">Total Cartons on Packing List</span><input type="number" data-cqs="totalCartonsPackingList" value="${esc(state.cartonQtySelection.totalCartonsPackingList)}"></div>
-      <div class="f"><span class="field-label">Total Cartons Selected (&radic;Packing List, auto)</span><input type="text" value="${totalCartonsSel}" readonly></div>
+      <div class="f"><span class="field-label">Total Cartons Selected <span style="text-transform:none;color:var(--muted)">${cartonsOv ? '— manual (auto ' + cartonsAuto_(state) + ')' : '— auto (\u221A packing list), you can increase'}</span></span><input type="number" min="1" data-cqs="totalCartonsSelected" value="${totalCartonsSel}"></div>
       <div class="f"><span class="field-label">Random Carton Selection Performed?</span>
         <select data-cqs="randomSelectionPerformed"><option ${state.cartonQtySelection.randomSelectionPerformed==='Yes'?'selected':''}>Yes</option><option ${state.cartonQtySelection.randomSelectionPerformed==='No'?'selected':''}>No</option></select>
       </div>
@@ -2442,64 +2453,26 @@ function renderSection05(){
 function renderSection06(){
   const m = state.measurements;
   const meas = computeMeasurement(state);
-  const n = meas.pieces;
-  const pieceHead = Array.from({length:n}, (_,j)=>`<th style="${meas.pieceOot[j]?'color:var(--crit)':''}">#${j+1}</th>`).join('');
-
-  const isOot = (p, j) => {
-    const v = p.m[j];
-    if (v === '' || v === undefined || v === null || p.spec === '' || p.spec === undefined) return false;
-    const val = Number(v), spec = Number(p.spec);
-    const lo = p.tolMinus !== '' && p.tolMinus !== undefined ? spec + Number(p.tolMinus) : null;
-    const hi = p.tolPlus  !== '' && p.tolPlus  !== undefined ? spec + Number(p.tolPlus)  : null;
-    return (lo !== null && val < lo) || (hi !== null && val > hi);
-  };
-
+  const legacyRows = (m.poms||[]).some(p => p.description || (p.m||[]).some(v => v !== '' && v != null));
+  const ootPcs = m.ootPiecesManual === undefined ? (legacyRows ? String(meas.ootPieces) : '') : m.ootPiecesManual;
   return `
   <div class="panel panel-pad section-block">
     <h2 class="section-title">06. Measurements <span class="tag">AQL ${esc(String(state.header.aqlMajor))} &middot; level ${esc(meas.level)} &middot; code ${esc(meas.codeLetter||'-')}</span></h2>
-
-    <div class="row" style="align-items:flex-end;margin-bottom:10px;">
-      <div class="f"><span class="field-label">Measurement Sample Size (auto, per AQL)</span><input type="text" value="${meas.sampleSize || '-'}" readonly></div>
-      <div class="f"><span class="field-label">Pieces Measured (columns shown)</span><input type="number" min="1" max="15" data-mm="pieceCount" value="${esc(String(m.pieceCount||n))}"></div>
-      <div class="f"><span class="field-label">Max Allowed OOT Pieces (auto, Ac)</span><input type="text" value="${meas.maxAllowed}" readonly></div>
-    </div>
-
-    <h3 class="section-title" style="font-size:12.5px;">Point-of-Measure (POM) Findings</h3>
-    <div style="overflow-x:auto;">
-    <table class="rep-table">
-      <thead><tr><th>POM Description</th><th>Size</th><th>Tol (-)</th><th>Tol (+)</th><th>Spec</th>${pieceHead}<th>OOT?</th><th></th></tr></thead>
-      <tbody>
-        ${m.poms.map((p,i)=>`
-          <tr>
-            <td><input type="text" data-pom="${i}:description" value="${esc(p.description)}"></td>
-            <td><input type="text" data-pom="${i}:size" value="${esc(p.size)}" style="width:50px"></td>
-            <td><input type="number" step="0.01" data-pom="${i}:tolMinus" value="${esc(p.tolMinus)}" style="width:55px"></td>
-            <td><input type="number" step="0.01" data-pom="${i}:tolPlus" value="${esc(p.tolPlus)}" style="width:55px"></td>
-            <td><input type="number" step="0.01" data-pom="${i}:spec" value="${esc(p.spec)}" style="width:60px"></td>
-            ${p.m.slice(0,n).map((v,mi)=>`<td><input type="number" step="0.01" data-pomm="${i}:${mi}" value="${esc(v)}" style="width:52px;${isOot(p,mi)?'color:var(--crit);font-weight:600;':''}"></td>`).join('')}
-            <td>${p.m.slice(0,n).some((v,mi)=>isOot(p,mi)) ? `<span class="badge fail">OOT</span>` : ''}</td>
-            <td>${m.poms.length>1?`<button type="button" class="btn danger small" data-pom-remove="${i}">&times;</button>`:''}</td>
-          </tr>`).join('')}
-      </tbody>
-    </table>
-    </div>
-    <button type="button" class="btn ghost small row-add-btn" data-action="add-pom-row">+ Add POM Row</button>
-
-    <div class="row" style="align-items:flex-end;margin-top:14px;">
-      <div class="f"><span class="field-label">Or Measurement Report Pictures</span>${pictureWidget('measurements', '0')}</div>
-    </div>
-
-    <h3 class="section-title" style="margin-top:20px;font-size:12.5px;">Measurement Summary <span class="tag">manual entry</span></h3>
+    ${legacyRows ? '<div class="subtle-note" style="margin-bottom:8px;">This report was saved with the older POM table; those readings are kept and printed in the PDF.</div>' : ''}
+    <h3 class="section-title" style="font-size:12.5px;">Measurement Summary <span class="tag">manual entry</span></h3>
     <div class="header-grid">
-      <div class="f"><span class="field-label">Total Sample Size (Pcs)</span><input type="text" value="${meas.pieces}" readonly></div>
-      <div class="f"><span class="field-label">Total POM Readings Taken</span><input type="number" data-mm="readingsManual" value="${esc(m.readingsManual)}"></div>
-      <div class="f"><span class="field-label">POM Reading Out of Tolerance (Defective)</span><input type="number" data-mm="ootReadingsManual" value="${esc(m.ootReadingsManual)}"></div>
-      <div class="f"><span class="field-label">Pieces Out of Tolerance (defective)</span><input type="text" value="${meas.ootPieces}" readonly></div>
+      <div class="f"><span class="field-label">Total Sample Size (Pcs) <span style="text-transform:none;color:var(--muted)">${meas.overridden ? '— manual (auto ' + (meas.sampleAuto||'-') + ')' : '— auto per AQL, you can increase'}</span></span><input type="number" min="1" data-mm="sampleOverride" value="${meas.pieces || ''}"></div>
+      <div class="f"><span class="field-label">Total POM Readings Taken</span><input type="number" min="0" data-mm="readingsManual" value="${esc(m.readingsManual)}"></div>
+      <div class="f"><span class="field-label">POM Reading Out of Tolerance (Defective)</span><input type="number" min="0" data-mm="ootReadingsManual" value="${esc(m.ootReadingsManual)}"></div>
+      <div class="f"><span class="field-label">Pieces Out of Tolerance (defective)</span><input type="number" min="0" data-mm="ootPiecesManual" value="${esc(ootPcs)}"></div>
       <div class="f"><span class="field-label">Max Allowed (per AQL)</span><input type="text" value="${meas.maxAllowed}" readonly></div>
       <div class="f"><span class="field-label">% POM Out of Tolerance</span><input type="text" value="${meas.pctOot!=null?fmt1(meas.pctOot)+'%':''}" readonly></div>
       <div class="f"><span class="field-label">Measurement Result (auto)</span><input type="text" value="${meas.result}" readonly></div>
     </div>
-    <div class="subtle-note" style="margin-top:8px;">A piece counts as one measurement defective if <b>any</b> of its POMs falls outside tolerance &mdash; that count is what is compared against the Accept number, exactly as the AQL chart intends.</div>
+    <div class="subtle-note" style="margin-top:6px;">A piece counts as one measurement defective if <b>any</b> of its POMs falls outside tolerance — that count is what is compared against the Accept number, exactly as the AQL chart intends.</div>
+    <div class="row" style="align-items:flex-end;margin-top:14px;">
+      <div class="f"><span class="field-label">Measurement Report Pictures</span>${pictureWidget('measurements', '0')}</div>
+    </div>
   </div>`;
 }
 
@@ -2740,7 +2713,11 @@ function bindEvents(){
   // ---- All Quantities / Carton Selection / Carton-Quantity Selection ----
   document.querySelectorAll('[data-aq]').forEach(el => el.onchange = (e) => { state.allQtyCheck[el.dataset.aq] = e.target.value; render(); });
   document.querySelectorAll('[data-cs]').forEach(el => el.onchange = (e) => { state.cartonSelection[el.dataset.cs] = e.target.value; render(); });
-  document.querySelectorAll('[data-cqs]').forEach(el => el.onchange = (e) => { state.cartonQtySelection[el.dataset.cqs] = e.target.value; render(); });
+  document.querySelectorAll('[data-cqs]').forEach(el => el.onchange = (e) => {
+    let v = e.target.value;
+    if (el.dataset.cqs === 'totalCartonsSelected' && (v === '' || String(Number(v)) === String(cartonsAuto_(state)))) v = '';   // back to auto
+    state.cartonQtySelection[el.dataset.cqs] = v; render();
+  });
   document.querySelectorAll('[data-cq]').forEach(el => el.onchange = (e) => {
     const [i, field] = el.dataset.cq.split(':');
     const row = state.colorQty[Number(i)];
@@ -2864,7 +2841,10 @@ function bindEvents(){
     render();
   };
   document.querySelectorAll('[data-mm]').forEach(el => el.onchange = (e) => {
-    state.measurements[el.dataset.mm] = el.dataset.mm === 'pieceCount' ? Math.min(Math.max(Number(e.target.value)||1,1),15) : e.target.value;
+    let v = e.target.value;
+    if (el.dataset.mm === 'sampleOverride'){ const auto = computeMeasurement(state).sampleAuto; v = (v === '' || Number(v) === auto) ? '' : Math.max(Number(v) || 1, 1); }
+    state.measurements[el.dataset.mm] = v;
+    if (state.measurements.ootPiecesManual === undefined) state.measurements.ootPiecesManual = '';   // leaves the legacy table-based count
     normalizeMeasurementColumns_(state);
     render();
   });
@@ -2877,7 +2857,8 @@ function bindEvents(){
 
   // ---- Pictures (every section) ----
   document.querySelectorAll('[data-pic-add]').forEach(el => el.onclick = () => {
-    document.querySelector(`[data-pic-input="${el.dataset.picAdd}"]`).click();
+    const inp = document.querySelector(`[data-pic-input="${el.dataset.picAdd}"][data-src="${el.dataset.src}"]`);
+    if (inp) inp.click();
   });
   document.querySelectorAll('[data-pic-input]').forEach(el => el.onchange = async (e) => {
     if (tcBlockIfGuest('Adding a photo')) return;
@@ -2885,6 +2866,7 @@ function bindEvents(){
     const file = e.target.files[0];
     if (!file) return;
     await handlePictureUpload(section, idx, file);
+    el.value = '';
   });
   document.querySelectorAll('[data-pic-del]').forEach(el => el.onclick = () => {
     const [section, idx, pi] = el.dataset.picDel.split(':');
