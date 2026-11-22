@@ -63,7 +63,7 @@
     if (/draft/i.test(norm(r.status))) return "Draft";
     var d = norm(r.decision);
     if (/reject/i.test(d)) return "Fail";
-    if (/rework/i.test(d)) return "Rework";
+    if (/rework|hold/i.test(d)) return "Rework";
     if (/accept/i.test(d)) return "Pass";
     var x = norm(r.result).toUpperCase();
     if (x === "PASS") return "Pass";
@@ -199,7 +199,10 @@
     if (x.source !== "Self") {
       var ex = r.external || {};
       var by = x.source === OWN_PORTAL ? x.inspector + (norm(ex.party) ? " (" + norm(ex.party) + ")" : "") : (norm(ex.party) || x.source);
-      out.push("Reported as " + (norm(ex.result) || x.outcome) + " by " + by + (norm(ex.remarks) ? ": " + norm(ex.remarks) : ""));
+      out.push("Reported as " + (norm(ex.overall) || norm(ex.result) || x.outcome) + " by " + by + (norm(ex.remarks) ? ": " + norm(ex.remarks) : ""));
+      var SUMN = { workmanship: "Workmanship", measurement: "Measurement", quantity: "Quantity & Packaging", specs: "Product Specifications", onsite: "Onsite Testing", testreport: "Test Report", customer: "Customer expectation", moisture: "Moisture" };
+      Object.keys(ex.summary || {}).forEach(function (k) { var v = norm(ex.summary[k]); if (v === "Fail" || v === "Hold") out.push((SUMN[k] || k) + " conformity — " + v); });
+      if (ds.length) { ds.forEach(function (d) { if (tot[d.sev] !== undefined) tot[d.sev] += d.qty; }); out.push("Defects found — Critical " + tot.Critical + ", Major " + tot.Major + ", Minor " + tot.Minor + (x.samples ? " · sample " + x.samples : "")); }
       return out;
     }
     ds.forEach(function (d) { if (tot[d.sev] !== undefined) tot[d.sev] += d.qty; });
@@ -227,13 +230,13 @@
     var found = ex ? ((ex.critical || ex.major || ex.minor) ? "Cr " + (ex.critical || 0) + " / Mj " + (ex.major || 0) + " / Mn " + (ex.minor || 0) : "") : (q.foundCritical != null) ? "Cr " + q.foundCritical + " / Mj " + q.foundMajor + " / Mn " + q.foundMinor +
       (q.critAllowed != null ? "  (allowed " + q.critAllowed + " / " + q.majAllowed + " / " + q.minAllowed + ")" : "") : "";
     var rows = [["Inspection", x.type + (ex ? " — " + x.source : "")], ["Date", x.date], ["SBU / Buyer", [x.sbu, x.buyer].filter(Boolean).join(" / ")], ["IR / Style", [x.ir, x.style].filter(Boolean).join(" / ")],
-      ["Color", x.color], ["Line", h.line], ["Lot / Carton Qty", lot], ["Sample size", x.samples || ""], ["Defects found", found],
+      ["Country", h.country], ["Color", x.color], ["Line", h.line], ["Lot / Carton Qty", lot], ["Sample size", x.samples || ""], ["Defects found", found],
       ["AQL result", q.result || r.result || ""], ["Decision", x.decision], [ex ? "Inspected by" : "Inspector", x.inspector], ["Their inspector", ex && x.source !== OWN_PORTAL ? ex.inspector : ""], ["Portal / Party", ex && x.source === OWN_PORTAL ? ex.party : ""], ["Their report no.", ex ? ex.reportNo : ""], ["Remarks", ex ? "" : (r.comments || r.remarks || "")]];
     var html = '<div class="qx-sd">' + rows.filter(function (k) { return k[1] !== "" && k[1] != null; }).map(function (k) { return "<div><span>" + esc(k[0]) + "</span><b>" + esc(String(k[1])) + "</b></div>"; }).join("") + "</div>";
     var why = (x.outcome === "Fail" || x.outcome === "Rework") ? failReasons(x) : [];
     if (why.length) html += '<div class="qx-sdt" style="color:var(--reject)">Why it failed</div><ul style="margin:0 0 4px 18px;font-size:13px">' + why.map(function (w) { return "<li>" + esc(w) + "</li>"; }).join("") + "</ul>";
     var ds = defectList(r);
-    if (ex) return html + '<div style="margin-top:8px">' + pdfLink(x) + "</div>";
+    if (ex && !ds.length) return html + '<div style="margin-top:8px">' + pdfLink(x) + "</div>";
     html += '<div class="qx-sdt">Defects' + (ds.length ? " (" + ds.length + ")" : "") + "</div>" +
       (ds.length ? '<table><thead><tr><th>Defect</th><th>Severity</th><th>Qty</th><th>Area</th></tr></thead><tbody>' + ds.map(function (d) {
         return "<tr><td>" + esc(d.name) + '</td><td><span class="qx-chip ' + (d.sev === "Critical" ? "st-Issue" : d.sev === "Major" ? "st-InProgress" : "st-Pending") + '">' + esc(d.sev) + "</span></td><td>" + d.qty + "</td><td>" + esc(d.area || "") + "</td></tr>";
@@ -279,7 +282,8 @@
   function pdfLink(rec) {
     if (rec && rec.source && rec.source !== "Self") {
       var l = norm(rec.r && rec.r.external && rec.r.external.link);
-      return /^https?:\/\//i.test(l) ? '<a href="' + esc(l) + '" target="_blank" rel="noopener">Their report ↗</a>' : "—";
+      var ic = rec.id && rec.page ? '<a href="' + rec.page + "?pdf=" + encodeURIComponent(rec.id) + '" target="_blank" rel="noopener">Certificate (IC) ↓</a>' : "";
+      return [ic, /^https?:\/\//i.test(l) ? '<a href="' + esc(l) + '" target="_blank" rel="noopener">Their report ↗</a>' : ""].filter(Boolean).join(" · ") || "—";
     }
     return rec && rec.id && rec.page ? '<a href="' + rec.page + "?pdf=" + encodeURIComponent(rec.id) + '" target="_blank" rel="noopener">PDF ↓</a>' : "—";
   }
