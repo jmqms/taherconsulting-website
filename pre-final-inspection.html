@@ -503,7 +503,7 @@ function emptyHeader(){
     inspectionType:'Pre-Final Inspection', samplingPlan:'Single', inspectionLevel:'General II',
     poNo:'', poQty:'', actualOrderQty:'', orderQty:'', offerQty:'',
     aqlCritical:0, aqlMajor:2.5, aqlMinor:4.0, inspectionLevelMeasurements:'S-2',
-    sampleSizeOverride:'', defectChecklistName:'',
+    sampleSizeOverride:'', defectChecklistName:'', country:'',
   };
 }
 function emptyReportState(){
@@ -525,7 +525,7 @@ function emptyReportState(){
     signOff: SIGNOFF_ROLES.map(role => ({ role, name:'', signature:'' })),
     remarks:'',
     source:'Self',
-    external:{ entryType:'', party:'', inspector:'', reportNo:'', sampleSize:'', result:'', critical:'', major:'', minor:'', remarks:'', link:'' },
+    external:{ entryType:'', party:'', inspector:'', reportNo:'', sampleSize:'', result:'', critical:'', major:'', minor:'', remarks:'', link:'', summary:{}, overall:'', overallManual:false },
     draftName:'',
   };
 }
@@ -1115,7 +1115,7 @@ function computeOverallResult_(S){
 
 async function generatePdfReport(srcData){
   const S = srcData || state;
-  if (isExternal_(S)){ showToast('No PDF for Buyer / 3rd Party records \u2014 open their report from the link in the entry.'); return; }
+  if (isExternal_(S)) return generateCertificatePdf_(S);
   if (!window.jspdf){ showToast('PDF library did not load \u2014 check your internet connection and retry.'); return; }
   showToast('Generating PDF\u2026');
   try{
@@ -1265,7 +1265,7 @@ async function generatePdfReport(srcData){
       ['Season', h.season||'-', 'Item / Dept', [h.item,h.productDept].filter(Boolean).join(' / ')||'-'],
       ['Date', h.date||'-', 'Inspector', h.inspectorName||'-'],
       ['Factory', h.factoryName||'J.M. FABRICS LTD.', 'PO No', h.poNo||'-'],
-      ['Total Actual Order Qty', topActual_ ? topActual_.toLocaleString() : '-', '', ''],
+      ['Total Actual Order Qty', topActual_ ? topActual_.toLocaleString() : '-', 'Country', h.country||'-'],
     ], columnStyles:{0:{fontStyle:'bold',cellWidth:42},2:{fontStyle:'bold',cellWidth:26}} });
 
     const dt = defectTotals(S.defects);
@@ -1954,57 +1954,6 @@ function renderSourcePanel(){
     </div>
   </div>`;
 }
-function renderExternalPanel(){
-  const e = state.external || {}, h = state.header, type = e.entryType;
-  if (!type) return `<div class="panel panel-pad section-block"><div class="subtle-note">Select the <b>Inspection Entry Type</b> above to continue.</div></div>`;
-  const own = type === 'Self Inspection (Buyer Portal)';
-  const f = (label, key, kind, ph, extra) => `<div class="f"><span class="field-label">${label}</span><input type="${kind||'text'}" data-ext="${key}" value="${esc(e[key])}" ${ph?`placeholder="${esc(ph)}"`:''} ${extra||''}></div>`;
-  return `
-  <div class="panel panel-pad section-block">
-    <h2 class="section-title">${esc(type)} — Result <span class="tag">from the inspection report</span></h2>
-    <div class="header-grid">
-      <div class="f"><span class="field-label">Inspection Date</span><input type="date" data-ext-date value="${esc(h.date)}"></div>
-      ${own ? f('Inspector Name (J.M. Fabrics)', 'inspector', 'text', 'Select or type the inspector', 'list="psiList"')
-            : f(type==='3rd Party' ? 'Inspection Company' : 'Inspecting Party / Team', 'party', 'text', type==='3rd Party' ? 'e.g. SGS / Intertek / Bureau Veritas' : 'e.g. Buyer QA team')}
-      ${own ? f('Buyer Portal / Buyer', 'party', 'text', 'e.g. H&M portal')
-            : f('Their Inspector Name (optional)', 'inspector')}
-      ${f(own ? 'Portal Report No. / Reference' : 'Their Report No. / Reference', 'reportNo')}
-      ${f('Sample Size Checked (optional)', 'sampleSize', 'number')}
-      <div class="f"><span class="field-label">Result</span>
-        <select data-ext="result">
-          <option value="">Select…</option>
-          ${['Pass','Fail','Rework / Re-inspection'].map(x => `<option value="${x}" ${e.result===x?'selected':''}>${x}</option>`).join('')}
-        </select>
-      </div>
-      ${f('Critical Defects (optional)', 'critical', 'number')}
-      ${f('Major Defects (optional)', 'major', 'number')}
-      ${f('Minor Defects (optional)', 'minor', 'number')}
-    </div>
-    <div class="f" style="margin-top:10px;"><span class="field-label">Reason / Findings ${e.result && e.result !== 'Pass' ? '<b style="color:#b02a2a">(required — why did it fail?)</b>' : '(optional)'}</span>
-      <textarea data-ext="remarks" rows="3" placeholder="What was found? e.g. Major: open seam 5 pcs; measurement out of tolerance">${esc(e.remarks)}</textarea></div>
-    <div class="f" style="margin-top:10px;"><span class="field-label">Link to the report (optional, https://…)</span>
-      <input type="text" data-ext="link" value="${esc(e.link)}" placeholder="https://"></div>
-  </div>`;
-}
-function externalProblems_(){
-  const h = state.header, e = state.external || {};
-  if (!e.entryType) return 'Select the Inspection Entry Type (1st Party / 3rd Party / Self Inspection (Buyer Portal)).';
-  if (!h.sbu || !h.buyer || !h.ir) return 'Select SBU → Buyer → IR first.';
-  if (!h.date) return 'Enter the inspection date.';
-  if (e.entryType === 'Self Inspection (Buyer Portal)'){ if (!String(e.inspector||'').trim()) return 'Enter the J.M. Fabrics inspector name.'; }
-  else if (!String(e.party||'').trim()) return 'Enter who did the inspection (' + (e.entryType==='3rd Party' ? 'company' : 'party / team') + ').';
-  if (!e.result) return 'Select the result (Pass / Fail / Rework).';
-  if (e.result !== 'Pass' && !String(e.remarks||'').trim()) return 'This is not a Pass — please write the reason / findings.';
-  if (e.link && !/^https?:\/\//i.test(String(e.link).trim())) return 'The report link must start with http:// or https://';
-  return '';
-}
-function externalSummaryHtml_(r){
-  const e = r.external || {};
-  return `<div class="subtle-note" style="margin-bottom:12px;"><b>${esc(extLabel_(r))}</b> — ${esc(e.party||'')}${e.reportNo?' · Report '+esc(e.reportNo):''}${e.inspector?' · '+esc(e.inspector):''}
-    <br>Result: <b>${esc(e.result||'')}</b>${e.sampleSize?' · Sample '+esc(e.sampleSize):''}${(e.critical||e.major||e.minor)?' · Cr '+esc(e.critical||0)+' / Mj '+esc(e.major||0)+' / Mn '+esc(e.minor||0):''}
-    ${e.remarks?'<br>'+esc(e.remarks):''}${/^https?:\/\//i.test(e.link||'')?'<br><a href="'+esc(e.link)+'" target="_blank" rel="noopener">Open the report ↗</a>':''}</div>`;
-}
-
 /* ============================= RENDER: ENTRY FORM ============================= */
 
 function renderEntry(){
@@ -2159,7 +2108,7 @@ function renderSection00(h, aql){
 }
 
 /* ---- 01. GENERAL INFORMATION ---- */
-function renderSection01(h, aql){
+function renderSection01(h, aql, ext){
   const actual = Number(h.actualOrderQty) || Number(h.orderQty) || 0;
   const base = Number(h.orderQty) || actual;
   const offerPct = base ? (Number(h.offerQty||0) / base * 100) : null;
@@ -2168,15 +2117,16 @@ function renderSection01(h, aql){
 
   return `
   <div class="panel panel-pad section-block">
-    <h2 class="section-title">01. General Information</h2>
+    <h2 class="section-title">${ext ? 'General Information' : '01. General Information'}</h2>
     <div class="pair-grid">
       ${pair('Date', `<input type="date" data-h="date" value="${esc(h.date)}">`)}
-      ${pair('Inspection Start Time', `<input type="time" data-h="startTime" value="${esc(h.startTime)}">`)}
-      ${pair('Inspector Name', `<input type="text" list="psiList" autocomplete="off" data-h="inspectorName" value="${esc(h.inspectorName)}">`)}
+      ${ext ? '' : pair('Inspection Start Time', `<input type="time" data-h="startTime" value="${esc(h.startTime)}">`)}
+      ${ext ? '' : pair('Inspector Name', `<input type="text" list="psiList" autocomplete="off" data-h="inspectorName" value="${esc(h.inspectorName)}">`)}
       ${pair('Factory Name', `<input type="text" data-h="factoryName" value="${esc(h.factoryName)}">`)}
       ${pair('Inspection Type', `<select data-h="inspectionType">${INSPECTION_TYPES.map(o=>`<option ${h.inspectionType===o?'selected':''}>${o}</option>`).join('')}</select>`)}
       ${pair('Actual Order Qty', `<input type="text" value="${actual ? actual.toLocaleString() : ''}" readonly>`, 'as per Order Information')}
       ${pair('PO No', `<input type="text" data-h="poNo" value="${esc(h.poNo)}">`)}
+      ${pair('Country', `<input type="text" list="countryList" autocomplete="off" data-h="country" value="${esc(h.country)}" placeholder="Destination country">`, 'destination')}
       ${pair('Order Qty', `<input type="number" data-h="orderQty" value="${esc(h.orderQty)}">`, 'qty covered by this inspection')}
       ${pair('PO Qty', `<input type="number" data-h="poQty" value="${esc(h.poQty)}">`)}
       ${pair('Offer %', `<input type="text" value="${offerPct!=null ? fmt1(offerPct)+'%' : ''}" readonly>`, 'auto')}
@@ -2184,6 +2134,7 @@ function renderSection01(h, aql){
       ${pair('Sample Size', `<input type="text" value="${aql.sampleSize ? aql.sampleSize + ' (code ' + aql.codeLetter + ')' : ''}" readonly>`, 'auto, based on AQL selection in 00')}
     </div>
 
+    ${ext ? '' : `
     <h3 class="section-title" style="margin-top:20px;font-size:12.5px;">All Quantities &amp; Cartons Available?</h3>
     <div class="row" style="align-items:flex-end;">
       <div class="f" style="min-width:160px;"><span class="field-label">Result</span>
@@ -2195,13 +2146,15 @@ function renderSection01(h, aql){
     <div class="row" style="align-items:flex-end;margin-top:12px;">
       <div class="f"><span class="field-label">All Ready Carton Picture</span>${pictureWidget('allQty', '0')}</div>
     </div>
+    `}
 
-    ${renderColourQtyTable()}
+    ${renderColourQtyTable(ext)}
+    <datalist id="countryList">${COUNTRIES_.map(c=>`<option value="${c}">`).join('')}</datalist>
   </div>`;
 }
 
 /* ---- Quantity: colour-wise status (colours come from Order Information) ---- */
-function renderColourQtyTable(){
+function renderColourQtyTable(ext){
   const manual = state.header.dataMode === 'manual';
   const rows = state.colorQty || [];
   const opts = state.orderColors || [];
@@ -2222,7 +2175,7 @@ function renderColourQtyTable(){
     <h3 class="section-title" style="margin-top:22px;font-size:12.5px;">Quantity <span class="tag">colour-wise status</span></h3>
     <table class="rep-table">
       <thead>
-        <tr><th>Color</th><th>Actual Order Qty</th><th>Order Qty Ready</th><th>Color wise Carton Qty</th>${manual ? '' : '<th></th>'}</tr>
+        <tr><th>Color</th><th>Actual Order Qty</th><th>Order Qty Ready</th>${ext ? '' : '<th>Color wise Carton Qty</th>'}${manual ? '' : '<th></th>'}</tr>
       </thead>
       <tbody>
         ${rows.length ? rows.map((c,i)=>`
@@ -2230,17 +2183,17 @@ function renderColourQtyTable(){
             <td>${colorCell(c,i)}</td>
             <td>${c.color ? (Number(c.qty)||0).toLocaleString() : '-'}</td>
             <td><input type="number" data-cq="${i}:readyQty" value="${esc(c.readyQty)}"></td>
-            <td><input type="number" data-cq="${i}:cartonQty" value="${esc(c.cartonQty)}"></td>
+            ${ext ? '' : `<td><input type="number" data-cq="${i}:cartonQty" value="${esc(c.cartonQty)}"></td>`}
             ${manual ? '' : `<td>${rows.length>1 ? `<button type="button" class="btn danger small" data-cq-remove="${i}">&#10005;</button>` : ''}</td>`}
           </tr>`).join('')
-        : `<tr><td colspan="${manual?4:5}" style="color:var(--muted)">Select SBU &rarr; Buyer &rarr; IR above &mdash; the colours from Order Information then appear in the Color dropdown.</td></tr>`}
-        ${rows.length ? `<tr class="rep-group-hd"><td>TOTAL</td><td>${tOrder.toLocaleString()}</td><td>${tReady.toLocaleString()}</td><td>${tCarton.toLocaleString()}</td>${manual ? '' : '<td></td>'}</tr>` : ''}
+        : `<tr><td colspan="${(manual?4:5) - (ext?1:0)}" style="color:var(--muted)">Select SBU &rarr; Buyer &rarr; IR above &mdash; the colours from Order Information then appear in the Color dropdown.</td></tr>`}
+        ${rows.length ? `<tr class="rep-group-hd"><td>TOTAL</td><td>${tOrder.toLocaleString()}</td><td>${tReady.toLocaleString()}</td>${ext ? '' : `<td>${tCarton.toLocaleString()}</td>`}${manual ? '' : '<td></td>'}</tr>` : ''}
       </tbody>
     </table>
     ${manual ? '' : `<div class="row" style="align-items:flex-end;margin-top:8px;">
       <button type="button" class="btn ghost small row-add-btn" data-action="add-color-row" ${(!opts.length || usedAll) ? 'disabled' : ''}>+ Add Colour</button>
     </div>`}
-    <div class="subtle-note">Pick the colour from the dropdown (colours come from Order Information) &mdash; its Actual Order Qty fills in automatically. Then enter the <b>Order Qty Ready</b> and <b>Color wise Carton Qty</b>.</div>`;
+    <div class="subtle-note">Pick the colour from the dropdown (colours come from Order Information) &mdash; its Actual Order Qty fills in automatically. Then enter the <b>Order Qty Ready</b>${ext ? '' : ' and <b>Color wise Carton Qty</b>'}.</div>`;
 }
 
 /* ---- Auto / Manual toggle for Order/Style Information ---- */
@@ -2648,7 +2601,7 @@ function renderLog(){
       <td class="actions-cell">
         <button class="btn ghost small" data-view="${r.id}">View</button>
         ${editCell_(r)}
-        ${r.source && r.source!=='Self' ? '' : `<button class="btn ghost small" data-download-pdf-saved="${r.id}">PDF</button>`}
+        <button class="btn ghost small" data-download-pdf-saved="${r.id}">${r.source && r.source!=='Self' ? 'IC PDF' : 'PDF'}</button>
         ${(window.TCEG && TCEG.isAdmin()) ? `<button class="btn danger small" data-delete="${r.id}">Delete</button>` : ''}
       </td>
     </tr>`).join('');
@@ -2700,6 +2653,7 @@ function renderReportModal(){
           <div><div class="field-label">Style</div>${esc(r.header.styleName)}</div>
           <div><div class="field-label">Season</div>${esc(r.header.season)}</div>
           <div><div class="field-label">PO No</div>${esc(r.header.poNo)}</div>
+          <div><div class="field-label">Country</div>${esc(r.header.country)}</div>
           <div><div class="field-label">Sample Size</div>${esc(r.sampleSize)}</div>
           <div><div class="field-label">Inspector</div>${esc(r.header.inspectorName)}</div>
         </div>
@@ -3065,11 +3019,16 @@ async function saveCurrentReport_(isFinal){
   record.result = overall === 'PENDING' ? (aql.result || 'PENDING') : overall;
   record.status = isFinal ? 'Submitted' : 'Draft';
   if (isExternal_(record)){
-    // Buyer / 3rd-party inspection: the outcome comes from their report, not from our checklists.
-    const ex = record.external || {};
-    record.result = ex.result === 'Pass' ? 'PASS' : ex.result === 'Fail' ? 'FAIL' : (ex.result ? 'REWORK' : 'PENDING');
-    record.decision = ex.result === 'Pass' ? 'Accepted' : ex.result === 'Fail' ? 'Rejected' : (ex.result ? 'Rework Required' : '');
-    record.sampleSize = Number(ex.sampleSize) || '';
+    // Buyer / 1st / 3rd-party inspection: the outcome comes from the Inspection Summary, the counts from the findings table.
+    const ex = record.external || (record.external = {});
+    const A = aqlFor(state), T = defectTotals(state.defects), ov = ex.overall || '';
+    ex.result = ov;
+    ex.critical = T.Critical; ex.major = T.Major; ex.minor = T.Minor;
+    record.result = ov === 'Pass' ? 'PASS' : ov === 'Fail' ? 'FAIL' : ov === 'Hold' ? 'HOLD' : 'PENDING';
+    record.decision = ov === 'Pass' ? 'Accepted' : ov === 'Fail' ? 'Rejected' : ov === 'Hold' ? 'Hold' : '';
+    record.sampleSize = Number(record.header.sampleSizeOverride) || A.sampleSize || '';
+    record.aql = { sampleSize:A.sampleSize, codeLetter:A.codeLetter, critAllowed:A.criticalAllowed, majAllowed:A.majorAllowed, minAllowed:A.minorAllowed,
+                   foundCritical:T.Critical, foundMajor:T.Major, foundMinor:T.Minor, result:A.result };
     if (ex.entryType === 'Self Inspection (Buyer Portal)' && ex.inspector) record.header.inspectorName = ex.inspector;
   }
   record.savedAt = new Date().toISOString();
@@ -3085,7 +3044,8 @@ async function saveCurrentReport_(isFinal){
   if (prevRec_ && prevRec_.status !== 'Draft' && isFinal && window.TCEG) TCEG.consume(prevRec_.id);
 
   if (isFinal && isExternal_(record)){
-    showToast(extLabel_(record) + ' entry saved — result: ' + record.result + '.');
+    showToast(extLabel_(record) + ' entry saved \u2014 result: ' + record.result + '. Preparing Inspection Certificate\u2026');
+    await generatePdfReport(record); // one-page Inspection Certificate (IC)
   } else if (isFinal){
     showToast('Report submitted — overall result: ' + record.result + '. Preparing PDF…');
     await generatePdfReport(record); // snapshot passed explicitly — the form gets reset right after
@@ -3097,6 +3057,282 @@ async function saveCurrentReport_(isFinal){
   render();
 }
 
+
+
+/* ============================= EXTERNAL ENTRY v2: AQL + General Info + Findings + Summary + Certificate ============================= */
+const EXT_SUMMARY_ = [
+  ['workmanship','1. Workmanship Conformity'], ['measurement','2. Measurement Conformity'], ['quantity','3. Quantity & Packaging Conformity'],
+  ['specs','4. Product Specifications Conformity'], ['onsite','5. Onsite Testing Conformity'], ['testreport','6. Test Report Reviewed.'],
+  ['customer','7. Latest customer expectation complied?'], ['moisture','8. Moisture Checked Conformity'],
+];
+const COUNTRIES_ = ['Australia','Bangladesh','Belgium','Brazil','Canada','China','Denmark','Finland','France','Germany','Hong Kong','India','Ireland','Italy','Japan','Mexico','Netherlands','New Zealand','Norway','Poland','Portugal','Saudi Arabia','South Africa','South Korea','Spain','Sweden','Switzerland','Turkey','UAE','United Kingdom','United States'];
+function extState_(){
+  const e = state.external || (state.external = {});
+  if (!e.summary) e.summary = {};
+  return e;
+}
+function autoOverall_(){
+  const v = EXT_SUMMARY_.map(r => extState_().summary[r[0]]).filter(Boolean);
+  if (v.indexOf('Fail') >= 0) return 'Fail';
+  if (v.indexOf('Hold') >= 0) return 'Hold';
+  if (v.indexOf('Pass') >= 0) return 'Pass';
+  return '';
+}
+function radioRow_(name, cur, opts, attr, key){
+  return opts.map(o => `<label style="display:inline-flex;align-items:center;gap:5px;margin-right:16px;cursor:pointer;font-size:13px;">
+    <input type="radio" name="${name}" ${attr}="${esc(key)}" value="${o[0]}" ${cur===o[0]?'checked':''} style="width:auto;margin:0;"> ${o[1]}</label>`).join('');
+}
+function renderExternalPanel(){
+  const e = extState_(), h = state.header, type = e.entryType;
+  if (!type) return `<div class="panel panel-pad section-block"><div class="subtle-note">Select the <b>Inspection Entry Type</b> above to continue.</div></div>`;
+  const own = type === 'Self Inspection (Buyer Portal)';
+  const aql = aqlFor(state), T = defectTotals(state.defects);
+  const f = (label, key, kind, ph, extra) => `<div class="f"><span class="field-label">${label}</span><input type="${kind||'text'}" data-ext="${key}" value="${esc(e[key])}" ${ph?`placeholder="${esc(ph)}"`:''} ${extra||''}></div>`;
+  const ov = e.overall || '';
+  const need = ov && ov !== 'Pass';
+  return `
+  <div class="panel panel-pad section-block">
+    <h2 class="section-title">${esc(type)} — Inspection Details <span class="tag">who inspected, and the report reference</span></h2>
+    <div class="header-grid">
+      ${own ? f('Inspector Name (J.M. Fabrics)', 'inspector', 'text', 'Select or type the inspector', 'list="psiList"')
+            : f(type==='3rd Party' ? 'Inspection Company' : 'Inspecting Party / Team', 'party', 'text', type==='3rd Party' ? 'e.g. SGS / Intertek / Bureau Veritas' : 'e.g. Buyer QA team')}
+      ${own ? f('Buyer Portal / Buyer', 'party', 'text', 'e.g. H&M portal')
+            : f('Their Inspector Name (optional)', 'inspector')}
+      ${f(own ? 'Portal Report No. / Reference' : 'Their Report No. / Reference', 'reportNo')}
+      ${f('Link to the report (optional, https://…)', 'link', 'text', 'https://')}
+    </div>
+  </div>
+
+  ${renderSection00(h, aql)}
+  ${renderSection01(h, aql, true)}
+
+  <div class="panel panel-pad section-block">
+    <h2 class="section-title">Workmanship Findings</h2>
+    <table class="rep-table">
+      <thead><tr><th style="width:48px">SL</th><th>Defect Name</th><th style="width:150px">Defect Type</th><th style="width:100px">Defect Qty</th><th style="width:44px"></th></tr></thead>
+      <tbody>
+        ${state.defects.map((d,i) => `<tr>
+          <td>${i+1}</td>
+          <td><input type="text" data-xf="${i}:description" value="${esc(d.description)}" placeholder="e.g. Open seam"></td>
+          <td><select data-xf="${i}:severity">${['Critical','Major','Minor'].map(s=>`<option ${d.severity===s?'selected':''}>${s}</option>`).join('')}</select></td>
+          <td><input type="number" min="0" data-xf="${i}:qty" value="${esc(d.qty)}"></td>
+          <td><button type="button" class="btn danger small" data-remove-xf="${i}">✕</button></td>
+        </tr>`).join('') || `<tr><td colspan="5" style="color:${state.noDefectsFound ? 'var(--brand)' : 'var(--muted)'}">${state.noDefectsFound ? '✓ No workmanship defects found.' : 'No findings added yet.'}</td></tr>`}
+      </tbody>
+    </table>
+    <div class="row" style="align-items:center;gap:16px;margin-top:8px;flex-wrap:wrap;">
+      <button type="button" class="btn ghost small row-add-btn" data-action="add-xf" ${state.noDefectsFound ? 'disabled' : ''}>+ Add Finding</button>
+      <label style="display:flex;align-items:center;gap:6px;font-size:12px;color:var(--muted);cursor:pointer;">
+        <input type="checkbox" data-xnone ${state.noDefectsFound ? 'checked' : ''} ${state.defects.length ? 'disabled' : ''} style="width:auto;margin:0;">
+        No workmanship defects found
+      </label>
+    </div>
+    <div id="extTotals">${extTotalsHtml_(T, aql)}</div>
+  </div>
+
+  <div class="panel panel-pad section-block">
+    <h2 class="section-title">Inspection Summary</h2>
+    <table class="rep-table">
+      <thead><tr><th>Conformity Check</th><th>Result</th></tr></thead>
+      <tbody>
+        ${EXT_SUMMARY_.map(r => `<tr><td>${esc(r[1])}</td><td>${radioRow_('xs_'+r[0], e.summary[r[0]]||'', [['Pass','Pass'],['Fail','Fail'],['Hold','Hold'],['N/A','NA']], 'data-xsum', r[0])}</td></tr>`).join('')}
+        <tr class="rep-group-hd"><td><b>Overall Inspection Result</b> ${e.overallManual ? '' : '<span class="subtle-note" style="margin:0;">(auto from the rows above — change if needed)</span>'}</td>
+          <td>${radioRow_('xs_overall', ov, [['Pass','Pass'],['Fail','Fail'],['Hold','Hold']], 'data-xov', 'overall')}</td></tr>
+      </tbody>
+    </table>
+    <div class="f" style="margin-top:12px;"><span class="field-label">Reason / Remarks ${need ? '<b style="color:#b02a2a">(required — add findings above or write the reason)</b>' : '(optional)'}</span>
+      <textarea data-ext="remarks" rows="3" placeholder="e.g. Major: open seam 5 pcs; measurement out of tolerance">${esc(e.remarks)}</textarea></div>
+    <div class="subtle-note">When you Submit, a one-page <b>Inspection Certificate (IC)</b> PDF downloads, and the result is counted in the Inspector Dashboard KPI.</div>
+  </div>`;
+}
+function extTotalsHtml_(T, aql){
+  const cell = (l, f, a) => `<div class="aql-cell"><div class="al">${l} Found / Allowed</div><div class="av" style="${Number(f) > Number(a) ? 'color:#b02a2a' : ''}">${f} / ${a}</div></div>`;
+  return `<div class="aql-preview" style="margin-top:12px;">${cell('Critical', T.Critical, aql.criticalAllowed)}${cell('Major', T.Major, aql.majorAllowed)}${cell('Minor', T.Minor, aql.minorAllowed)}
+    <div class="aql-cell"><div class="al">AQL Result</div><div class="av">${aql.result ? `<span class="badge ${aql.result==='PASS'?'pass':'fail'}">${aql.result}</span>` : '—'}</div></div></div>`;
+}
+function externalProblems_(){
+  const h = state.header, e = extState_();
+  if (!e.entryType) return 'Select the Inspection Entry Type (1st Party / 3rd Party / Self Inspection (Buyer Portal)).';
+  if (!h.sbu || !h.buyer || !h.ir) return 'Select SBU → Buyer → IR first.';
+  if (!h.date) return 'Enter the inspection date.';
+  if (e.entryType === 'Self Inspection (Buyer Portal)'){ if (!String(e.inspector||'').trim()) return 'Enter the J.M. Fabrics inspector name.'; }
+  else if (!String(e.party||'').trim()) return 'Enter who did the inspection (' + (e.entryType==='3rd Party' ? 'company' : 'party / team') + ').';
+  if (!(aqlFor(state).sampleSize > 0)) return 'Enter the Ready / Offer Qty in General Information so the sampling plan can be calculated.';
+  if (state.defects.some(d => !String(d.description||'').trim())) return 'Every finding needs a Defect Name (or remove the empty row).';
+  const open = EXT_SUMMARY_.filter(r => !e.summary[r[0]]).map(r => r[1]);
+  if (open.length) return 'Choose Pass / Fail / Hold / NA for every Inspection Summary row. Still open: ' + open.join('; ');
+  if (!e.overall) return 'Choose the Overall Inspection Result (Pass / Fail / Hold).';
+  if (e.overall !== 'Pass' && !state.defects.length && !String(e.remarks||'').trim()) return 'This is not a Pass — add the findings or write the reason / remarks.';
+  if (e.link && !/^https?:\/\//i.test(String(e.link).trim())) return 'The report link must start with http:// or https://';
+  return '';
+}
+function externalSummaryHtml_(r){
+  const e = r.external || {}, sm = e.summary || {};
+  const rows = EXT_SUMMARY_.filter(x => sm[x[0]]).map(x => `<tr><td>${esc(x[1])}</td><td><b>${esc(sm[x[0]])}</b></td></tr>`).join('');
+  const ds = (r.defects||[]).filter(d => d && (d.description || d.qty));
+  return `<div class="subtle-note" style="margin-bottom:12px;"><b>${esc(extLabel_(r))}</b> — ${esc(e.party||'')}${e.reportNo?' · Report '+esc(e.reportNo):''}${e.inspector?' · '+esc(e.inspector):''}
+    <br>Result: <b>${esc(e.overall||e.result||'')}</b>${r.sampleSize?' · Sample '+esc(r.sampleSize):''}${(e.critical||e.major||e.minor)?' · Cr '+esc(e.critical||0)+' / Mj '+esc(e.major||0)+' / Mn '+esc(e.minor||0):''}
+    ${e.remarks?'<br>'+esc(e.remarks):''}${/^https?:\/\//i.test(e.link||'')?'<br><a href="'+esc(e.link)+'" target="_blank" rel="noopener">Open the report ↗</a>':''}</div>
+    ${ds.length ? `<table class="rep-table" style="margin-bottom:12px;"><thead><tr><th>SL</th><th>Defect Name</th><th>Type</th><th>Qty</th></tr></thead><tbody>${ds.map((d,i)=>`<tr><td>${i+1}</td><td>${esc(d.description)}</td><td>${esc(d.severity)}</td><td>${esc(d.qty)}</td></tr>`).join('')}</tbody></table>` : ''}
+    ${rows ? `<table class="rep-table" style="margin-bottom:12px;"><thead><tr><th>Inspection Summary</th><th>Result</th></tr></thead><tbody>${rows}</tbody></table>` : ''}`;
+}
+function updateExtTotals_(){
+  const el = document.getElementById('extTotals'); if (!el) return;
+  el.innerHTML = extTotalsHtml_(defectTotals(state.defects), aqlFor(state));
+  const sec0 = document.querySelectorAll('.kpi .k-value'); // keep the live sampling KPIs in step (sample size does not depend on defects)
+}
+document.addEventListener('input', function(e){
+  const t = e.target; if (!t || !t.dataset || t.dataset.xf === undefined) return;
+  const p = t.dataset.xf.split(':'), i = Number(p[0]), field = p[1];
+  if (!state.defects[i]) return;
+  state.defects[i][field] = field === 'qty' ? (t.value === '' ? '' : Number(t.value)) : t.value;
+  updateExtTotals_();
+});
+document.addEventListener('change', function(e){
+  const t = e.target; if (!t || !t.dataset) return;
+  if (t.dataset.xf !== undefined){
+    const p = t.dataset.xf.split(':'), i = Number(p[0]);
+    if (state.defects[i]){ state.defects[i][p[1]] = p[1] === 'qty' ? Number(t.value) || 0 : t.value; updateExtTotals_(); }
+  } else if (t.dataset.xsum !== undefined){
+    if (tcBlockIfGuest('Editing the inspection summary')){ render(); return; }
+    const x = extState_(); x.summary[t.dataset.xsum] = t.value;
+    if (!x.overallManual) x.overall = autoOverall_();
+    render();
+  } else if (t.dataset.xov !== undefined){
+    if (tcBlockIfGuest('Editing the overall result')){ render(); return; }
+    const x = extState_(); x.overall = t.value; x.overallManual = true; render();
+  } else if (t.dataset.xnone !== undefined){
+    if (tcBlockIfGuest('Marking no defects found')){ render(); return; }
+    state.noDefectsFound = t.checked; render();
+  }
+});
+document.addEventListener('click', function(e){
+  const b = e.target && e.target.closest ? e.target.closest('[data-action="add-xf"],[data-remove-xf]') : null; if (!b) return;
+  if (tcBlockIfGuest('Editing findings')) return;
+  if (b.dataset.action === 'add-xf'){
+    state.defects.push({group:'Group-B',category:'Assembling / Sewing',description:'',area:'',severity:'Major',qty:1,pictures:[]});
+    state.noDefectsFound = false;
+  } else state.defects.splice(Number(b.dataset.removeXf), 1);
+  render();
+});
+
+/* ---- One-page Inspection Certificate (IC) ---- */
+async function generateCertificatePdf_(S){
+  if (!window.jspdf){ showToast('PDF library did not load — check your internet connection and retry.'); return; }
+  showToast('Generating Inspection Certificate…');
+  try{
+    const { jsPDF } = window.jspdf;
+    const doc = new jsPDF('p','mm','a4');
+    const W = doc.internal.pageSize.getWidth(), H = doc.internal.pageSize.getHeight(), m = 14;
+    const h = S.header || {}, e = S.external || {}, sm = e.summary || {};
+    const defs = (S.defects || []).filter(d => d && (d.description || d.qty));
+    const A = aqlFor(S), T = defectTotals(S.defects || []);
+    const ov = e.overall || '';
+    const NAVY = [30,51,100];
+    const rc = v => v==='Pass' ? [39,174,96] : v==='Fail' ? [211,47,47] : v==='Hold' ? [214,140,10] : [120,120,120];
+    const own = e.entryType === 'Self Inspection (Buyer Portal)';
+    const certNo = 'IC-' + String(h.ir||'NA').replace(/[^A-Za-z0-9]/g,'').toUpperCase() + '-' + String(h.date||'').replace(/-/g,'').slice(2) + '-' + String(S.id || S.editingId || '').slice(-4).toUpperCase();
+    // frame
+    doc.setDrawColor(60,60,60); doc.setLineWidth(0.7); doc.rect(6,6,W-12,H-12);
+    doc.setLineWidth(0.2); doc.rect(7.6,7.6,W-15.2,H-15.2);
+    let y = 17;
+    doc.setFont('helvetica','bold'); doc.setFontSize(16); doc.setTextColor(20,20,20);
+    doc.text('J.M. FABRICS LTD.', W/2, y, { align:'center' }); y += 5.2;
+    doc.setFont('helvetica','normal'); doc.setFontSize(8.2); doc.setTextColor(90,90,90);
+    doc.text('South Nayapara, 6 No Dogri, Bhawal Mirzapur, Gazipur, Bangladesh', W/2, y, { align:'center' }); y += 5;
+    doc.setFillColor(NAVY[0],NAVY[1],NAVY[2]); doc.rect(m, y, W-2*m, 9, 'F');
+    doc.setFont('helvetica','bold'); doc.setFontSize(13); doc.setTextColor(255,255,255);
+    doc.text('INSPECTION CERTIFICATE (IC)', W/2, y+6.1, { align:'center' }); y += 11.5;
+    doc.setFont('helvetica','normal'); doc.setFontSize(8.6); doc.setTextColor(60,60,60);
+    doc.text((h.inspectionType || 'Pre-Final Inspection') + '  ·  ' + (e.entryType || ''), W/2, y, { align:'center' }); y += 3.5;
+
+    const grid = (body, cw) => {
+      doc.autoTable({ startY: y, margin:{left:m,right:m}, theme:'grid', body: body,
+        styles:{ fontSize:8, cellPadding:1.25, lineColor:[170,170,170], lineWidth:0.15, textColor:[25,25,25], overflow:'linebreak' },
+        columnStyles: cw || { 0:{fontStyle:'bold',cellWidth:30,fillColor:[240,242,247]}, 1:{cellWidth:57}, 2:{fontStyle:'bold',cellWidth:30,fillColor:[240,242,247]}, 3:{cellWidth:'auto'} } });
+      y = doc.lastAutoTable.finalY + 3.2;
+    };
+    const by = own ? [e.inspector, e.party].filter(Boolean).join(' — ') : [e.party, e.inspector].filter(Boolean).join(' / ');
+    const itemDept = [h.item, h.productDept].filter(Boolean).join(' / ');
+    grid([
+      ['Buyer', h.buyer||'-', 'Style', h.styleName||'-'],
+      ['IR No', h.ir||'-', 'PO No', h.poNo||'-'],
+      ['Country', h.country||'-', 'Season', h.season||'-'],
+      ['Item / Dept', itemDept||'-', 'Factory', h.factoryName||'J.M. FABRICS LTD.'],
+      ['Inspection Date', h.date||'-', 'Inspected By', by||'-'],
+      ['Report Ref.', e.reportNo||'-', 'Certificate No', certNo],
+    ]);
+    const actual = Number(h.actualOrderQty) || Number(h.orderQty) || (S.colorQty||[]).reduce((t,c)=>t+(Number(c.qty)||0),0);
+    const ready = (S.colorQty||[]).reduce((t,c)=>t+(Number(c.readyQty)||0),0);
+    grid([
+      ['Order Qty', actual ? actual.toLocaleString() : '-', 'Offer / Ready Qty', (Number(h.offerQty) || ready) ? (Number(h.offerQty) || ready).toLocaleString() : '-'],
+      ['Sampling Plan', (h.samplingPlan||'Single') + ' · ' + (h.inspectionLevel||''), 'Sample Size', A.sampleSize ? A.sampleSize + (A.codeLetter ? ' (code ' + A.codeLetter + ')' : '') : '-'],
+    ]);
+    const cols = (S.colorQty||[]).filter(c => c.color);
+    if (cols.length){
+      const txt = 'Colours: ' + cols.slice(0,6).map(c => c.color + ' (ready ' + (Number(c.readyQty)||0).toLocaleString() + ' / order ' + (Number(c.qty)||0).toLocaleString() + ')').join(' · ') + (cols.length > 6 ? ' · +' + (cols.length-6) + ' more' : '');
+      doc.setFont('helvetica','normal'); doc.setFontSize(7.4); doc.setTextColor(70,70,70);
+      const ln = doc.splitTextToSize(txt, W-2*m).slice(0,2); doc.text(ln, m, y+1.5); y += ln.length*3.2 + 2.6;
+    }
+    // workmanship: AQL + findings
+    doc.setFont('helvetica','bold'); doc.setFontSize(9); doc.setTextColor(20,20,20); doc.text('Workmanship Findings', m, y+1); y += 2.5;
+    const aqlRow = (n, aqlv, f, a) => [n, String(aqlv), String(a), String(f), Number(f) > Number(a) ? 'EXCEEDED' : 'Within limit'];
+    doc.autoTable({ startY: y, margin:{left:m,right:m}, theme:'grid',
+      head:[['Defect Type','AQL','Allowed (Ac)','Found','Status']],
+      body:[aqlRow('Critical', h.aqlCritical, T.Critical, A.criticalAllowed), aqlRow('Major', h.aqlMajor, T.Major, A.majorAllowed), aqlRow('Minor', h.aqlMinor, T.Minor, A.minorAllowed)],
+      styles:{ fontSize:8, cellPadding:1.15, lineColor:[170,170,170], lineWidth:0.15, textColor:[25,25,25] },
+      headStyles:{ fillColor:NAVY, textColor:255, fontStyle:'bold' },
+      didParseCell: d => { if (d.section==='body' && d.column.index===4) d.cell.styles.textColor = d.cell.raw==='EXCEEDED' ? [211,47,47] : [30,130,70]; } });
+    y = doc.lastAutoTable.finalY + 2;
+    const MAXF = 6, shown = defs.slice(0, MAXF);
+    doc.autoTable({ startY: y, margin:{left:m,right:m}, theme:'grid',
+      head:[['SL','Defect Name','Defect Type','Defect Qty']],
+      body: shown.length ? shown.map((d,i)=>[String(i+1), d.description||'-', d.severity||'-', String(d.qty||0)]).concat(defs.length > MAXF ? [['', '+ ' + (defs.length-MAXF) + ' more finding(s) — see the full record', '', '']] : [])
+                         : [['', S.noDefectsFound ? 'No workmanship defects found' : 'No findings recorded', '', '']],
+      styles:{ fontSize:8, cellPadding:1.15, lineColor:[170,170,170], lineWidth:0.15, textColor:[25,25,25] },
+      headStyles:{ fillColor:[90,100,125], textColor:255, fontStyle:'bold' },
+      columnStyles:{ 0:{cellWidth:12}, 2:{cellWidth:30}, 3:{cellWidth:26} } });
+    y = doc.lastAutoTable.finalY + 4;
+    // inspection summary
+    doc.setFont('helvetica','bold'); doc.setFontSize(9); doc.setTextColor(20,20,20); doc.text('Inspection Summary', m, y); y += 1.6;
+    doc.autoTable({ startY: y, margin:{left:m,right:m}, theme:'grid',
+      head:[['Conformity Check','Result']],
+      body: EXT_SUMMARY_.map(r => [r[1], sm[r[0]] === 'N/A' ? 'NA' : (sm[r[0]]||'-')]).concat([['Overall Inspection Result', ov || 'PENDING']]),
+      styles:{ fontSize:8.4, cellPadding:1.25, lineColor:[170,170,170], lineWidth:0.15, textColor:[25,25,25] },
+      headStyles:{ fillColor:NAVY, textColor:255, fontStyle:'bold' },
+      columnStyles:{ 1:{cellWidth:36, halign:'center', fontStyle:'bold'} },
+      didParseCell: d => {
+        if (d.section === 'head'){ d.cell.styles.fillColor = NAVY; d.cell.styles.textColor = 255; return; }
+        if (d.section !== 'body') return;
+        const last = d.row.index === EXT_SUMMARY_.length;
+        if (last){ d.cell.styles.fontStyle = 'bold'; d.cell.styles.fillColor = [240,242,247]; }
+        if (d.column.index === 1){ const v = d.cell.raw === 'NA' ? 'NA' : d.cell.raw; d.cell.styles.textColor = rc(v === 'PENDING' ? '' : v); }
+      } });
+    y = doc.lastAutoTable.finalY + 4;
+    // result stamp
+    const c = rc(ov);
+    doc.setDrawColor(c[0],c[1],c[2]); doc.setLineWidth(0.9); doc.roundedRect(m, y, W-2*m, 11, 2, 2);
+    doc.setFont('helvetica','bold'); doc.setFontSize(9.5); doc.setTextColor(60,60,60); doc.text('INSPECTION RESULT', m+5, y+6.9);
+    doc.setFontSize(15); doc.setTextColor(c[0],c[1],c[2]); doc.text((ov || 'PENDING').toUpperCase(), W-m-5, y+7.6, { align:'right' });
+    doc.setLineWidth(0.2); y += 14.5;
+    if (String(e.remarks||'').trim()){
+      doc.setFont('helvetica','bold'); doc.setFontSize(8.4); doc.setTextColor(20,20,20); doc.text('Remarks', m, y);
+      doc.setFont('helvetica','normal'); doc.setFontSize(8); doc.setTextColor(50,50,50);
+      const rl = doc.splitTextToSize(String(e.remarks).trim(), W-2*m).slice(0,3); doc.text(rl, m, y+4); y += 4 + rl.length*3.6 + 2;
+    }
+    // signatures (pinned near the bottom, never over the table)
+    const sy = Math.max(y + 10, H - 36);
+    doc.setDrawColor(90,90,90); doc.setLineWidth(0.3);
+    doc.line(m+4, sy, m+62, sy); doc.line(W-m-62, sy, W-m-4, sy);
+    doc.setFont('helvetica','normal'); doc.setFontSize(8); doc.setTextColor(60,60,60);
+    doc.text('Prepared by (QA Inspector)', m+33, sy+4.2, { align:'center' });
+    doc.text('Authorized Signatory', W-m-33, sy+4.2, { align:'center' });
+    doc.setFontSize(6.8); doc.setTextColor(120,120,120);
+    doc.text('Issued from the J.M. Fabrics QA Inspection system · ' + certNo + ' · Result as reported by ' + (e.entryType || 'the inspecting party') + '.', W/2, H-11, { align:'center' });
+    doc.save('Inspection_Certificate_' + String(h.ir||'report').replace(/[^a-zA-Z0-9]/g,'_') + '_' + (h.date||'') + '.pdf');
+    showToast('Inspection Certificate downloaded.');
+  }catch(err){ showToast('Certificate generation failed — ' + err.message); }
+}
 
 /* ============================= DRAFT AUTO-SAVE ============================= */
 const DRAFT_EVERY_MS = 3000;
