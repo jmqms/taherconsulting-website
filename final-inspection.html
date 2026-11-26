@@ -500,7 +500,7 @@ function emptyHeader(){
     dataMode:'auto',
     sbu:'', buyer:'', ir:'', styleId:'', styleName:'', styleDescription:'', item:'', productDept:'', season:'',
     date:new Date().toISOString().slice(0,10), startTime:'', inspectorName:'', factoryName:'J.M. Fabrics Ltd.',
-    inspectionType:'Final Inspection', samplingPlan:'Single', inspectionLevel:'General II',
+    inspectionType:'Final Inspection', samplingPlan:'Single', doubleStage:'1st', inspectionLevel:'General II',
     poNo:'', poQty:'', actualOrderQty:'', orderQty:'', offerQty:'',
     aqlCritical:0, aqlMajor:2.5, aqlMinor:4.0, inspectionLevelMeasurements:'S-2',
     sampleSizeOverride:'', defectChecklistName:'', country:'',
@@ -521,7 +521,7 @@ function emptyReportState(){
     defects: [],
     noDefectsFound: false,
     testCheckpoints: flatTestCheckpoints().map(c => ({ group:c.group, subgroup:c.subgroup, label:c.label, isReport:c.isReport, applicable:'', result:'', comments:'', testReportNumber:'', pictures:[] })),
-    measurements: { poms: [], pictures:[], pieceCount:0, readingsManual:'', ootReadingsManual:'', ootPiecesManual:'', sampleOverride:'' },
+    measurements: { poms: [], pictures:[], pieceCount:0, readingsManual:'', ootReadingsManual:'', ootPiecesManual:'', sampleOverride:'', acOverride:'' },
     signOff: SIGNOFF_ROLES.map(role => ({ role, name:'', signature:'' })),
     remarks:'',
     source:'Self',
@@ -794,30 +794,74 @@ function lotBasisQty(S){
   return Number(h.orderQty) || 0;
 }
 
-function computeAQL(lotQty, critical, major, minor, aqlCritical, aqlMajor, aqlMinor, level, plan, noDefectsConfirmed){
+/* ---- AEO-family buyers (AEO / American Eagle / AEO Women's): 3 Minor defects count as 1 Major ---- */
+const AEO_MINOR_PER_MAJOR = 3;      // change here if the buyer rule changes
+const AEO_CHECK_MINOR_TOO = false;  // true = also keep a separate limit on the raw Minor count
+function isAeoBuyer_(b){ return /(^|[^a-z])(aeo|american\s*eagle)([^a-z]|$)/i.test(String(b||'')); }
+
+function computeAQL(lotQty, critical, major, minor, aqlCritical, aqlMajor, aqlMinor, level, plan, noDefectsConfirmed, opts){
+  opts = opts || {};
   level = level || 'General II';
   plan  = plan  || 'Single';
+  critical = Number(critical)||0; major = Number(major)||0; minor = Number(minor)||0;
+  const aeo = !!opts.aeo, stage2 = opts.stage === '2nd';
   const lot  = Number(lotQty) || 0;
   const code = codeLetterFor(lot, level);
   const pC = singlePlan(code, aqlCritical);
   const pM = singlePlan(code, aqlMajor);
   const pN = singlePlan(code, aqlMinor);
-  const sampleSize = Math.max(pC?pC.n:0, pM?pM.n:0, pN?pN.n:0);
-  const criticalAllowed = Number(aqlCritical) > 0 ? (pC?pC.ac:0) : 0;
-  const majorAllowed = pM ? pM.ac : 0;
-  const minorAllowed = pN ? pN.ac : 0;
+  const singleN = Math.max(pC?pC.n:0, pM?pM.n:0, pN?pN.n:0);
   const dbl = plan === 'Double'
     ? { critical: doublePlan(code, aqlCritical), major: doublePlan(code, aqlMajor), minor: doublePlan(code, aqlMinor) }
     : null;
-  const fail = critical > criticalAllowed || major > majorAllowed || minor > minorAllowed;
+  const avail = dbl ? [dbl.critical, dbl.major, dbl.minor].filter(p => p && !p.unavailable) : [];
+  const useDouble = avail.length > 0;
+  const n1 = useDouble ? Math.max.apply(null, avail.map(p => p.n1)) : 0;
+  const n2 = useDouble ? Math.max.apply(null, avail.map(p => p.n2)) : 0;
+  // ONE sample size everywhere: single = plan n; double = 1st sample (or 1st+2nd once the 2nd sample is drawn).
+  const sampleSize = useDouble ? (stage2 ? n1 + n2 : n1) : singleN;
+  const sampleNote = !dbl ? 'single sampling'
+    : !useDouble ? 'double not available - single plan used'
+    : (stage2 ? ('1st ' + n1 + ' + 2nd ' + n2 + ' = ' + (n1+n2)) : ('1st sample ' + n1 + ' - 2nd +' + n2 + ' only if needed (max ' + (n1+n2) + ')'));
+
+  const lim = (p, singleAc, found) => (useDouble && p && !p.unavailable)
+    ? { found:found, ac1:p.ac1, re1:p.re1, ac2:p.ac2, re2:p.re2 }
+    : { found:found, ac1:singleAc, re1:singleAc+1, ac2:singleAc, re2:singleAc+1 };
+  const cZero = !(Number(aqlCritical) > 0);
+  const effMajor = aeo ? major + Math.floor(minor / AEO_MINOR_PER_MAJOR) : major;
+  const effMinor = (aeo && !AEO_CHECK_MINOR_TOO) ? 0 : minor;
+  const L = {
+    critical: lim(cZero ? null : dbl && dbl.critical, cZero ? 0 : (pC?pC.ac:0), critical),
+    major:    lim(dbl && dbl.major, pM?pM.ac:0, effMajor),
+    minor:    lim(dbl && dbl.minor, pN?pN.ac:0, effMinor)
+  };
+  const ks = ['critical','major','minor'];
+  const cur = k => stage2 && useDouble ? L[k].ac2 : L[k].ac1;
+  const criticalAllowed = cur('critical'), majorAllowed = cur('major'), minorAllowed = cur('minor');
+
+  let result = '', needSecond = false;
+  if (critical + major + minor > 0){
+    if (stage2 && useDouble){
+      result = ks.some(k => L[k].found >= L[k].re2) ? 'FAIL' : 'PASS';
+    } else {
+      const rej = ks.some(k => L[k].found >= L[k].re1);
+      const acc = ks.every(k => L[k].found <= L[k].ac1);
+      if (rej) result = 'FAIL'; else if (acc) result = 'PASS'; else { result = ''; needSecond = true; }
+    }
+  } else result = noDefectsConfirmed ? 'PASS' : '';
+
   return {
-    sampleSize: sampleSize, codeLetter: code, lotQty: lot, level: level, plan: plan,
+    sampleSize: sampleSize, sampleNote: sampleNote, sampleMax: useDouble ? n1 + n2 : sampleSize, n1: n1, n2: n2,
+    useDouble: useDouble, stage: (stage2 && useDouble) ? '2nd' : '1st', needSecond: needSecond,
+    aeo: aeo, majorTotal: effMajor, minorConverted: aeo ? Math.floor(minor / AEO_MINOR_PER_MAJOR) : 0, minorRemaining: aeo ? minor % AEO_MINOR_PER_MAJOR : minor,
+    limits: L,
+    codeLetter: code, lotQty: lot, level: level, plan: plan,
     criticalAllowed: criticalAllowed, majorAllowed: majorAllowed, minorAllowed: minorAllowed,
     singlePlans: { critical:pC, major:pM, minor:pN }, doublePlans: dbl,
     // Zero defects normally means "not inspected yet" (result left blank, not
-    // PASS) since an empty defect log is ambiguous — the "No workmanship
+    // PASS) since an empty defect log is ambiguous - the "No workmanship
     // defects found" checkbox is what turns that ambiguity into a real PASS.
-    result: (critical||major||minor) ? (fail ? 'FAIL' : 'PASS') : (noDefectsConfirmed ? 'PASS' : '')
+    result: result
   };
 }
 
@@ -825,7 +869,33 @@ function aqlFor(S){
   S = S || state;
   const h = S.header, t = defectTotals(S.defects);
   return computeAQL(lotBasisQty(S), t.Critical, t.Major, t.Minor,
-                    h.aqlCritical, h.aqlMajor, h.aqlMinor, h.inspectionLevel, h.samplingPlan, S.noDefectsFound);
+                    h.aqlCritical, h.aqlMajor, h.aqlMinor, h.inspectionLevel, h.samplingPlan, S.noDefectsFound,
+                    { aeo: isAeoBuyer_(h.buyer), stage: h.doubleStage });
+}
+
+// Found / Allowed cells + notes, shared by Section 05 and the External panel
+function aqlCellsHtml_(T, aql){
+  const bad = (f, a) => Number(f) > Number(a) ? 'color:#b02a2a' : '';
+  const L = aql.limits || {};
+  const rej = k => (aql.useDouble && aql.stage === '1st' && L[k]) ? `<div class="subtle-note" style="margin:2px 0 0;">reject at ${L[k].re1}</div>` : '';
+  let cells = `<div class="aql-cell"><div class="al">Critical Found / Allowed</div><div class="av" style="${bad(T.Critical, aql.criticalAllowed)}">${T.Critical} / ${aql.criticalAllowed}</div>${rej('critical')}</div>`;
+  if (aql.aeo){
+    cells += `<div class="aql-cell"><div class="al">Major (after conversion) / Allowed</div><div class="av" style="${bad(aql.majorTotal, aql.majorAllowed)}">${aql.majorTotal} / ${aql.majorAllowed}</div>
+      <div class="subtle-note" style="margin:2px 0 0;">entered ${T.Major} Major + ${aql.minorConverted} (from ${T.Minor} Minor &divide; ${AEO_MINOR_PER_MAJOR})${aql.useDouble && aql.stage==='1st' ? ' &middot; reject at ' + L.major.re1 : ''}</div></div>
+      <div class="aql-cell"><div class="al">Minor (remaining)</div><div class="av">${aql.minorRemaining}</div><div class="subtle-note" style="margin:2px 0 0;">no Minor limit &mdash; pass/fail is on Major</div></div>`;
+  } else {
+    cells += `<div class="aql-cell"><div class="al">Major Found / Allowed</div><div class="av" style="${bad(T.Major, aql.majorAllowed)}">${T.Major} / ${aql.majorAllowed}</div>${rej('major')}</div>
+      <div class="aql-cell"><div class="al">Minor Found / Allowed</div><div class="av" style="${bad(T.Minor, aql.minorAllowed)}">${T.Minor} / ${aql.minorAllowed}</div>${rej('minor')}</div>`;
+  }
+  cells += `<div class="aql-cell"><div class="al">Total Defects (entered)</div><div class="av">${T.Critical + T.Major + T.Minor}</div></div>`;
+  cells += `<div class="aql-cell"><div class="al">Result</div><div class="av">${aql.result ? `<span class="badge ${aql.result==='PASS'?'pass':'fail'}">${aql.result}</span>` : (aql.needSecond ? '<span class="badge fail" style="background:#d68c0a">2nd sample</span>' : '&mdash;')}</div></div>`;
+  return cells;
+}
+function aqlNoteHtml_(aql){
+  let n = '';
+  if (aql.needSecond) n += `<div class="subtle-note" style="color:#b36b00;margin-top:8px;"><b>1st sample is inconclusive</b> (between Accept and Reject). Draw the 2nd sample of ${aql.n2} pcs, then set <b>Double plan stage</b> to "1st + 2nd sample" in Section 00 &mdash; the cumulative Ac/Re will then decide.</div>`;
+  if (aql.aeo) n += `<div class="subtle-note" style="margin-top:8px;"><b>AEO rule:</b> ${AEO_MINOR_PER_MAJOR} Minor defects count as 1 Major. Major ${aql.majorTotal} / Minor ${aql.minorRemaining} after conversion. Pass / fail depends on Major only.</div>`;
+  return n;
 }
 
 /* ---- Measurement AQL (own inspection level, own sample size, auto Ac/Re) ---- */
@@ -863,11 +933,13 @@ function computeMeasurement(S){
   const readings = (m.readingsManual === '' || m.readingsManual == null) ? 0 : (Number(m.readingsManual) || 0);
   const ootReadings = (m.ootReadingsManual === '' || m.ootReadingsManual == null) ? 0 : (Number(m.ootReadingsManual) || 0);
 
-  const maxAllowed = plan.ac;
+  const acMan = (m.acOverride === '' || m.acOverride == null) ? null : Number(m.acOverride);
+  const acOverridden = acMan !== null && !isNaN(acMan);
+  const maxAllowed = acOverridden ? Math.max(acMan, 0) : plan.ac;
   const result = (readings || manualSet) ? (oot <= maxAllowed ? 'PASS' : 'FAIL') : '';
   return {
-    level: level, codeLetter: plan.code || code, sampleSize: plan.n, sampleAuto: plan.n, overridden: !!override, pieces: pieces,
-    ac: plan.ac, re: plan.re, maxAllowed: maxAllowed,
+    level: level, codeLetter: plan.code || code, sampleSize: override || plan.n, sampleAuto: plan.n, overridden: !!override, pieces: pieces,
+    ac: maxAllowed, re: maxAllowed + 1, acAuto: plan.ac, acOverridden: acOverridden, maxAllowed: maxAllowed,
     pieceOot: pieceOot, ootPieces: oot, readings: readings, ootReadings: ootReadings,
     pctOot: readings ? (ootReadings / readings * 100) : null, result: result
   };
@@ -1409,7 +1481,7 @@ async function generatePdfReport(srcData){
       doc.text('Total defects found', cardX+90, cy+12.3);
       doc.text('Total defects allowed', cardX+90, cy+17.8);
       const sx0 = cardX + 126, sw = (cardX + cardW - sx0) / 3;
-      [['CRITICAL',RED,dt.Critical,aql.criticalAllowed],['MAJOR',ORG,dt.Major,aql.majorAllowed],['MINOR',YEL,dt.Minor,aql.minorAllowed]].forEach((s,i) => {
+      [['CRITICAL',RED,dt.Critical,aql.criticalAllowed],[aql.aeo?'MAJOR TOTAL':'MAJOR',ORG,aql.aeo?aql.majorTotal:dt.Major,aql.majorAllowed],['MINOR',YEL,aql.aeo?aql.minorRemaining:dt.Minor,aql.aeo?'-':aql.minorAllowed]].forEach((s,i) => {
         const cx = sx0 + sw*i + sw/2;
         if (i>0) vline(sx0 + sw*i);
         doc.setFont('helvetica','bold'); doc.setFontSize(5.8);
@@ -1638,7 +1710,7 @@ async function generatePdfReport(srcData){
     // ---------------- 00 sampling plan & AQL --------------------------------
     heading('00. Sampling Plan & AQL');
     table({ theme:'grid', head:[['Lot Size (Offer Qty)','Inspection Level','Sampling Plan','Code Letter','Sample Size']],
-      body:[[ (aql.lotQty||0).toLocaleString(), h.inspectionLevel||'-', h.samplingPlan||'Single', aql.codeLetter||'-', aql.sampleSize||'-' ]] });
+      body:[[ (aql.lotQty||0).toLocaleString(), h.inspectionLevel||'-', h.samplingPlan||'Single', aql.codeLetter||'-', (aql.sampleSize||'-') + (aql.useDouble ? '  (' + aql.sampleNote + ')' : '') ]] });
     const planRow = (sev, aqlVal, key) => {
       const sp = (aql.singlePlans||{})[key];
       const p = isDouble ? (aql.doublePlans||{})[key] : sp;
@@ -1704,7 +1776,10 @@ async function generatePdfReport(srcData){
     heading('05. Workmanship \u2014 AQL Result: ' + (aql.result||'N/A'));
     table({ theme:'grid', head:[['','Critical','Major','Minor']],
       body:[['Found', dt.Critical, dt.Major, dt.Minor],
-            ['Allowed (Ac)', aql.criticalAllowed, aql.majorAllowed, aql.minorAllowed]] });
+            ['Allowed (Ac)', aql.criticalAllowed, aql.majorAllowed, aql.minorAllowed]]
+        .concat(aql.aeo ? [['After conversion (' + AEO_MINOR_PER_MAJOR + ' Minor = 1 Major)', dt.Critical, aql.majorTotal, aql.minorRemaining]] : [])
+        .concat([['Total defects', dt.Critical + dt.Major + dt.Minor, '', '']])
+        .concat(aql.needSecond ? [['1st sample inconclusive: 2nd sample of ' + aql.n2 + ' pcs required', '', '', '']] : []) });
     if (S.defects.length){
       table({ theme:'grid', head:[['#','Group','Category','Description','Area','Severity','Qty']],
         body: S.defects.map((d,i)=>[i+1,d.group,d.category,d.description,d.area,d.severity,d.qty]) });
@@ -2072,6 +2147,8 @@ function renderSection00(h, aql){
       <div class="f"><span class="field-label">Sampling Plan</span>
         <select data-h="samplingPlan">${SAMPLING_PLANS.map(o=>`<option ${h.samplingPlan===o?'selected':''}>${o}</option>`).join('')}</select>
       </div>
+      ${isDouble ? `<div class="f"><span class="field-label">Double plan stage</span>
+        <select data-h="doubleStage"><option value="1st" ${h.doubleStage!=='2nd'?'selected':''}>1st sample only</option><option value="2nd" ${h.doubleStage==='2nd'?'selected':''}>1st + 2nd sample drawn</option></select></div>` : ''}
       <div class="f"><span class="field-label">Inspection Level (workmanship)</span>
         <select data-h="inspectionLevel">${INSPECTION_LEVELS.map(o=>`<option ${h.inspectionLevel===o?'selected':''}>${o}</option>`).join('')}</select>
       </div>
@@ -2096,7 +2173,7 @@ function renderSection00(h, aql){
     <div class="kpi-grid" style="grid-template-columns:repeat(auto-fit,minmax(140px,1fr));margin:0 0 12px;">
       <div class="kpi"><div class="k-bar" style="background:var(--brand)"></div><div class="k-label">Lot Size Used</div><div class="k-value">${lot ? lot.toLocaleString() : '-'}</div><div class="k-sub">${esc(basis)}</div></div>
       <div class="kpi"><div class="k-bar" style="background:var(--good)"></div><div class="k-label">Code Letter</div><div class="k-value">${aql.codeLetter || '-'}</div><div class="k-sub">${esc(h.inspectionLevel)}</div></div>
-      <div class="kpi"><div class="k-bar" style="background:var(--maj)"></div><div class="k-label">Sample Size</div><div class="k-value">${aql.sampleSize || '-'}</div><div class="k-sub">${isDouble ? 'double sampling' : 'single sampling'}</div></div>
+      <div class="kpi"><div class="k-bar" style="background:var(--maj)"></div><div class="k-label">Sample Size</div><div class="k-value">${aql.sampleSize || '-'}</div><div class="k-sub">${esc(aql.sampleNote || (isDouble ? 'double sampling' : 'single sampling'))}</div></div>
       <div class="kpi"><div class="k-bar" style="background:var(--min)"></div><div class="k-label">Measurement Sample</div><div class="k-value">${meas.sampleSize || '-'}</div><div class="k-sub">code ${meas.codeLetter||'-'} &middot; ${esc(meas.level)}</div></div>
     </div>
 
@@ -2106,9 +2183,15 @@ function renderSection00(h, aql){
         ${row('Critical', h.aqlCritical, 'critical')}
         ${row('Major', h.aqlMajor, 'major')}
         ${row('Minor', h.aqlMinor, 'minor')}
-        <tr><td><b>Measurements</b></td><td>${h.aqlMajor}</td><td>${meas.codeLetter||'-'}</td><td>${meas.sampleSize ? meas.sampleSize + ' pcs - Ac ' + meas.ac + ' / Re ' + meas.re : '-'}</td></tr>
+        <tr><td><b>Measurements</b>${(meas.overridden||meas.acOverridden) ? ' <span class="tag">manual</span>' : ''}</td><td>${h.aqlMajor}</td><td>${meas.codeLetter||'-'}</td><td>${meas.sampleSize ? meas.sampleSize + ' pcs - Ac ' + meas.ac + ' / Re ' + meas.re : '-'}</td></tr>
       </tbody>
     </table>
+    ${aql.aeo ? `<div class="subtle-note" style="margin-top:8px;"><b>AEO rule active:</b> ${AEO_MINOR_PER_MAJOR} Minor defects = 1 Major. Defects are judged on <b>Critical</b> and <b>Major Total (Major + Minor &divide; ${AEO_MINOR_PER_MAJOR})</b>${isDouble ? ' with the 1st / 2nd-sample Ac-Re above' : ''}.</div>` : ''}
+    ${isDouble && aql.useDouble ? `<div class="subtle-note" style="margin-top:6px;">Double plan: draw the <b>1st sample (${aql.n1} pcs)</b>. Accept if defects &le; 1st Ac, reject if &ge; 1st Re, otherwise draw the 2nd sample (+${aql.n2}) and judge on the cumulative Ac/Re.</div>` : ''}
+    <div class="header-grid" style="margin-top:10px;">
+      <div class="f"><span class="field-label">Measurement Sample Size &mdash; manual (optional)</span><input type="number" min="1" data-mm="sampleOverride" value="${meas.overridden ? meas.pieces : ''}" placeholder="auto: ${meas.sampleAuto||'-'}"></div>
+      <div class="f"><span class="field-label">Measurement Max Allowed / Ac &mdash; manual (optional)</span><input type="number" min="0" data-mm="acOverride" value="${meas.acOverridden ? meas.maxAllowed : ''}" placeholder="auto: ${meas.acAuto}"></div>
+    </div>
     <div class="subtle-note" style="margin-top:10px;">
       ${lot ? '' : 'Enter an <b>Offer Qty</b> above (or an Available Qty in Section 02) to calculate the plan. '}
       ${shifted ? 'One or more AQL columns fall on an arrow in the master table, so the standard sends the inspection to a different code letter &mdash; the code shown per row is the one actually used. ' : ''}
@@ -2381,11 +2464,9 @@ function renderSection04(t, aql){
   <div class="panel panel-pad section-block">
     <h2 class="section-title">05. Workmanship — AQL Result</h2>
     <div class="aql-preview">
-      <div class="aql-cell"><div class="al">Critical Found / Allowed</div><div class="av">${t.Critical} / ${aql.criticalAllowed}</div></div>
-      <div class="aql-cell"><div class="al">Major Found / Allowed</div><div class="av">${t.Major} / ${aql.majorAllowed}</div></div>
-      <div class="aql-cell"><div class="al">Minor Found / Allowed</div><div class="av">${t.Minor} / ${aql.minorAllowed}</div></div>
-      <div class="aql-cell"><div class="al">Result</div><div class="av">${aql.result ? `<span class="badge ${aql.result==='PASS'?'pass':'fail'}">${aql.result}</span>` : '—'}</div></div>
+      ${aqlCellsHtml_(t, aql)}
     </div>
+    ${aqlNoteHtml_(aql)}
 
     <h3 class="section-title" style="font-size:12.5px;">Defect Log</h3>
     <div id="defectList"></div>
@@ -2461,11 +2542,12 @@ function renderSection06(){
     ${legacyRows ? '<div class="subtle-note" style="margin-bottom:8px;">This report was saved with the older POM table; those readings are kept and printed in the PDF.</div>' : ''}
     <h3 class="section-title" style="font-size:12.5px;">Measurement Summary <span class="tag">manual entry</span></h3>
     <div class="header-grid">
-      <div class="f"><span class="field-label">Total Sample Size (Pcs) <span style="text-transform:none;color:var(--muted)">${meas.overridden ? '— manual (auto ' + (meas.sampleAuto||'-') + ')' : '— auto per AQL, you can increase'}</span></span><input type="number" min="1" data-mm="sampleOverride" value="${meas.pieces || ''}"></div>
+      <div class="f"><span class="field-label">Measurement Sample Size (Pcs) <span style="text-transform:none;color:var(--muted)">${meas.overridden ? '— MANUAL (auto would be ' + (meas.sampleAuto||'-') + ')' : '— auto per AQL; type your own to override'}</span></span><input type="number" min="1" data-mm="sampleOverride" value="${meas.overridden ? meas.pieces : ''}" placeholder="auto: ${meas.sampleAuto||'-'}"></div>
+      <div class="f"><span class="field-label">Measurement Max Allowed / Ac <span style="text-transform:none;color:var(--muted)">${meas.acOverridden ? '— MANUAL (auto ' + meas.acAuto + ')' : '— auto per AQL; type buyer\'s own to override'}</span></span><input type="number" min="0" data-mm="acOverride" value="${meas.acOverridden ? meas.maxAllowed : ''}" placeholder="auto: ${meas.acAuto}"></div>
       <div class="f"><span class="field-label">Total POM Readings Taken</span><input type="number" min="0" data-mm="readingsManual" value="${esc(m.readingsManual)}"></div>
       <div class="f"><span class="field-label">POM Reading Out of Tolerance (Defective)</span><input type="number" min="0" data-mm="ootReadingsManual" value="${esc(m.ootReadingsManual)}"></div>
       <div class="f"><span class="field-label">Pieces Out of Tolerance (defective)</span><input type="number" min="0" data-mm="ootPiecesManual" value="${esc(ootPcs)}"></div>
-      <div class="f"><span class="field-label">Max Allowed (per AQL)</span><input type="text" value="${meas.maxAllowed}" readonly></div>
+      <div class="f"><span class="field-label">Max Allowed (${meas.acOverridden ? 'manual' : 'per AQL'})</span><input type="text" value="${meas.maxAllowed}" readonly></div>
       <div class="f"><span class="field-label">% POM Out of Tolerance</span><input type="text" value="${meas.pctOot!=null?fmt1(meas.pctOot)+'%':''}" readonly></div>
       <div class="f"><span class="field-label">Measurement Result (auto)</span><input type="text" value="${meas.result}" readonly></div>
     </div>
@@ -2562,7 +2644,16 @@ function editCell_(r){
   return G.requestButton(r.id, label);
 }
 function renderLog(){
-  const rows = state.reports.filter(r=>!isDraft_(r)).sort((a,b)=> new Date(b.header.date)-new Date(a.header.date)).map(r => `
+  const icRow_ = r => `
+    <tr class="ic-row">
+      <td>${esc(r.header.date)}</td>
+      <td><span class="pill">Inspection Certificate (IC)</span></td>
+      <td>${esc(r.header.buyer)}</td><td>${esc(r.header.styleName)}</td><td>${esc(r.header.ir)}</td>
+      <td><span class="pill" style="color:var(--good);border-color:#164a3a;background:#122a20;">Submitted</span></td>
+      <td><span class="badge ${r.result==='PASS'?'pass':r.result==='FAIL'?'fail':''}">${esc(r.result||'PENDING')}</span></td>
+      <td class="actions-cell"><button class="btn ghost small" data-download-ic="${r.id}">IC PDF</button></td>
+    </tr>`;
+  const rows = state.reports.filter(r=>!isDraft_(r)).sort((a,b)=> new Date(b.header.date)-new Date(a.header.date)).map(r => (r.source && r.source!=='Self' ? '' : icRow_(r)) + `
     <tr>
       <td>${esc(r.header.date)}</td>
       <td><span class="pill ${r.header.inspectionType==='Final Inspection'?'final':'prefinal'}">${esc(r.header.inspectionType)}</span>${r.source && r.source!=='Self' ? ' <span class="pill">'+esc(extLabel_(r))+'</span>' : ''}</td>
@@ -2612,6 +2703,7 @@ function renderReportModal(){
         <div><b>Inspection Report</b> <span class="badge ${r.result==='PASS'?'pass':r.result==='FAIL'?'fail':''}">${esc(r.result||'PENDING')}</span></div>
         <div>
           <button class="btn ghost small" data-download-pdf-saved="${r.id}">Download PDF</button>
+          ${r.source && r.source!=='Self' ? '' : `<button class="btn ghost small" data-download-ic="${r.id}">Download IC</button>`}
           <button class="close-x" data-close-modal="1">&times;</button>
         </div>
       </div>
@@ -2842,7 +2934,8 @@ function bindEvents(){
   };
   document.querySelectorAll('[data-mm]').forEach(el => el.onchange = (e) => {
     let v = e.target.value;
-    if (el.dataset.mm === 'sampleOverride'){ const auto = computeMeasurement(state).sampleAuto; v = (v === '' || Number(v) === auto) ? '' : Math.max(Number(v) || 1, 1); }
+    if (el.dataset.mm === 'sampleOverride'){ v = (v === '' ) ? '' : Math.max(Number(v) || 1, 1); }
+    if (el.dataset.mm === 'acOverride'){ v = (v === '') ? '' : Math.max(Number(v) || 0, 0); }
     state.measurements[el.dataset.mm] = v;
     if (state.measurements.ootPiecesManual === undefined) state.measurements.ootPiecesManual = '';   // leaves the legacy table-based count
     normalizeMeasurementColumns_(state);
@@ -2937,6 +3030,9 @@ function bindEvents(){
     if (rr && rr.status !== 'Draft' && window.TCEG && !TCEG.canEdit(rr.id)){ alert('This report is locked. Use "Request Edit" in the Reports Log.'); return; }
     loadReportIntoForm_(el.dataset.edit);
   });
+  document.querySelectorAll('[data-download-ic]').forEach(el => el.onclick = () => {
+    const r = state.reports.find(x => x.id === el.dataset.downloadIc); if (r) generateCertificatePdf_(selfIcSnapshot_(r));
+  });
   document.querySelectorAll('[data-download-pdf-saved]').forEach(el => el.onclick = () => {
     loadReportIntoForm_(el.dataset.downloadPdfSaved, true);
   });
@@ -3005,12 +3101,12 @@ async function saveCurrentReport_(isFinal){
     const ex = record.external || (record.external = {});
     const A = aqlFor(state), T = defectTotals(state.defects), ov = ex.overall || '';
     ex.result = ov;
-    ex.critical = T.Critical; ex.major = T.Major; ex.minor = T.Minor;
+    ex.critical = T.Critical; ex.major = A.aeo ? A.majorTotal : T.Major; ex.minor = A.aeo ? A.minorRemaining : T.Minor;
     record.result = ov === 'Pass' ? 'PASS' : ov === 'Fail' ? 'FAIL' : ov === 'Hold' ? 'HOLD' : 'PENDING';
     record.decision = ov === 'Pass' ? 'Accepted' : ov === 'Fail' ? 'Rejected' : ov === 'Hold' ? 'Hold' : '';
     record.sampleSize = Number(record.header.sampleSizeOverride) || A.sampleSize || '';
     record.aql = { sampleSize:A.sampleSize, codeLetter:A.codeLetter, critAllowed:A.criticalAllowed, majAllowed:A.majorAllowed, minAllowed:A.minorAllowed,
-                   foundCritical:T.Critical, foundMajor:T.Major, foundMinor:T.Minor, result:A.result };
+                   foundCritical:T.Critical, foundMajor:T.Major, foundMinor:T.Minor, majorTotal:A.majorTotal, aeo:A.aeo, result:A.result };
     if (ex.entryType === 'Self Inspection (Buyer Portal)' && ex.inspector) record.header.inspectorName = ex.inspector;
   }
   record.savedAt = new Date().toISOString();
@@ -3031,6 +3127,8 @@ async function saveCurrentReport_(isFinal){
   } else if (isFinal){
     showToast('Report submitted — overall result: ' + record.result + '. Preparing PDF…');
     await generatePdfReport(record); // snapshot passed explicitly — the form gets reset right after
+    await new Promise(r => setTimeout(r, 700));
+    await generateCertificatePdf_(selfIcSnapshot_(record));   // 2nd download: Inspection Certificate (IC)
   } else {
     showToast('Draft saved — resume it any time from the Drafts tab.');
   }
@@ -3048,6 +3146,39 @@ const EXT_SUMMARY_ = [
   ['customer','7. Latest customer expectation complied?'], ['moisture','8. Moisture Checked Conformity'],
 ];
 const COUNTRIES_ = ['Australia','Bangladesh','Belgium','Brazil','Canada','China','Denmark','Finland','France','Germany','Hong Kong','India','Ireland','Italy','Japan','Mexico','Netherlands','New Zealand','Norway','Poland','Portugal','Saudi Arabia','South Africa','South Korea','Spain','Sweden','Switzerland','Turkey','UAE','United Kingdom','United States'];
+/* External findings: one row per defect name with Critical / Major / Minor qty columns.
+   state.defects (one row per severity) is re-derived from it, so totals, PDF and insights keep working. */
+function extFindings_(){
+  const e = extState_();
+  if (!Array.isArray(e.findings)){
+    const map = {}, list = [];
+    (state.defects||[]).forEach(d => {
+      const k = String(d.description||'').trim().toLowerCase() + '|' + (d.description ? '' : list.length);
+      if (!map[k]){ map[k] = { name:d.description||'', Critical:'', Major:'', Minor:'' }; list.push(map[k]); }
+      if (map[k][d.severity] !== undefined) map[k][d.severity] = (Number(map[k][d.severity])||0) + (Number(d.qty)||0);
+    });
+    e.findings = list;
+  }
+  return e.findings;
+}
+function syncFindings_(){
+  const out = [];
+  extFindings_().forEach(f => ['Critical','Major','Minor'].forEach(sv => {
+    const q = Number(f[sv]) || 0;
+    if (q > 0) out.push({ group:'Group-B', category:'Assembling / Sewing', description:f.name||'', area:'', severity:sv, qty:q, pictures:[] });
+  }));
+  state.defects = out;
+}
+function groupDefects_(defects){
+  const map = {}, list = [];
+  (defects||[]).forEach(d => {
+    if (!d || !(d.description || d.qty)) return;
+    const k = String(d.description||'').trim().toLowerCase();
+    if (!map[k]){ map[k] = { name:d.description||'', Critical:0, Major:0, Minor:0 }; list.push(map[k]); }
+    if (map[k][d.severity] !== undefined) map[k][d.severity] += Number(d.qty)||0;
+  });
+  return list;
+}
 function extState_(){
   const e = state.external || (state.external = {});
   if (!e.summary) e.summary = {};
@@ -3089,23 +3220,24 @@ function renderExternalPanel(){
   ${renderSection01(h, aql, true)}
 
   <div class="panel panel-pad section-block">
-    <h2 class="section-title">Workmanship Findings</h2>
+    <h2 class="section-title">Workmanship Findings <span class="tag">write each defect once, put the qty under Critical / Major / Minor</span></h2>
     <table class="rep-table">
-      <thead><tr><th style="width:48px">SL</th><th>Defect Name</th><th style="width:150px">Defect Type</th><th style="width:100px">Defect Qty</th><th style="width:44px"></th></tr></thead>
+      <thead><tr><th style="width:48px" rowspan="2">SL</th><th rowspan="2">Defect Name</th><th colspan="3" style="text-align:center">Defect Type (Qty)</th><th style="width:44px" rowspan="2"></th></tr>
+        <tr><th style="width:90px;text-align:center">Critical</th><th style="width:90px;text-align:center">Major</th><th style="width:90px;text-align:center">Minor</th></tr></thead>
       <tbody>
-        ${state.defects.map((d,i) => `<tr>
+        ${extFindings_().map((f,i) => `<tr>
           <td>${i+1}</td>
-          <td><input type="text" data-xf="${i}:description" value="${esc(d.description)}" placeholder="e.g. Open seam"></td>
-          <td><select data-xf="${i}:severity">${['Critical','Major','Minor'].map(s=>`<option ${d.severity===s?'selected':''}>${s}</option>`).join('')}</select></td>
-          <td><input type="number" min="0" data-xf="${i}:qty" value="${esc(d.qty)}"></td>
+          <td><input type="text" data-xf="${i}:name" value="${esc(f.name)}" placeholder="e.g. Open seam"></td>
+          ${['Critical','Major','Minor'].map(sv => `<td><input type="number" min="0" data-xf="${i}:${sv}" value="${esc(f[sv])}" style="text-align:center"></td>`).join('')}
           <td><button type="button" class="btn danger small" data-remove-xf="${i}">✕</button></td>
-        </tr>`).join('') || `<tr><td colspan="5" style="color:${state.noDefectsFound ? 'var(--brand)' : 'var(--muted)'}">${state.noDefectsFound ? '✓ No workmanship defects found.' : 'No findings added yet.'}</td></tr>`}
+        </tr>`).join('') || `<tr><td colspan="6" style="color:${state.noDefectsFound ? 'var(--brand)' : 'var(--muted)'}">${state.noDefectsFound ? '✓ No workmanship defects found.' : 'No findings added yet.'}</td></tr>`}
+        ${extFindings_().length ? `<tr class="rep-group-hd"><td></td><td><b>Total</b></td>${['Critical','Major','Minor'].map(sv => `<td style="text-align:center"><b>${extFindings_().reduce((a,f)=>a+(Number(f[sv])||0),0)}</b></td>`).join('')}<td></td></tr>` : ''}
       </tbody>
     </table>
     <div class="row" style="align-items:center;gap:16px;margin-top:8px;flex-wrap:wrap;">
-      <button type="button" class="btn ghost small row-add-btn" data-action="add-xf" ${state.noDefectsFound ? 'disabled' : ''}>+ Add Finding</button>
+      <button type="button" class="btn ghost small row-add-btn" data-action="add-xf" ${state.noDefectsFound ? 'disabled' : ''}>+ Add Defect</button>
       <label style="display:flex;align-items:center;gap:6px;font-size:12px;color:var(--muted);cursor:pointer;">
-        <input type="checkbox" data-xnone ${state.noDefectsFound ? 'checked' : ''} ${state.defects.length ? 'disabled' : ''} style="width:auto;margin:0;">
+        <input type="checkbox" data-xnone ${state.noDefectsFound ? 'checked' : ''} ${extFindings_().length ? 'disabled' : ''} style="width:auto;margin:0;">
         No workmanship defects found
       </label>
     </div>
@@ -3128,9 +3260,7 @@ function renderExternalPanel(){
   </div>`;
 }
 function extTotalsHtml_(T, aql){
-  const cell = (l, f, a) => `<div class="aql-cell"><div class="al">${l} Found / Allowed</div><div class="av" style="${Number(f) > Number(a) ? 'color:#b02a2a' : ''}">${f} / ${a}</div></div>`;
-  return `<div class="aql-preview" style="margin-top:12px;">${cell('Critical', T.Critical, aql.criticalAllowed)}${cell('Major', T.Major, aql.majorAllowed)}${cell('Minor', T.Minor, aql.minorAllowed)}
-    <div class="aql-cell"><div class="al">AQL Result</div><div class="av">${aql.result ? `<span class="badge ${aql.result==='PASS'?'pass':'fail'}">${aql.result}</span>` : '—'}</div></div></div>`;
+  return `<div class="aql-preview" style="margin-top:12px;">${aqlCellsHtml_(T, aql)}</div>${aqlNoteHtml_(aql)}`;
 }
 function externalProblems_(){
   const h = state.header, e = extState_();
@@ -3140,11 +3270,12 @@ function externalProblems_(){
   if (e.entryType === 'Self Inspection (Buyer Portal)'){ if (!String(e.inspector||'').trim()) return 'Enter the J.M. Fabrics inspector name.'; }
   else if (!String(e.party||'').trim()) return 'Enter who did the inspection (' + (e.entryType==='3rd Party' ? 'company' : 'party / team') + ').';
   if (!(aqlFor(state).sampleSize > 0)) return 'Enter the Ready / Offer Qty in General Information so the sampling plan can be calculated.';
-  if (state.defects.some(d => !String(d.description||'').trim())) return 'Every finding needs a Defect Name (or remove the empty row).';
+  if (extFindings_().some(f => !String(f.name||'').trim())) return 'Every defect row needs a Defect Name (or remove the empty row).';
+  if (extFindings_().some(f => !(Number(f.Critical)>0 || Number(f.Major)>0 || Number(f.Minor)>0))) return 'Enter a qty under Critical / Major / Minor for every defect row (or remove it).';
   const open = EXT_SUMMARY_.filter(r => !e.summary[r[0]]).map(r => r[1]);
   if (open.length) return 'Choose Pass / Fail / Hold / NA for every Inspection Summary row. Still open: ' + open.join('; ');
   if (!e.overall) return 'Choose the Overall Inspection Result (Pass / Fail / Hold).';
-  if (e.overall !== 'Pass' && !state.defects.length && !String(e.remarks||'').trim()) return 'This is not a Pass — add the findings or write the reason / remarks.';
+  if (e.overall !== 'Pass' && !extFindings_().length && !String(e.remarks||'').trim()) return 'This is not a Pass — add the findings or write the reason / remarks.';
   if (e.link && !/^https?:\/\//i.test(String(e.link).trim())) return 'The report link must start with http:// or https://';
   return '';
 }
@@ -3155,7 +3286,7 @@ function externalSummaryHtml_(r){
   return `<div class="subtle-note" style="margin-bottom:12px;"><b>${esc(extLabel_(r))}</b> — ${esc(e.party||'')}${e.reportNo?' · Report '+esc(e.reportNo):''}${e.inspector?' · '+esc(e.inspector):''}
     <br>Result: <b>${esc(e.overall||e.result||'')}</b>${r.sampleSize?' · Sample '+esc(r.sampleSize):''}${(e.critical||e.major||e.minor)?' · Cr '+esc(e.critical||0)+' / Mj '+esc(e.major||0)+' / Mn '+esc(e.minor||0):''}
     ${e.remarks?'<br>'+esc(e.remarks):''}${/^https?:\/\//i.test(e.link||'')?'<br><a href="'+esc(e.link)+'" target="_blank" rel="noopener">Open the report ↗</a>':''}</div>
-    ${ds.length ? `<table class="rep-table" style="margin-bottom:12px;"><thead><tr><th>SL</th><th>Defect Name</th><th>Type</th><th>Qty</th></tr></thead><tbody>${ds.map((d,i)=>`<tr><td>${i+1}</td><td>${esc(d.description)}</td><td>${esc(d.severity)}</td><td>${esc(d.qty)}</td></tr>`).join('')}</tbody></table>` : ''}
+    ${ds.length ? `<table class="rep-table" style="margin-bottom:12px;"><thead><tr><th>SL</th><th>Defect Name</th><th>Critical</th><th>Major</th><th>Minor</th></tr></thead><tbody>${groupDefects_(ds).map((d,i)=>`<tr><td>${i+1}</td><td>${esc(d.name)}</td><td>${d.Critical||''}</td><td>${d.Major||''}</td><td>${d.Minor||''}</td></tr>`).join('')}</tbody></table>` : ''}
     ${rows ? `<table class="rep-table" style="margin-bottom:12px;"><thead><tr><th>Inspection Summary</th><th>Result</th></tr></thead><tbody>${rows}</tbody></table>` : ''}`;
 }
 function updateExtTotals_(){
@@ -3163,18 +3294,20 @@ function updateExtTotals_(){
   el.innerHTML = extTotalsHtml_(defectTotals(state.defects), aqlFor(state));
   const sec0 = document.querySelectorAll('.kpi .k-value'); // keep the live sampling KPIs in step (sample size does not depend on defects)
 }
+function setFinding_(t, final){
+  const p = t.dataset.xf.split(':'), i = Number(p[0]), field = p[1];
+  const f = extFindings_()[i]; if (!f) return;
+  f[field] = field === 'name' ? t.value : (t.value === '' ? '' : Math.max(Number(t.value) || 0, 0));
+  syncFindings_(); updateExtTotals_();
+}
 document.addEventListener('input', function(e){
   const t = e.target; if (!t || !t.dataset || t.dataset.xf === undefined) return;
-  const p = t.dataset.xf.split(':'), i = Number(p[0]), field = p[1];
-  if (!state.defects[i]) return;
-  state.defects[i][field] = field === 'qty' ? (t.value === '' ? '' : Number(t.value)) : t.value;
-  updateExtTotals_();
+  setFinding_(t);
 });
 document.addEventListener('change', function(e){
   const t = e.target; if (!t || !t.dataset) return;
   if (t.dataset.xf !== undefined){
-    const p = t.dataset.xf.split(':'), i = Number(p[0]);
-    if (state.defects[i]){ state.defects[i][p[1]] = p[1] === 'qty' ? Number(t.value) || 0 : t.value; updateExtTotals_(); }
+    setFinding_(t);
   } else if (t.dataset.xsum !== undefined){
     if (tcBlockIfGuest('Editing the inspection summary')){ render(); return; }
     const x = extState_(); x.summary[t.dataset.xsum] = t.value;
@@ -3192,13 +3325,37 @@ document.addEventListener('click', function(e){
   const b = e.target && e.target.closest ? e.target.closest('[data-action="add-xf"],[data-remove-xf]') : null; if (!b) return;
   if (tcBlockIfGuest('Editing findings')) return;
   if (b.dataset.action === 'add-xf'){
-    state.defects.push({group:'Group-B',category:'Assembling / Sewing',description:'',area:'',severity:'Major',qty:1,pictures:[]});
+    extFindings_().push({ name:'', Critical:'', Major:'', Minor:'' });
     state.noDefectsFound = false;
-  } else state.defects.splice(Number(b.dataset.removeXf), 1);
+  } else extFindings_().splice(Number(b.dataset.removeXf), 1);
+  syncFindings_();
   render();
 });
 
 /* ---- One-page Inspection Certificate (IC) ---- */
+/* ---- Self Inspection -> Inspection Certificate (IC): the 8 IC rows are derived from the self report ---- */
+function selfIcSummary_(S){
+  const res = list => list.some(c=>c.result==='Fail') ? 'Fail' : (list.some(c=>c.result==='Pass') ? 'Pass' : 'N/A');
+  const R = computeOverallResult_(S);
+  const tc = S.testCheckpoints || [];
+  const grp = re => tc.filter(c => re.test(String(c.group||'')));
+  const fromUp = v => v === 'PASS' ? 'Pass' : v === 'FAIL' ? 'Fail' : 'N/A';
+  const overall = R.overall === 'PASS' ? 'Pass' : R.overall === 'FAIL' ? 'Fail' : '';
+  return { summary: {
+      workmanship: fromUp(R.aql.result),                       // IC 1 <- 2. Workmanship
+      measurement: fromUp(R.measResult),                       // IC 2 <- 4. Measurements
+      quantity:    res(S.packingCheckpoints || []),            // IC 3 <- 1. Quantity & Packing
+      specs:       res(grp(/^(A|B)\./)),                       // IC 4 <- 04 A. Style/Construction/Colour + B. Artwork & Labels
+      onsite:      res(tc),                                    // IC 5 <- 04 On-Site Checkpoints & Tests
+      testreport:  res(grp(/^D\./)),                           // IC 6 <- 04 D. Test Report Verification
+      customer:    overall || 'N/A',                           // IC 7 <- Overall Inspection Result
+      moisture:    res(tc.filter(c => /moisture/i.test(String(c.label||''))))   // IC 8 <- C. ... Moisture Check
+    }, overall: overall };
+}
+function selfIcSnapshot_(r){
+  const x = selfIcSummary_(r), h = r.header || {};
+  return Object.assign({}, r, { external: { entryType:'Self Inspection (J.M. Fabrics)', party:'J.M. Fabrics Ltd.', inspector:h.inspectorName||'', reportNo:'', summary:x.summary, overall:x.overall, remarks:r.remarks||'' } });
+}
 async function generateCertificatePdf_(S){
   if (!window.jspdf){ showToast('PDF library did not load — check your internet connection and retry.'); return; }
   showToast('Generating Inspection Certificate…');
@@ -3261,19 +3418,19 @@ async function generateCertificatePdf_(S){
     const aqlRow = (n, aqlv, f, a) => [n, String(aqlv), String(a), String(f), Number(f) > Number(a) ? 'EXCEEDED' : 'Within limit'];
     doc.autoTable({ startY: y, margin:{left:m,right:m}, theme:'grid',
       head:[['Defect Type','AQL','Allowed (Ac)','Found','Status']],
-      body:[aqlRow('Critical', h.aqlCritical, T.Critical, A.criticalAllowed), aqlRow('Major', h.aqlMajor, T.Major, A.majorAllowed), aqlRow('Minor', h.aqlMinor, T.Minor, A.minorAllowed)],
+      body:A.aeo ? [aqlRow('Critical', h.aqlCritical, T.Critical, A.criticalAllowed), aqlRow('Major (after conversion)', h.aqlMajor, A.majorTotal, A.majorAllowed), ['Minor (remaining, ' + AEO_MINOR_PER_MAJOR + ' = 1 Major)', String(h.aqlMinor), '-', String(A.minorRemaining), 'No limit']] : [aqlRow('Critical', h.aqlCritical, T.Critical, A.criticalAllowed), aqlRow('Major', h.aqlMajor, T.Major, A.majorAllowed), aqlRow('Minor', h.aqlMinor, T.Minor, A.minorAllowed)],
       styles:{ fontSize:8, cellPadding:1.15, lineColor:[170,170,170], lineWidth:0.15, textColor:[25,25,25] },
       headStyles:{ fillColor:NAVY, textColor:255, fontStyle:'bold' },
       didParseCell: d => { if (d.section==='body' && d.column.index===4) d.cell.styles.textColor = d.cell.raw==='EXCEEDED' ? [211,47,47] : [30,130,70]; } });
     y = doc.lastAutoTable.finalY + 2;
-    const MAXF = 6, shown = defs.slice(0, MAXF);
+    const MAXF = 6, grp = groupDefects_(defs), shown = grp.slice(0, MAXF);
     doc.autoTable({ startY: y, margin:{left:m,right:m}, theme:'grid',
-      head:[['SL','Defect Name','Defect Type','Defect Qty']],
-      body: shown.length ? shown.map((d,i)=>[String(i+1), d.description||'-', d.severity||'-', String(d.qty||0)]).concat(defs.length > MAXF ? [['', '+ ' + (defs.length-MAXF) + ' more finding(s) — see the full record', '', '']] : [])
-                         : [['', S.noDefectsFound ? 'No workmanship defects found' : 'No findings recorded', '', '']],
+      head:[['SL','Defect Name','Critical','Major','Minor']],
+      body: shown.length ? shown.map((d,i)=>[String(i+1), d.name||'-', d.Critical||'', d.Major||'', d.Minor||'']).concat(grp.length > MAXF ? [['', '+ ' + (grp.length-MAXF) + ' more defect(s) — see the full record', '', '', '']] : [])
+                         : [['', S.noDefectsFound ? 'No workmanship defects found' : 'No findings recorded', '', '', '']],
       styles:{ fontSize:8, cellPadding:1.15, lineColor:[170,170,170], lineWidth:0.15, textColor:[25,25,25] },
       headStyles:{ fillColor:[90,100,125], textColor:255, fontStyle:'bold' },
-      columnStyles:{ 0:{cellWidth:12}, 2:{cellWidth:30}, 3:{cellWidth:26} } });
+      columnStyles:{ 0:{cellWidth:12}, 2:{cellWidth:22, halign:'center'}, 3:{cellWidth:22, halign:'center'}, 4:{cellWidth:22, halign:'center'} } });
     y = doc.lastAutoTable.finalY + 4;
     // inspection summary
     doc.setFont('helvetica','bold'); doc.setFontSize(9); doc.setTextColor(20,20,20); doc.text('Inspection Summary', m, y); y += 1.6;
@@ -3310,7 +3467,7 @@ async function generateCertificatePdf_(S){
     doc.text('Prepared by (QA Inspector)', m+33, sy+4.2, { align:'center' });
     doc.text('Authorized Signatory', W-m-33, sy+4.2, { align:'center' });
     doc.setFontSize(6.8); doc.setTextColor(120,120,120);
-    doc.text('Issued from the J.M. Fabrics QA Inspection system · ' + certNo + ' · Result as reported by ' + (e.entryType || 'the inspecting party') + '.', W/2, H-11, { align:'center' });
+    doc.text('Issued from the J.M. Fabrics QA Inspection system · ' + certNo + (/^Self Inspection \(J\.M\./.test(e.entryType||'') ? ' · Derived from the J.M. Fabrics Self Inspection Report.' : ' · Result as reported by ' + (e.entryType || 'the inspecting party') + '.'), W/2, H-11, { align:'center' });
     doc.save('Inspection_Certificate_' + String(h.ir||'report').replace(/[^a-zA-Z0-9]/g,'_') + '_' + (h.date||'') + '.pdf');
     showToast('Inspection Certificate downloaded.');
   }catch(err){ showToast('Certificate generation failed — ' + err.message); }

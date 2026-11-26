@@ -178,7 +178,7 @@ const SUMMARY_ROWS = [{ group: 'Documents & Packing Instruction Review', label: 
 const SIGNOFF_ROLES = ['Inspector','Factory QA / Representative','Quality Manager (JMF)','Production Responsible'];
 // Only these two groups get a photo-capture control, pinned to the
 // top-right corner of their group header row in the checklist table.
-const PHOTO_GROUPS = CHECKLIST_GROUPS.slice(0,2).map(g=>g.group);
+const PHOTO_GROUPS = CHECKLIST_GROUPS.slice(0,2).map(g=>g.group).concat(['Measurement Check']);
 const STATUS_RESULT_MAP = { 'Yes':'Pass', 'No':'Fail', 'N/A':'N/A' };
 
 
