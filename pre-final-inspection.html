@@ -148,6 +148,19 @@ body.pdf-mode .rep-table th, body.pdf-mode .field-label{color:#555;}
 .pair-grid .pair input, .pair-grid .pair select{width:100%;}
 .pair-grid .pair .hint{font-size:10px;color:var(--muted-2);display:block;font-weight:400;margin-top:1px;}
 input[readonly]{background:var(--panel-2);color:var(--muted);}
+
+.pic-add-wrap{position:relative;display:inline-block;}
+.pic-menu{display:none;position:absolute;z-index:50;top:100%;left:0;margin-top:4px;background:#fff;border:1px solid #D5D2C6;border-radius:8px;box-shadow:0 6px 18px rgba(0,0,0,.18);padding:4px;flex-direction:column;min-width:130px;}
+.pic-menu.open{display:flex;}
+.pic-menu button{border:none;background:transparent;text-align:left;padding:8px 10px;font-size:12.5px;cursor:pointer;border-radius:6px;white-space:nowrap;color:#1a1a1a;}
+.pic-menu button:hover{background:#F1F0EA;}
+.log-filter{display:flex;gap:10px;align-items:flex-end;flex-wrap:wrap;margin-bottom:12px;}
+.log-filter .f{min-width:140px;}
+.row-missing-bg{background:#fdecea;}
+.tcmodal-bg{position:fixed;inset:0;background:rgba(0,0,0,.5);z-index:9000;display:flex;align-items:flex-start;justify-content:center;padding:24px 12px;overflow:auto;}
+.tcmodal{background:#fff;border-radius:12px;max-width:860px;width:100%;box-shadow:0 10px 40px rgba(0,0,0,.35);}
+.tcmodal-head{display:flex;justify-content:space-between;align-items:center;padding:14px 18px;border-bottom:1px solid #E5E2D8;gap:10px;flex-wrap:wrap;}
+.tcmodal-body{padding:16px 18px 20px;}
 </style>
 <script src="js/edit-guard.js"></script>
 <script src="js/tc-fetch.js"></script>
@@ -646,9 +659,11 @@ async function persistReports(){
   try{
     const res = await qaApi({ action: "savePreFinal", reports: state.reports });
     if (!res.ok) throw new Error(res.error || "Save failed");
+    return true;
   }catch(e){
     try{ localStorage.setItem(MODULE_STORAGE_KEY, JSON.stringify(state.reports)); }catch(e2){}
     showToast(QA_API_URL.indexOf("PASTE_YOUR")===0 ? 'Backend not connected yet — saved to this browser only' : 'Could not reach server — saved to this browser only');
+    return false;
   }
 }
 
@@ -1001,8 +1016,13 @@ function pictureWidget(section, idx){
       <input type="file" accept="image/*" capture="environment" style="display:none" data-pic-input="${key}" data-src="camera">
       <input type="file" accept="image/*" style="display:none" data-pic-input="${key}" data-src="file">
       <div style="display:flex;gap:6px;flex-wrap:wrap;align-items:center;">
-        <button type="button" class="btn ghost small" data-pic-add="${key}" data-src="camera">&#128247; Camera</button>
-        <button type="button" class="btn ghost small" data-pic-add="${key}" data-src="file">&#128444; Gallery</button>
+        <span class="pic-add-wrap">
+          <button type="button" class="btn ghost small pic-add-main">&#128247; Add Picture &#9662;</button>
+          <div class="pic-menu">
+            <button type="button" data-pic-add="${key}" data-src="camera">&#128247; Camera</button>
+            <button type="button" data-pic-add="${key}" data-src="file">&#128444; Gallery</button>
+          </div>
+        </span>
         ${pics.length ? `<span class="subtle-note" style="margin:0;">${pics.length} photo${pics.length>1?'s':''}</span>` : ''}
       </div>
       <div class="pic-thumbs">
@@ -2643,14 +2663,25 @@ function editCell_(r){
   const label = [r.header.inspectionType, r.header.ir || r.header.styleName, r.header.date].filter(Boolean).join(' \u00B7 ');
   return G.requestButton(r.id, label);
 }
+function inspectorOfRec_(r){
+  if (r.source && r.source !== 'Self'){ const e = r.external || {}; return String(e.inspector || e.party || '').trim(); }
+  return String((r.header && r.header.inspectorName) || '').trim();
+}
+function logList_(){
+  const F = logFilter_();
+  return state.reports.filter(r=>!isDraft_(r)).filter(r => (!F.from || String(r.header.date) >= F.from) && (!F.to || String(r.header.date) <= F.to) && (!F.insp || inspectorOfRec_(r) === F.insp))
+                  .sort((a,b)=> new Date(b.header.date)-new Date(a.header.date));
+}
 function renderLog(){
-  const rows = state.reports.filter(r=>!isDraft_(r)).sort((a,b)=> new Date(b.header.date)-new Date(a.header.date)).map(r => `
+  const _all = state.reports.filter(r=>!isDraft_(r)), _names = Array.from(new Set(_all.map(inspectorOfRec_).filter(Boolean))).sort(), _list = logList_();
+  const rows = _list.map(r => `
     <tr>
       <td>${esc(r.header.date)}</td>
       <td><span class="pill ${r.header.inspectionType==='Final Inspection'?'final':'prefinal'}">${esc(r.header.inspectionType)}</span>${r.source && r.source!=='Self' ? ' <span class="pill">'+esc(extLabel_(r))+'</span>' : ''}</td>
       <td>${esc(r.header.buyer)}</td>
       <td>${esc(r.header.styleName)}</td>
       <td>${esc(r.header.ir)}</td>
+      <td>${esc(inspectorOfRec_(r) || '-')}</td>
       <td>${r.status==='Draft' ? '<span class="pill" style="color:var(--maj);border-color:#3a2a10;background:var(--maj-dim);">Draft</span>' : '<span class="pill" style="color:var(--good);border-color:#164a3a;background:#122a20;">Submitted</span>'}</td>
       <td><span class="badge ${r.result==='PASS'?'pass':r.result==='FAIL'?'fail':''}">${esc(r.result||'PENDING')}</span></td>
       <td class="actions-cell">
@@ -2663,9 +2694,10 @@ function renderLog(){
   return `
   <div class="panel panel-pad">
     <h2 class="section-title">All Inspection Reports</h2>
+    ${logFilterBar_(_names, _list.length, _all.length)}
     <table class="log">
-      <tr><th>Date</th><th>Type</th><th>Buyer</th><th>Style</th><th>IR</th><th>Status</th><th>Result</th><th></th></tr>
-      ${rows || '<tr><td colspan="8" class="subtle-note">No reports yet.</td></tr>'}
+      <tr><th>Date</th><th>Type</th><th>Buyer</th><th>Style</th><th>IR</th><th>Inspector</th><th>Status</th><th>Result</th><th></th></tr>
+      ${rows || '<tr><td colspan="9" class="subtle-note">' + (_all.length ? 'No report matches the filter.' : 'No reports yet.') + '</td></tr>'}
     </table>
   </div>`;
 }
@@ -2986,18 +3018,23 @@ function bindEvents(){
     { const fr = document.getElementById('f_remarks'); if (fr) state.remarks = fr.value; }
     if (isExternal_()){
       const problem = externalProblems_();
-      if (problem){ alert(problem); return; }
+      if (problem){ showSaveDialog_(false, 'Report NOT saved \u2014 incomplete', problem); return; }
       saveCurrentReport_(true);
       return;
     }
     const miss = missingCheckpoints_(state);
-    if (miss.m03.length || miss.m04.length){
+    const hm = [], hh = state.header;
+    [['sbu','SBU'],['buyer','Buyer'],['ir','IR No'],['date','Date'],['inspectorName','Inspector Name']].forEach(k => { if (!String(hh[k[0]]||'').trim()) hm.push(k[1]); });
+    if (!(Number(hh.offerQty) > 0)) hm.push('Ready / Offer Qty');
+    if (!(state.defects||[]).length && !state.noDefectsFound) hm.push('Workmanship: add the defects, or tick "No workmanship defects found"');
+    if (miss.m03.length || miss.m04.length || hm.length){
       state.showMissing = true;
       render();
       const parts = [];
+      if (hm.length) parts.push('Fill in: ' + hm.join(', '));
       if (miss.m03.length) parts.push('Section 03: ' + miss.m03.length + ' checkpoint(s) have no Result');
       if (miss.m04.length) parts.push('Section 04: ' + miss.m04.length + ' checkpoint(s) need Applicable (Yes / No) and a Result');
-      alert('Report cannot be submitted yet.\n\n' + parts.join('\n') + '\n\nThe rows still to fill are highlighted in red.');
+      showSaveDialog_(false, 'Report NOT saved — incomplete', parts.join('\n• ').replace(/^/, '• ') + '\n\nThe checkpoint rows still to fill are highlighted in red.');
       const first = document.querySelector('tr.row-missing');
       if (first) first.scrollIntoView({ behavior:'smooth', block:'center' });
       return;
@@ -3065,7 +3102,15 @@ function resetEntryForm_(){
   state.buyerOptions = []; state.irOptions = [];
 }
 
+let saving_ = false;
+function sigOfPf_(r){
+  const h = r.header || {}, e = r.external || {};
+  return JSON.stringify([r.source||'Self', h.inspectionType, h.buyer, h.ir, h.date, h.inspectorName, h.offerQty,
+    (r.packingCheckpoints||[]).map(c=>[c.result,c.comments]), (r.testCheckpoints||[]).map(c=>[c.applicable,c.result,c.comments]),
+    (r.defects||[]).map(d=>[d.description,d.severity,d.qty]), r.remarks||'', e.summary||{}, e.overall||'', e.party||'', e.inspector||'', (r.measurements||{}).readingsManual||'']);
+}
 async function saveCurrentReport_(isFinal){
+  if (saving_) return;
   const prevRec_ = state.editingId ? state.reports.find(r => r.id === state.editingId) : null;
   if (prevRec_ && prevRec_.status !== 'Draft' && window.TCEG && !TCEG.canEdit(prevRec_.id)){ alert('This report is locked. Ask an administrator for an edit (Reports Log > Request Edit).'); return; }
   if (prevRec_ && prevRec_.status !== 'Draft' && !isFinal){ alert('A submitted report cannot be turned back into a draft. Please submit it again.'); return; }
@@ -3099,12 +3144,30 @@ async function saveCurrentReport_(isFinal){
   record.savedAt = new Date().toISOString();
   if (!isFinal) record.draftSavedAt = record.savedAt; else delete record.draftName;
 
-  if (state.editingId){
+  if (isFinal){
+    const sg = sigOfPf_(record);
+    if (state.reports.some(r => r.status !== 'Draft' && !r.draft && r.id !== record.id && sigOfPf_(r) === sg)){
+      showSaveDialog_(false, 'Duplicate report \u2014 NOT saved', 'An identical report (same IR, date, inspector and results) is already in the Reports Log.');
+      return;
+    }
+  }
+  const prevReports_ = state.reports.slice();
+  if (state.editingId && state.reports.some(r => r.id === state.editingId)){
     state.reports = state.reports.map(r => r.id===state.editingId ? record : r);
   } else {
     state.reports.push(record);
   }
-  persistReports();
+  saving_ = true;
+  const sbtn_ = document.querySelector('[data-action="submit-final"]'); if (sbtn_){ sbtn_.disabled = true; }
+  let okSave_ = false;
+  try{ okSave_ = await persistReports(); }catch(e){ okSave_ = false; }
+  saving_ = false;
+  if (isFinal && !okSave_){
+    state.reports = prevReports_; state.editingId = record.id;   // keep the form; Submit again overwrites, never duplicates
+    render();
+    showSaveDialog_(false, 'Report NOT saved to the server', 'The connection to the server failed, so the report was NOT saved.\n\nYour entries are still on this screen \u2014 do not close or reload. Check the internet and press Submit again.');
+    return;
+  }
   clearLocalDraft_(); draftLastSig_ = ''; draftTouched_ = false;
   if (prevRec_ && prevRec_.status !== 'Draft' && isFinal && window.TCEG) TCEG.consume(prevRec_.id);
 
@@ -3120,6 +3183,7 @@ async function saveCurrentReport_(isFinal){
   resetEntryForm_();
   state.tab = isFinal ? 'log' : 'drafts';
   render();
+  if (isFinal) showSaveDialog_(true, 'Report saved successfully', (record.header.inspectionType||'Inspection') + '\nIR: ' + (record.header.ir||'-') + '  \u00B7  ' + (record.header.date||'') + '\nInspector: ' + ((record.source && record.source!=='Self') ? ((record.external||{}).inspector || (record.external||{}).party || '-') : (record.header.inspectorName||'-')) + '\nResult: ' + (record.result||'-') + '\n\nIt is saved to the server and listed in the Reports Log.');
 }
 
 
@@ -3612,6 +3676,45 @@ loadReports().then(() => {
       : { moduleKey: "qainspection", sheetName: "QAInspectionUsers", displayLabel: "QA Inspection",
           theme: { icon: "✅", accent: "#1E3364", iconBg: "#E7EBF4", bg: "#0A1420" } });
   })();
+
+/* ---- shared: save-result dialog, picture chooser menu, Reports Log filters ---- */
+function showSaveDialog_(ok, title, text){
+  const old = document.getElementById('tcSaveDlg'); if (old) old.remove();
+  const d = document.createElement('div'); d.id = 'tcSaveDlg';
+  d.style.cssText = 'position:fixed;inset:0;background:rgba(0,0,0,.55);z-index:99999;display:flex;align-items:center;justify-content:center;padding:16px;';
+  d.innerHTML = '<div style="background:#fff;color:#1a1a1a;border-radius:12px;max-width:460px;width:100%;padding:22px 24px;box-shadow:0 10px 40px rgba(0,0,0,.4);border-top:6px solid ' + (ok ? '#1e9e5a' : '#d32f2f') + ';">'
+    + '<div style="font-size:18px;font-weight:700;margin-bottom:8px;color:' + (ok ? '#16794a' : '#b02a2a') + ';">' + (ok ? '✔ ' : '✖ ') + esc(title) + '</div>'
+    + '<div style="font-size:13.5px;line-height:1.55;white-space:pre-line;">' + esc(text) + '</div>'
+    + '<div style="text-align:right;margin-top:16px;"><button type="button" id="tcSaveDlgOk" style="border:none;background:' + (ok ? '#1e9e5a' : '#d32f2f') + ';color:#fff;font-weight:700;padding:9px 22px;border-radius:8px;cursor:pointer;font-size:13px;">OK</button></div></div>';
+  document.body.appendChild(d);
+  d.querySelector('#tcSaveDlgOk').onclick = () => d.remove();
+}
+document.addEventListener('click', function(e){
+  const main = e.target && e.target.closest ? e.target.closest('.pic-add-main') : null;
+  document.querySelectorAll('.pic-menu.open').forEach(m => { if (!main || m !== main.nextElementSibling) m.classList.remove('open'); });
+  if (main){ e.preventDefault(); if (main.nextElementSibling) main.nextElementSibling.classList.toggle('open'); }
+  const lc = e.target && e.target.closest ? e.target.closest('[data-lf-clear]') : null;
+  if (lc){ state.logF = { from:'', to:'', insp:'' }; render(); }
+  const vo = e.target && e.target.closest ? e.target.closest('[data-view-open]') : null;
+  if (vo){ state.viewId = vo.dataset.viewOpen; render(); }
+  const vc = e.target && e.target.closest ? e.target.closest('[data-close-view]') : null;
+  if (vc && (e.target === vc || vc.tagName === 'BUTTON')){ state.viewId = null; render(); }
+});
+document.addEventListener('change', function(e){
+  const t = e.target;
+  if (t && t.dataset && t.dataset.lf){ state.logF = state.logF || { from:'', to:'', insp:'' }; state.logF[t.dataset.lf] = t.value; render(); }
+});
+function logFilter_(){ return state.logF = state.logF || { from:'', to:'', insp:'' }; }
+function logFilterBar_(names, shown, total){
+  const F = logFilter_();
+  return `<div class="log-filter">
+    <div class="f"><span class="field-label">From date</span><input type="date" data-lf="from" value="${esc(F.from)}"></div>
+    <div class="f"><span class="field-label">To date</span><input type="date" data-lf="to" value="${esc(F.to)}"></div>
+    <div class="f"><span class="field-label">Inspector</span><select data-lf="insp"><option value="">All inspectors</option>${names.map(n=>`<option ${F.insp===n?'selected':''}>${esc(n)}</option>`).join('')}</select></div>
+    <button type="button" class="btn ghost small" data-lf-clear="1">Clear filter</button>
+    <span class="subtle-note" style="margin:0 0 6px;">Showing ${shown} of ${total}</span>
+  </div>`;
+}
 </script>
 </body>
 </html>

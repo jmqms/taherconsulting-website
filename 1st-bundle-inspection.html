@@ -66,6 +66,19 @@ table.rep-table{width:100%;border-collapse:collapse;}
 .sign-table input{min-width:120px;}
 .grp-ctl{display:flex;align-items:center;gap:10px;}
 .grp-all{font-size:12px;padding:3px 6px;border:1px solid var(--line);border-radius:6px;background:#fff;}
+
+.pic-add-wrap{position:relative;display:inline-block;}
+.pic-menu{display:none;position:absolute;z-index:50;top:100%;left:0;margin-top:4px;background:#fff;border:1px solid #D5D2C6;border-radius:8px;box-shadow:0 6px 18px rgba(0,0,0,.18);padding:4px;flex-direction:column;min-width:130px;}
+.pic-menu.open{display:flex;}
+.pic-menu button{border:none;background:transparent;text-align:left;padding:8px 10px;font-size:12.5px;cursor:pointer;border-radius:6px;white-space:nowrap;color:#1a1a1a;}
+.pic-menu button:hover{background:#F1F0EA;}
+.log-filter{display:flex;gap:10px;align-items:flex-end;flex-wrap:wrap;margin-bottom:12px;}
+.log-filter .f{min-width:140px;}
+.row-missing-bg{background:#fdecea;}
+.tcmodal-bg{position:fixed;inset:0;background:rgba(0,0,0,.5);z-index:9000;display:flex;align-items:flex-start;justify-content:center;padding:24px 12px;overflow:auto;}
+.tcmodal{background:#fff;border-radius:12px;max-width:860px;width:100%;box-shadow:0 10px 40px rgba(0,0,0,.35);}
+.tcmodal-head{display:flex;justify-content:space-between;align-items:center;padding:14px 18px;border-bottom:1px solid #E5E2D8;gap:10px;flex-wrap:wrap;}
+.tcmodal-body{padding:16px 18px 20px;}
 </style>
 <script src="js/edit-guard.js"></script>
 <script src="js/tc-fetch.js"></script>
@@ -103,7 +116,8 @@ const LOT_BANDS = [
 const AQL_OPTIONS = [0,0.065,0.10,0.15,0.25,0.40,0.65,1.0,1.5,2.5,4.0,6.5,10];
 const INSPECTION_LEVELS = ['General I','General II','General III','S-1','S-2','S-3','S-4'];
 const DEFECT_TYPES = ['Critical','Major','Minor'];
-const DECISIONS = ['Accepted','Rework Required','Rejected'];
+const DECISIONS = ['Pass','Fail','Hold'];
+function decisionNorm_(d){ d = String(d||''); return /^(accepted|pass)$/i.test(d) ? 'Pass' : /^(rejected|fail)$/i.test(d) ? 'Fail' : /^(rework required|rework|hold)$/i.test(d) ? 'Hold' : d; }
 
 function codeLetterFor(lotSize, level){
   const q = Number(lotSize)||0;
@@ -391,8 +405,15 @@ function groupPictureWidget(group){
   const pics = (state.groupPictures && state.groupPictures[group]) || [];
   return `
     <div class="grp-pic">
-      <input type="file" accept="image/*" capture="environment" style="display:none" data-gpic-input="${esc(group)}">
-      <button type="button" class="cam-btn" data-gpic-add="${esc(group)}">&#128247; ${pics.length ? pics.length+' photo'+(pics.length>1?'s':'') : 'Add Photo'}</button>
+      <input type="file" accept="image/*" capture="environment" style="display:none" data-gpic-input="${esc(group)}" data-gsrc="camera">
+      <input type="file" accept="image/*" style="display:none" data-gpic-input="${esc(group)}" data-gsrc="file">
+      <span class="pic-add-wrap">
+        <button type="button" class="cam-btn pic-add-main">&#128247; Add Picture${pics.length ? ' ('+pics.length+')' : ''} &#9662;</button>
+        <div class="pic-menu">
+          <button type="button" data-gpic-add="${esc(group)}" data-gsrc="camera">&#128247; Camera</button>
+          <button type="button" data-gpic-add="${esc(group)}" data-gsrc="file">&#128444; Gallery</button>
+        </div>
+      </span>
       <div class="grp-pic-thumbs">
         ${pics.map((p,pi)=>`<img src="${esc(picThumbSrc_(p))}" data-gpic-view="${esc(group)}:${pi}">`).join('')}
       </div>
@@ -417,8 +438,7 @@ function groupResult_(groupName){
 }
 function autoDecision_(overall){
   if (state.decisionManual) return;
-  if (overall === 'Pass') state.decision = 'Accepted';
-  else if (overall === 'Fail') state.decision = 'Rework Required';
+  if (overall === 'Pass' || overall === 'Fail' || overall === 'Hold') state.decision = overall;
 }
 function overallResult_(){
   const aql = aqlFor();
@@ -611,6 +631,7 @@ function render(){
       ${state.tab==='entry' ? renderEntry() : state.tab==='drafts' ? renderDrafts() : renderLog()}
     </div>
     ${state.toast ? `<div class="toast">${esc(state.toast)}</div>` : ''}
+    ${state.viewId ? renderViewModal_() : ''}
   `;
   bindEvents();
   window.scrollTo(0, sy);
@@ -742,7 +763,6 @@ function renderAqlPanel(h, aql){
     </table>
     </div>
     <div class="row" style="margin-top:12px;align-items:center;">
-      <label class="check"><input type="checkbox" id="noDefectsFound" ${state.noDefectsFound?'checked':''}> No workmanship defects found</label>
       <div class="subtle-note">AQL Result: <span class="badge ${aql.result==='FAIL'?'fail':aql.result==='PASS'?'pass':''}">${aql.result||'—'}</span></div>
     </div>
   </div>`;
@@ -754,7 +774,7 @@ function renderChecklistPanel(){
     const hd = c.group!==lastGroup ? `<tr class="rep-group-hd"><td colspan="4"><div class="grp-hd-row"><span>${esc(c.group)}</span><span class="grp-ctl">${setAllSel_(c.group)}${PHOTO_GROUPS.indexOf(c.group)!==-1 ? groupPictureWidget(c.group) : ''}</span></div></td></tr>` : '';
     lastGroup = c.group;
     return hd + `
-    <tr>
+    <tr ${state.showMissing && (!c.status || !c.result) ? 'class="row-missing-bg"' : ''}>
       <td>${esc(c.label)}</td>
       <td><select data-ck="${i}:status"><option value="">--</option><option ${c.status==='Yes'?'selected':''}>Yes</option><option ${c.status==='No'?'selected':''}>No</option><option ${c.status==='N/A'?'selected':''}>N/A</option></select></td>
       <td><select class="result-select ${c.result==='Pass'?'PASS':c.result==='Fail'?'FAIL':''}" data-ck="${i}:result"><option value="">--</option><option ${c.result==='Pass'?'selected':''}>Pass</option><option ${c.result==='Fail'?'selected':''}>Fail</option><option ${c.result==='N/A'?'selected':''}>N/A</option></select></td>
@@ -773,25 +793,53 @@ function renderChecklistPanel(){
   </div>`;
 }
 
-function renderWorkmanshipPanel(){
-  const rows = state.defects.map((d,i)=>`
+/* Defects: one row per defect name, qty typed under Critical / Major / Minor. state.defects (name,type,qty) is derived from it. */
+function getFindings_(){
+  if (!state.findings || state._fdef !== state.defects){
+    const map = {}, list = [];
+    (state.defects||[]).forEach(d => {
+      const k = String(d.name||'').trim().toLowerCase();
+      if (!map[k]){ map[k] = { name:d.name||'', Critical:'', Major:'', Minor:'' }; list.push(map[k]); }
+      if (map[k][d.type] !== undefined) map[k][d.type] = (Number(map[k][d.type])||0) + (Number(d.qty)||0);
+    });
+    state.findings = list; state._fdef = state.defects;
+  }
+  return state.findings;
+}
+function syncFindings_(){
+  const out = [];
+  getFindings_().forEach(f => ['Critical','Major','Minor'].forEach(t => { const q = Number(f[t])||0; if (q > 0) out.push({ name:f.name||'', type:t, qty:q }); }));
+  state.defects = out; state._fdef = out;
+}
+function renderWorkmanshipPanel(aql){
+  const F = getFindings_();
+  const sum = t => F.reduce((a,f)=>a+(Number(f[t])||0),0);
+  const rows = F.map((f,i)=>`
     <tr>
       <td>${i+1}</td>
-      <td><input type="text" data-df="${i}:name" value="${esc(d.name)}" placeholder="Defect name"></td>
-      <td><select data-df="${i}:type">${DEFECT_TYPES.map(t=>`<option ${d.type===t?'selected':''}>${t}</option>`).join('')}</select></td>
-      <td><input type="number" data-df="${i}:qty" value="${d.qty||1}" style="width:70px"></td>
-      <td><button type="button" class="btn danger small" data-remove-defect="${i}">&times;</button></td>
-    </tr>`).join('') || `<tr><td colspan="5" class="subtle-note">No defects logged yet.</td></tr>`;
+      <td><input type="text" data-fd="${i}:name" value="${esc(f.name)}" placeholder="e.g. Oil Stain"></td>
+      ${['Critical','Major','Minor'].map(t=>`<td><input type="number" min="0" data-fd="${i}:${t}" value="${esc(f[t])}" style="width:80px;text-align:center"></td>`).join('')}
+      <td><button type="button" class="btn danger small" data-remove-fd="${i}">&times;</button></td>
+    </tr>`).join('') || `<tr><td colspan="6" class="subtle-note">${state.noDefectsFound ? '✓ No workmanship defects found.' : 'No defects logged yet.'}</td></tr>`;
   return `
   <div class="panel panel-pad section-block">
-    <h2 class="section-title">Workmanship Findings</h2>
+    <h2 class="section-title">Workmanship Findings <span class="subtle-note" style="text-transform:none;letter-spacing:0;">write each defect once, put the qty under Critical / Major / Minor</span></h2>
     <div class="overflow-x">
     <table class="rep-table">
-      <thead><tr><th>SL</th><th>Defect Name</th><th>Defect Type</th><th>Qty</th><th></th></tr></thead>
-      <tbody id="defectList">${rows}</tbody>
+      <thead>
+        <tr><th rowspan="2" style="width:48px">SL</th><th rowspan="2">Defect Name</th><th colspan="3" style="text-align:center">Defect Type</th><th rowspan="2" style="width:44px"></th></tr>
+        <tr><th style="text-align:center">Critical</th><th style="text-align:center">Major</th><th style="text-align:center">Minor</th></tr>
+      </thead>
+      <tbody id="defectList">${rows}
+        ${F.length ? `<tr class="rep-group-hd"><td></td><td><b>Total</b></td><td style="text-align:center"><b data-ft="Critical">${sum('Critical')}</b></td><td style="text-align:center"><b data-ft="Major">${sum('Major')}</b></td><td style="text-align:center"><b data-ft="Minor">${sum('Minor')}</b></td><td></td></tr>` : ''}
+      </tbody>
     </table>
     </div>
-    <button type="button" class="btn ghost small row-add-btn" id="addDefectBtn">+ Add Defect</button>
+    <div class="row" style="margin-top:12px;align-items:center;">
+      <button type="button" class="btn ghost small row-add-btn" id="addDefectBtn" ${state.noDefectsFound ? 'disabled' : ''}>+ Add Defect</button>
+      <label class="check"><input type="checkbox" id="noDefectsFound" ${state.noDefectsFound?'checked':''} ${F.length ? 'disabled' : ''}> No workmanship defects found</label>
+      <div class="subtle-note">AQL Result: <span class="badge ${aql.result==='FAIL'?'fail':aql.result==='PASS'?'pass':''}">${aql.result||'—'}</span></div>
+    </div>
   </div>`;
 }
 
@@ -824,7 +872,7 @@ function renderSummaryPanel(aql){
     </table>
     <div class="row" style="margin-top:14px;align-items:center;">
       <div class="f" style="max-width:260px;">
-        <span class="field-label">Decision</span>
+        <span class="field-label">Final Result</span>
         <select id="f_decision"><option value="">-- select --</option>${DECISIONS.map(d=>`<option ${state.decision===d?'selected':''}>${d}</option>`).join('')}</select>
       </div>
     </div>
@@ -871,28 +919,78 @@ async function pdfFromLog_(id){
   render();
 }
 
+function inspectorOf_(r){ return String((r.header && r.header.inspectorName) || '').trim(); }
+function groupResultOf_(rows){
+  const results = rows.map(r=>r.result).filter(Boolean);
+  if (results.includes('Fail')) return 'Fail';
+  if (results.length < rows.length) return 'Hold';
+  if (results.length && results.every(x=>x==='N/A')) return 'N/A';
+  return 'Pass';
+}
 function renderLog(){
-  const rows = state.reports.filter(r=>!isDraft_(r)).sort((a,b)=> new Date(b.header.date)-new Date(a.header.date)).map(r=>{
-    const aql = computeAQL(r.header.lotQty, 0,0,0, r.header.aqlCritical, r.header.aqlMajor, r.header.aqlMinor, r.header.inspectionLevel, true);
+  const F = logFilter_();
+  const all = state.reports.filter(r=>!isDraft_(r));
+  const names = Array.from(new Set(all.map(inspectorOf_).filter(Boolean))).sort();
+  const list = all.filter(r => (!F.from || String(r.header.date) >= F.from) && (!F.to || String(r.header.date) <= F.to) && (!F.insp || inspectorOf_(r) === F.insp))
+                  .sort((a,b)=> new Date(b.header.date)-new Date(a.header.date));
+  const rows = list.map(r=>{
+    const dec = decisionNorm_(r.decision);
     return `
     <tr>
       <td>${esc(r.header.date)}</td>
+      <td>${esc(inspectorOf_(r) || '-')}</td>
       <td>${esc(r.header.buyer)}</td>
       <td>${esc(r.header.ir||'')}</td>
       <td>${esc(r.header.styleName||r.header.ir)}</td>
-      <td>${esc(r.header.line)}</td>
-      <td><span class="badge ${r.decision==='Rejected'?'fail':r.decision==='Accepted'?'pass':''}">${esc(r.decision||'-')}</span></td>
-      <td>${logActions_(r)}</td>
+      <td>${esc(r.header.line||'')}</td>
+      <td><span class="badge ${dec==='Fail'?'fail':dec==='Pass'?'pass':''}">${esc(dec||'-')}</span></td>
+      <td><button type="button" class="btn ghost small" data-view-open="${r.id}">View</button> ${logActions_(r)}</td>
     </tr>`;
-  }).join('') || `<tr><td colspan="7" class="subtle-note">No ${esc(INSPECTION_TYPE)} reports saved yet.</td></tr>`;
+  }).join('') || `<tr><td colspan="8" class="subtle-note">${all.length ? 'No report matches the filter.' : 'No ' + esc(INSPECTION_TYPE) + ' reports saved yet.'}</td></tr>`;
   return `
   <div class="panel panel-pad section-block">
     <h2 class="section-title">Reports Log</h2>
+    ${logFilterBar_(names, list.length, all.length)}
     <div class="overflow-x">
     <table class="rep-table">
-      <thead><tr><th>Date</th><th>Buyer</th><th>IR</th><th>Style</th><th>Line</th><th>Decision</th><th></th></tr></thead>
+      <thead><tr><th>Date</th><th>Inspector</th><th>Buyer</th><th>IR</th><th>Style</th><th>Line</th><th>Result</th><th></th></tr></thead>
       <tbody>${rows}</tbody>
     </table>
+    </div>
+  </div>`;
+}
+function renderViewModal_(){
+  const r = state.reports.find(x=>x.id===state.viewId); if (!r) return '';
+  const h = r.header || {}, dec = decisionNorm_(r.decision);
+  const groups = []; const gm = {};
+  (r.checklist||[]).forEach(c => { if (!gm[c.group]){ gm[c.group] = []; groups.push(c.group); } gm[c.group].push(c); });
+  const defs = (function(){ const m = {}, l = []; (r.defects||[]).forEach(d => { const k = String(d.name||'').trim().toLowerCase(); if (!m[k]){ m[k] = { name:d.name||'', Critical:0, Major:0, Minor:0 }; l.push(m[k]); } if (m[k][d.type] !== undefined) m[k][d.type] += Number(d.qty)||0; }); return l; })();
+  const fld = (l,v) => `<div><div class="field-label">${l}</div>${esc(v||'-')}</div>`;
+  const chk = groups.map(g => {
+    const rows = gm[g], res = groupResultOf_(rows), pics = (r.groupPictures && r.groupPictures[g]) || [];
+    return `<tr class="rep-group-hd"><td colspan="4"><div class="grp-hd-row"><span>${esc(g)}</span><span class="badge ${res==='Fail'?'fail':res==='Pass'?'pass':''}">${res}</span></div></td></tr>`
+      + rows.map(c => `<tr><td>${esc(c.label)}</td><td>${esc(c.status)}</td><td>${esc(c.result)}</td><td>${esc(c.comments)}</td></tr>`).join('')
+      + (pics.length ? `<tr><td colspan="4">${pics.map(p=>`<img src="${esc(picThumbSrc_(p))}" style="width:64px;height:64px;object-fit:cover;border-radius:6px;margin:2px;cursor:pointer" ${p.url ? `onclick="window.open('${esc(p.url)}','_blank')"` : ''}>`).join('')}</td></tr>` : '');
+  }).join('');
+  return `
+  <div class="tcmodal-bg" data-close-view="1">
+    <div class="tcmodal" onclick="event.stopPropagation()">
+      <div class="tcmodal-head"><div><b>${esc(INSPECTION_TYPE)}</b> <span class="badge ${dec==='Fail'?'fail':dec==='Pass'?'pass':''}">${esc(dec||'-')}</span></div>
+        <div><button type="button" class="btn ghost small" data-pdf-report="${r.id}">Download PDF</button> <button type="button" class="btn ghost small" data-close-view="1">&times; Close</button></div></div>
+      <div class="tcmodal-body">
+        <div class="header-grid" style="margin-bottom:14px;">
+          ${fld('Date',h.date)}${fld('Inspected By',h.inspectorName)}${fld('SBU',h.sbu)}${fld('Buyer',h.buyer)}${fld('IR No',h.ir)}${fld('Style',h.styleName)}
+          ${fld('Line',h.line)}${fld('Size',h.size)}${fld('Color',h.color)}${fld('Lot Qty',h.lotQty)}
+        </div>
+        <h3 class="section-title">Checklist</h3>
+        <div class="overflow-x"><table class="rep-table"><thead><tr><th style="width:40%">Check Point</th><th>Status</th><th>Result</th><th>Comments</th></tr></thead><tbody>${chk}</tbody></table></div>
+        <h3 class="section-title" style="margin-top:16px;">Workmanship Findings</h3>
+        <table class="rep-table"><thead><tr><th>SL</th><th>Defect Name</th><th>Critical</th><th>Major</th><th>Minor</th></tr></thead><tbody>
+          ${defs.map((d,i)=>`<tr><td>${i+1}</td><td>${esc(d.name)}</td><td>${d.Critical||''}</td><td>${d.Major||''}</td><td>${d.Minor||''}</td></tr>`).join('') || `<tr><td colspan="5" class="subtle-note">${r.noDefectsFound ? 'No workmanship defects found.' : 'No defects recorded.'}</td></tr>`}
+        </tbody></table>
+        <h3 class="section-title" style="margin-top:16px;">Comments</h3>
+        <p>${esc(r.comments)||'-'}</p>
+      </div>
     </div>
   </div>`;
 }
@@ -930,12 +1028,13 @@ function bindEvents(){
   });
 
   document.querySelectorAll('[data-gpic-add]').forEach(el=>el.addEventListener('click', ()=>{
-    const input = document.querySelector(`[data-gpic-input="${CSS.escape(el.dataset.gpicAdd)}"]`);
+    const input = document.querySelector(`[data-gpic-input="${CSS.escape(el.dataset.gpicAdd)}"][data-gsrc="${el.dataset.gsrc}"]`);
+    document.querySelectorAll('.pic-menu.open').forEach(m=>m.classList.remove('open'));
     if (input) input.click();
   }));
   document.querySelectorAll('[data-gpic-input]').forEach(el=>el.addEventListener('change', (ev)=>{
     const file = ev.target.files && ev.target.files[0];
-    if (file) handleGroupPictureUpload(el.dataset.gpicInput, file);
+    if (file){ handleGroupPictureUpload(el.dataset.gpicInput, file); el.value = ''; }
   }));
   document.querySelectorAll('[data-gpic-view]').forEach(el=>el.addEventListener('click', ()=>{
     const [group,pi] = el.dataset.gpicView.split(':');
@@ -948,23 +1047,21 @@ function bindEvents(){
     state.signOff[Number(i)][field] = el.value;
   }));
 
-  document.querySelectorAll('[data-df]').forEach(el=>{
-    el.addEventListener('input', (ev)=>{ if (el.tagName==='INPUT') handleDf(el, ev); });
-    el.addEventListener('change', (ev)=>{ handleDf(el, ev); });
-    function handleDf(el, ev){
-      const [i,field] = el.dataset.df.split(':');
-      state.defects[Number(i)][field] = field==='qty' ? Number(el.value)||0 : el.value;
-      if (field === 'name') return;       // typing: no re-render, keeps focus & scroll
-      if (field === 'qty' && ev && ev.type==='input') return;
-      if (ev && ev.type==='input') return;
-      render();
-    }
+  document.querySelectorAll('[data-fd]').forEach(el=>{
+    el.addEventListener('input', ()=>{
+      const [i,field] = el.dataset.fd.split(':'); const f = getFindings_()[Number(i)]; if (!f) return;
+      f[field] = field==='name' ? el.value : (el.value==='' ? '' : Math.max(Number(el.value)||0,0));
+      syncFindings_();
+      ['Critical','Major','Minor'].forEach(t => { const c = document.querySelector('[data-ft="'+t+'"]'); if (c) c.textContent = getFindings_().reduce((a,x)=>a+(Number(x[t])||0),0); });
+    });
+    // re-render (AQL result / summary) only once focus has left the defect table, so tabbing between its cells is never interrupted
+    el.addEventListener('change', ()=>{ syncFindings_(); setTimeout(()=>{ const a = document.activeElement; if (!a || !a.dataset || a.dataset.fd === undefined) render(); }, 120); });
   });
-  document.querySelectorAll('[data-remove-defect]').forEach(el=>el.addEventListener('click', ()=>{
-    state.defects.splice(Number(el.dataset.removeDefect),1); render();
+  document.querySelectorAll('[data-remove-fd]').forEach(el=>el.addEventListener('click', ()=>{
+    getFindings_().splice(Number(el.dataset.removeFd),1); syncFindings_(); render();
   }));
   const addDefectBtn = document.getElementById('addDefectBtn');
-  if (addDefectBtn) addDefectBtn.addEventListener('click', ()=>{ state.defects.push({name:'',type:'Major',qty:1}); render(); });
+  if (addDefectBtn) addDefectBtn.addEventListener('click', ()=>{ getFindings_().push({name:'',Critical:'',Major:'',Minor:''}); state.noDefectsFound = false; render(); });
   const noDefEl = document.getElementById('noDefectsFound');
   if (noDefEl) noDefEl.addEventListener('change', ()=>{ state.noDefectsFound = noDefEl.checked; render(); });
 
@@ -1006,7 +1103,7 @@ function bindEvents(){
 
 async function mirrorToStyleTracking_(report){
   const h = report.header;
-  const statusMap = { 'Accepted':'Done', 'Rework Required':'In Progress', 'Rejected':'Open' };
+  const statusMap = { 'Pass':'Done', 'Hold':'In Progress', 'Fail':'Open', 'Accepted':'Done', 'Rework Required':'In Progress', 'Rejected':'Open' };
   try{
     await qaApi({ action:'saveEntry', entry:{
       stage: STAGE_ID, orderNo:'', styleNo: h.styleName||'', irNo: h.ir||'',
@@ -1019,7 +1116,8 @@ async function mirrorToStyleTracking_(report){
 function openReport_(r){
   Object.assign(state, JSON.parse(JSON.stringify({ header:r.header, checklist:r.checklist, groupPictures:r.groupPictures||PHOTO_GROUPS.reduce((o,g)=>{o[g]=[];return o;},{}), defects:r.defects, noDefectsFound:r.noDefectsFound, comments:r.comments, decision:r.decision, signOff:r.signOff||SIGNOFF_ROLES.map(role=>({role,name:'',signature:''})), draftName:r.draftName||'' })));
   state.editingId = r.id;
-  { const ov = overallResult_(); state.decisionManual = !!state.decision && state.decision !== (ov==='Pass'?'Accepted':ov==='Fail'?'Rework Required':state.decision); }
+  state.decision = decisionNorm_(state.decision);
+  { const ov = overallResult_(); state.decisionManual = !!state.decision && state.decision !== ov; }
   state.anySbu = !!(r.header && r.header.prodSbuDiffers);
   state.tab = 'entry';
   render();
@@ -1035,11 +1133,39 @@ async function autoPdfFromUrl_(){
   try{ await exportPdf(); showToast('PDF downloaded.'); }catch(e){ console.error(e); showToast('Could not create the PDF.'); }
 }
 
-function saveInspection(){
+let saving_ = false;
+function missingForSave_(){
+  const h = state.header, m = [];
+  const need = (v, l) => { if (!String(v == null ? '' : v).trim()) m.push(l); };
+  need(h.sbu,'SBU'); need(h.buyer,'Buyer'); need(h.ir,'IR No'); need(h.date,'Date'); need(h.inspectorName,'Inspected By');
+  if ('line' in emptyHeader()) need(h.line,'Line');
+  if (!(Number(h.lotQty) > 0)) m.push('Lot Qty');
+  const un = state.checklist.filter(c => !c.status || !c.result).length;
+  if (un) m.push(un + ' checklist point(s) still untouched (every point needs Status and Result)');
+  const F = getFindings_();
+  if (F.some(f => !String(f.name||'').trim())) m.push('A defect row has no Defect Name');
+  if (F.some(f => !((Number(f.Critical)||0) > 0 || (Number(f.Major)||0) > 0 || (Number(f.Minor)||0) > 0))) m.push('A defect row has no qty (Critical / Major / Minor)');
+  if (!F.length && !state.noDefectsFound) m.push('Workmanship: add the defects, or tick "No workmanship defects found"');
+  return m;
+}
+function sigOfReport_(r){
+  const h = r.header || {};
+  return JSON.stringify([h.buyer,h.ir,h.line,h.size,h.color,h.cartonNumber,h.date,h.inspectorName,h.lotQty,
+    (r.checklist||[]).map(c=>[c.status,c.result,c.comments]), (r.defects||[]).map(d=>[d.name,d.type,d.qty]), r.comments||'']);
+}
+async function saveInspection(){
+  if (saving_) return;
   if (window.TC_IS_GUEST){ showToast('Guest accounts are view only — saving is disabled.'); return; }
   if (state.editingId && !isDraftId_(state.editingId) && window.TCEG && !TCEG.canEdit(state.editingId)){ showToast('This report is locked. Ask an administrator for an edit (Reports Log > Request Edit).'); return; }
+  const miss = missingForSave_();
+  if (miss.length){
+    state.showMissing = true; render();
+    const first = document.querySelector('.row-missing-bg'); if (first) first.scrollIntoView({ behavior:'smooth', block:'center' });
+    showSaveDialog_(false, 'Report NOT saved — incomplete', 'Please complete the following first:\n• ' + miss.join('\n• '));
+    return;
+  }
+  state.showMissing = false;
   const h = state.header;
-  if (!h.buyer || !h.line){ showToast('Please fill in at least Buyer and Line before saving.'); return; }
   const report = {
     id: state.editingId || ('r'+Date.now()),
     header: JSON.parse(JSON.stringify(h)),
@@ -1048,7 +1174,7 @@ function saveInspection(){
     defects: JSON.parse(JSON.stringify(state.defects)),
     noDefectsFound: state.noDefectsFound,
     comments: state.comments,
-    decision: state.decision,
+    decision: decisionNorm_(state.decision),
     signOff: (syncInspectorSign_(), JSON.parse(JSON.stringify(state.signOff))),
     overall: overallResult_(),
     aql: (function(){ const a = aqlFor(), t = defectTotals();
@@ -1056,17 +1182,33 @@ function saveInspection(){
                foundCritical:t.Critical, foundMajor:t.Major, foundMinor:t.Minor, result:a.result }; })(),
   };
   report.header.inspectionType = INSPECTION_TYPE;
+  const sig = sigOfReport_(report);
+  if (state.reports.some(r => !isDraft_(r) && r.id !== report.id && sigOfReport_(r) === sig)){
+    showSaveDialog_(false, 'Duplicate report — NOT saved', 'An identical ' + INSPECTION_TYPE + ' report (same IR, date, inspector and results) is already in the Reports Log.');
+    return;
+  }
+  const prev = state.reports.slice();
   const idx = state.reports.findIndex(r=>r.id===report.id);
   const isNew = idx < 0 || isDraft_(state.reports[idx]);   // a finished draft counts as a new report
-  clearLocalDraft_(); draftLastSig_ = '';
   if (idx>=0) state.reports[idx]=report; else state.reports.push(report);
-  persistReports();
+  saving_ = true;
+  const btn = document.getElementById('saveBtn'); if (btn){ btn.disabled = true; btn.textContent = 'Saving…'; }
+  let ok = false;
+  try{ ok = await persistReports(true); }catch(e){ ok = false; }
+  saving_ = false;
+  if (!ok){
+    state.reports = prev; state.editingId = report.id;     // keep the form so nothing is lost; pressing Save again overwrites, never duplicates
+    render();
+    showSaveDialog_(false, 'Report NOT saved to the server', 'The connection to the server failed, so the report was NOT saved.\n\nYour entries are still on this screen — do not close or reload. Check the internet and press "Save Inspection" again.');
+    return;
+  }
+  clearLocalDraft_(); draftLastSig_ = '';
   if (isNew) mirrorToStyleTracking_(report);
   if (!isNew && window.TCEG) TCEG.consume(report.id);
   // a saved report is locked: clear the form and show the log (PDF / Request Edit live there)
-  Object.assign(state, emptyReportState()); state.editingId = null; state.anySbu = false; state.tab = 'log'; state.draftMsg = '';
-  showToast('Inspection saved. Find it in the Reports Log.');
+  Object.assign(state, emptyReportState()); state.editingId = null; state.anySbu = false; state.tab = 'log'; state.draftMsg = ''; state.findings = null;
   render();
+  showSaveDialog_(true, 'Inspection saved successfully', INSPECTION_TYPE + '\nIR: ' + (report.header.ir||'-') + '  ·  ' + (report.header.date||'') + '\nInspector: ' + (report.header.inspectorName||'-') + '\nResult: ' + (report.decision||'-') + '\n\nIt is saved to the server and listed in the Reports Log.');
 }
 
 /* ============================= PDF EXPORT (professional, autoTable-based) ============================= */
@@ -1217,8 +1359,8 @@ async function exportPdf(){
   } else {
     doc.autoTable({
       startY: y, margin:{left:marginX, right:marginX}, theme:'grid', styles:{ fontSize:8.5, cellPadding:2 },
-      head: [['SL','Defect Name','Defect Type','Qty']],
-      body: state.defects.map((d,i)=>[i+1, d.name||'-', d.type, d.qty||1]),
+      head: [['SL','Defect Name','Critical','Major','Minor']],
+      body: (function(){ const m={}, l=[]; state.defects.forEach(d=>{ const k=String(d.name||'').trim().toLowerCase(); if(!m[k]){ m[k]={name:d.name||'-',Critical:'',Major:'',Minor:''}; l.push(m[k]); } m[k][d.type]=(Number(m[k][d.type])||0)+(Number(d.qty)||0); }); return l.map((f,i)=>[i+1,f.name,f.Critical,f.Major,f.Minor]); })(),
       headStyles:{ fillColor:[246,245,241], textColor:[31,29,26], fontSize:8 },
     });
     afterTable();
@@ -1311,6 +1453,45 @@ loadReports();
       : { moduleKey: "qainspection", sheetName: "QAInspectionUsers", displayLabel: "QA Inspection",
           theme: { icon: "✅", accent: "#1E3364", iconBg: "#E7EBF4", bg: "#0A1420" } });
   })();
+
+/* ---- shared: save-result dialog, picture chooser menu, Reports Log filters ---- */
+function showSaveDialog_(ok, title, text){
+  const old = document.getElementById('tcSaveDlg'); if (old) old.remove();
+  const d = document.createElement('div'); d.id = 'tcSaveDlg';
+  d.style.cssText = 'position:fixed;inset:0;background:rgba(0,0,0,.55);z-index:99999;display:flex;align-items:center;justify-content:center;padding:16px;';
+  d.innerHTML = '<div style="background:#fff;color:#1a1a1a;border-radius:12px;max-width:460px;width:100%;padding:22px 24px;box-shadow:0 10px 40px rgba(0,0,0,.4);border-top:6px solid ' + (ok ? '#1e9e5a' : '#d32f2f') + ';">'
+    + '<div style="font-size:18px;font-weight:700;margin-bottom:8px;color:' + (ok ? '#16794a' : '#b02a2a') + ';">' + (ok ? '✔ ' : '✖ ') + esc(title) + '</div>'
+    + '<div style="font-size:13.5px;line-height:1.55;white-space:pre-line;">' + esc(text) + '</div>'
+    + '<div style="text-align:right;margin-top:16px;"><button type="button" id="tcSaveDlgOk" style="border:none;background:' + (ok ? '#1e9e5a' : '#d32f2f') + ';color:#fff;font-weight:700;padding:9px 22px;border-radius:8px;cursor:pointer;font-size:13px;">OK</button></div></div>';
+  document.body.appendChild(d);
+  d.querySelector('#tcSaveDlgOk').onclick = () => d.remove();
+}
+document.addEventListener('click', function(e){
+  const main = e.target && e.target.closest ? e.target.closest('.pic-add-main') : null;
+  document.querySelectorAll('.pic-menu.open').forEach(m => { if (!main || m !== main.nextElementSibling) m.classList.remove('open'); });
+  if (main){ e.preventDefault(); if (main.nextElementSibling) main.nextElementSibling.classList.toggle('open'); }
+  const lc = e.target && e.target.closest ? e.target.closest('[data-lf-clear]') : null;
+  if (lc){ state.logF = { from:'', to:'', insp:'' }; render(); }
+  const vo = e.target && e.target.closest ? e.target.closest('[data-view-open]') : null;
+  if (vo){ state.viewId = vo.dataset.viewOpen; render(); }
+  const vc = e.target && e.target.closest ? e.target.closest('[data-close-view]') : null;
+  if (vc && (e.target === vc || vc.tagName === 'BUTTON')){ state.viewId = null; render(); }
+});
+document.addEventListener('change', function(e){
+  const t = e.target;
+  if (t && t.dataset && t.dataset.lf){ state.logF = state.logF || { from:'', to:'', insp:'' }; state.logF[t.dataset.lf] = t.value; render(); }
+});
+function logFilter_(){ return state.logF = state.logF || { from:'', to:'', insp:'' }; }
+function logFilterBar_(names, shown, total){
+  const F = logFilter_();
+  return `<div class="log-filter">
+    <div class="f"><span class="field-label">From date</span><input type="date" data-lf="from" value="${esc(F.from)}"></div>
+    <div class="f"><span class="field-label">To date</span><input type="date" data-lf="to" value="${esc(F.to)}"></div>
+    <div class="f"><span class="field-label">Inspector</span><select data-lf="insp"><option value="">All inspectors</option>${names.map(n=>`<option ${F.insp===n?'selected':''}>${esc(n)}</option>`).join('')}</select></div>
+    <button type="button" class="btn ghost small" data-lf-clear="1">Clear filter</button>
+    <span class="subtle-note" style="margin:0 0 6px;">Showing ${shown} of ${total}</span>
+  </div>`;
+}
 </script>
 </body>
 </html>
