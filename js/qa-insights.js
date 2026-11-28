@@ -62,7 +62,7 @@
   function outcomeOf(r) {
     if (/draft/i.test(norm(r.status))) return "Draft";
     var d = norm(r.decision);
-    if (/reject|^fail/i.test(d)) return "Fail";
+    if (/reject|^fail|rework required/i.test(d)) return "Fail";
     if (/rework|hold/i.test(d)) return "Rework";
     if (/accept|^pass/i.test(d)) return "Pass";
     var x = norm(r.result).toUpperCase();
