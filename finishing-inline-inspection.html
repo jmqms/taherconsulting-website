@@ -117,7 +117,7 @@ const AQL_OPTIONS = [0,0.065,0.10,0.15,0.25,0.40,0.65,1.0,1.5,2.5,4.0,6.5,10];
 const INSPECTION_LEVELS = ['General I','General II','General III','S-1','S-2','S-3','S-4'];
 const DEFECT_TYPES = ['Critical','Major','Minor'];
 const DECISIONS = ['Pass','Fail','Hold'];
-function decisionNorm_(d){ d = String(d||''); return /^(accepted|pass)$/i.test(d) ? 'Pass' : /^(rejected|fail)$/i.test(d) ? 'Fail' : /^(rework required|rework|hold)$/i.test(d) ? 'Hold' : d; }
+function decisionNorm_(d){ d = String(d||''); return /^(accepted|pass)$/i.test(d) ? 'Pass' : /^(rejected|fail|rework required|rework)$/i.test(d) ? 'Fail' : /^hold$/i.test(d) ? 'Hold' : d; }
 
 function codeLetterFor(lotSize, level){
   const q = Number(lotSize)||0;
@@ -1211,7 +1211,8 @@ async function saveInspection(){
   // a saved report is locked: clear the form and show the log (PDF / Request Edit live there)
   Object.assign(state, emptyReportState()); state.editingId = null; state.anySbu = false; state.tab = 'log'; state.draftMsg = ''; state.findings = null;
   render();
-  showSaveDialog_(true, 'Inspection saved successfully', INSPECTION_TYPE + '\nIR: ' + (report.header.ir||'-') + '  ·  ' + (report.header.date||'') + '\nInspector: ' + (report.header.inspectorName||'-') + '\nResult: ' + (report.decision||'-') + '\n\nIt is saved to the server and listed in the Reports Log.');
+  showSaveDialog_(true, 'Inspection saved successfully', INSPECTION_TYPE + '\nIR: ' + (report.header.ir||'-') + '  ·  ' + (report.header.date||'') + '\nInspector: ' + (report.header.inspectorName||'-') + '\nResult: ' + (report.decision||'-') + '\n\nIt is saved to the server and listed in the Reports Log.\nThe PDF report is downloading now.');
+  try{ await pdfFromLog_(report.id); }catch(e){ console.error(e); showToast('Saved, but the PDF could not be created \u2014 use the PDF button in the Reports Log.'); }
 }
 
 /* ============================= PDF EXPORT (professional, autoTable-based) ============================= */
