@@ -3466,8 +3466,9 @@ async function generateCertificatePdf_(S){
     const actual = Number(h.actualOrderQty) || Number(h.orderQty) || (S.colorQty||[]).reduce((t,c)=>t+(Number(c.qty)||0),0);
     const ready = (S.colorQty||[]).reduce((t,c)=>t+(Number(c.readyQty)||0),0);
     grid([
-      ['Order Qty', actual ? actual.toLocaleString() : '-', 'Offer / Ready Qty', (Number(h.offerQty) || ready) ? (Number(h.offerQty) || ready).toLocaleString() : '-'],
-      ['Sampling Plan', (h.samplingPlan||'Single') + ' · ' + (h.inspectionLevel||''), 'Sample Size', A.sampleSize ? A.sampleSize + (A.codeLetter ? ' (code ' + A.codeLetter + ')' : '') : '-'],
+      ['Order Qty', actual ? actual.toLocaleString() : '-', 'PO Qty', Number(h.poQty) ? Number(h.poQty).toLocaleString() : (h.poQty || '-')],
+      ['Offer / Ready Qty', (Number(h.offerQty) || ready) ? (Number(h.offerQty) || ready).toLocaleString() : '-', 'Sampling Plan', (h.samplingPlan||'Single') + ' · ' + (h.inspectionLevel||'')],
+      ['Sample Size', A.sampleSize ? A.sampleSize + (A.codeLetter ? ' (code ' + A.codeLetter + ')' : '') : '-', '', ''],
     ]);
     const cols = (S.colorQty||[]).filter(c => c.color);
     if (cols.length){
