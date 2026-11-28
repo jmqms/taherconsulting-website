@@ -286,6 +286,7 @@ async function loadReports(){
   loadSbuOptions();
   try{ render(); }catch(e){ console.error('[loadReports] render threw:', e); }
   autoPdfFromUrl_();
+  if (location.hash === '#drafts'){ state.tab = 'drafts'; render(); }
 }
 function stripPics_(r){
   const c = JSON.parse(JSON.stringify(r));
@@ -502,7 +503,7 @@ function localDraftKey_(){ return MODULE_STORAGE_KEY + '_draft'; }
 function clearLocalDraft_(){ try{ localStorage.removeItem(localDraftKey_()); }catch(e){} }
 function setDraftMsg_(m){ state.draftMsg = m; const el = document.getElementById('draftStatus'); if (el) el.textContent = m; }
 async function saveDraft_(force){
-  if (window.TC_IS_GUEST || draftBusy_ || state.tab !== 'entry') return;
+  if (window.TC_IS_GUEST || draftBusy_ || saving_ || state.tab !== 'entry') return;
   const cur = state.editingId ? state.reports.find(x=>x.id===state.editingId) : null;
   if (state.editingId && !isDraft_(cur) && cur) return;          // editing an already-saved report: no drafts
   if (!draftHasContent_()) return;
@@ -512,7 +513,7 @@ async function saveDraft_(force){
   try{
     const rep = buildReport_();
     rep.id = state.editingId || ('d'+Date.now());
-    rep.draft = true; rep.draftName = (state.draftName||'').trim(); rep.draftSavedAt = new Date().toISOString();
+    rep.draft = true; rep.draftBy = ownerName_(); rep.draftName = (state.draftName||'').trim(); rep.draftSavedAt = new Date().toISOString();
     state.editingId = rep.id;
     const i = state.reports.findIndex(x=>x.id===rep.id);
     if (i>=0) state.reports[i] = rep; else state.reports.push(rep);
@@ -1161,10 +1162,14 @@ async function saveInspection(){
   if (miss.length){
     state.showMissing = true; render();
     const first = document.querySelector('.row-missing-bg'); if (first) first.scrollIntoView({ behavior:'smooth', block:'center' });
-    showSaveDialog_(false, 'Report NOT saved — incomplete', 'Please complete the following first:\n• ' + miss.join('\n• '));
+    saveDraft_(true);
+    showSaveDialog_(false, 'Report NOT submitted \u2014 incomplete', 'Please complete the following first:\n\u2022 ' + miss.join('\n\u2022 ') + '\n\nYour work is kept safely as a DRAFT (Drafts tab) \u2014 finish it any time and submit.');
     return;
   }
   state.showMissing = false;
+  saving_ = true;
+  for (let w = 0; draftBusy_ && w < 100; w++) await new Promise(r => setTimeout(r, 50));
+  saving_ = false;
   const h = state.header;
   const report = {
     id: state.editingId || ('r'+Date.now()),
@@ -1182,11 +1187,6 @@ async function saveInspection(){
                foundCritical:t.Critical, foundMajor:t.Major, foundMinor:t.Minor, result:a.result }; })(),
   };
   report.header.inspectionType = INSPECTION_TYPE;
-  const sig = sigOfReport_(report);
-  if (state.reports.some(r => !isDraft_(r) && r.id !== report.id && sigOfReport_(r) === sig)){
-    showSaveDialog_(false, 'Duplicate report — NOT saved', 'An identical ' + INSPECTION_TYPE + ' report (same IR, date, inspector and results) is already in the Reports Log.');
-    return;
-  }
   const prev = state.reports.slice();
   const idx = state.reports.findIndex(r=>r.id===report.id);
   const isNew = idx < 0 || isDraft_(state.reports[idx]);   // a finished draft counts as a new report
@@ -1441,6 +1441,7 @@ if (!localStorage.getItem('tc_session')) { /* soft guard — page still works if
 if (window.TCEG) TCEG.init('sewinginline', ()=>render(), r => { const rep = state.reports.find(x=>x.id===r.reportId); if (!rep) { alert('Reports are still loading - please try again in a moment.'); return true; } openReport_(rep); return true; });
 loadReports();
 </script>
+<script src="js/draft-reminder.js"></script>
 <script src="js/module-auth.js"></script>
 <script>
   /* Module login — same panel as the other modules. Opened from QA Process (QC team) it
@@ -1491,6 +1492,12 @@ function logFilterBar_(names, shown, total){
     <button type="button" class="btn ghost small" data-lf-clear="1">Clear filter</button>
     <span class="subtle-note" style="margin:0 0 6px;">Showing ${shown} of ${total}</span>
   </div>`;
+}
+
+/* who owns a draft = the logged-in QA Inspection user (shown in the login reminder) */
+function ownerName_(){
+  try{ const s = JSON.parse(sessionStorage.getItem('tc_module_qainspection') || 'null'); if (s && s.name) return s.name; }catch(e){}
+  return (window.TC_MODULE_SESSION && TC_MODULE_SESSION.name) || '';
 }
 </script>
 </body>

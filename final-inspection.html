@@ -3028,7 +3028,7 @@ function bindEvents(){
     { const fr = document.getElementById('f_remarks'); if (fr) state.remarks = fr.value; }
     if (isExternal_()){
       const problem = externalProblems_();
-      if (problem){ showSaveDialog_(false, 'Report NOT saved \u2014 incomplete', problem); return; }
+      if (problem){ draftTouched_ = true; saveDraft_(true); showSaveDialog_(false, 'Report NOT submitted \u2014 incomplete', problem + '\n\nYour work is kept safely as a DRAFT (Drafts tab) \u2014 finish it any time and submit.'); return; }
       saveCurrentReport_(true);
       return;
     }
@@ -3044,7 +3044,8 @@ function bindEvents(){
       if (hm.length) parts.push('Fill in: ' + hm.join(', '));
       if (miss.m03.length) parts.push('Section 03: ' + miss.m03.length + ' checkpoint(s) have no Result');
       if (miss.m04.length) parts.push('Section 04: ' + miss.m04.length + ' checkpoint(s) need Applicable (Yes / No) and a Result');
-      showSaveDialog_(false, 'Report NOT saved — incomplete', parts.join('\n• ').replace(/^/, '• ') + '\n\nThe checkpoint rows still to fill are highlighted in red.');
+      draftTouched_ = true; saveDraft_(true);
+      showSaveDialog_(false, 'Report NOT submitted \u2014 incomplete', parts.join('\n\u2022 ').replace(/^/, '\u2022 ') + '\n\nThe checkpoint rows still to fill are highlighted in red.\nYour work is kept safely as a DRAFT (Drafts tab) \u2014 finish it any time and submit.');
       const first = document.querySelector('tr.row-missing');
       if (first) first.scrollIntoView({ behavior:'smooth', block:'center' });
       return;
@@ -3124,6 +3125,9 @@ function sigOfPf_(r){
 }
 async function saveCurrentReport_(isFinal){
   if (saving_) return;
+  saving_ = true;
+  for (let w = 0; draftBusy_ && w < 100; w++) await new Promise(r => setTimeout(r, 50));   // an autosave in flight must finish first
+  saving_ = false;
   const prevRec_ = state.editingId ? state.reports.find(r => r.id === state.editingId) : null;
   if (prevRec_ && prevRec_.status !== 'Draft' && window.TCEG && !TCEG.canEdit(prevRec_.id)){ alert('This report is locked. Ask an administrator for an edit (Reports Log > Request Edit).'); return; }
   if (prevRec_ && prevRec_.status !== 'Draft' && !isFinal){ alert('A submitted report cannot be turned back into a draft. Please submit it again.'); return; }
@@ -3138,6 +3142,7 @@ async function saveCurrentReport_(isFinal){
   })));
   stripPictureData_(record);
   record.id = state.editingId || uid();
+  if (!isFinal) record.draftBy = ownerName_();
   record.sampleSize = aql.sampleSize;
   record.result = overall === 'PENDING' ? (aql.result || 'PENDING') : overall;
   record.status = isFinal ? 'Submitted' : 'Draft';
@@ -3157,13 +3162,6 @@ async function saveCurrentReport_(isFinal){
   record.savedAt = new Date().toISOString();
   if (!isFinal) record.draftSavedAt = record.savedAt; else delete record.draftName;
 
-  if (isFinal){
-    const sg = sigOfPf_(record);
-    if (state.reports.some(r => r.status !== 'Draft' && !r.draft && r.id !== record.id && sigOfPf_(r) === sg)){
-      showSaveDialog_(false, 'Duplicate report \u2014 NOT saved', 'An identical report (same IR, date, inspector and results) is already in the Reports Log.');
-      return;
-    }
-  }
   const prevReports_ = state.reports.slice();
   if (state.editingId && state.reports.some(r => r.id === state.editingId)){
     state.reports = state.reports.map(r => r.id===state.editingId ? record : r);
@@ -3582,7 +3580,7 @@ function localDraftKey_(){ return MODULE_STORAGE_KEY + '_draft'; }
 function clearLocalDraft_(){ try{ localStorage.removeItem(localDraftKey_()); }catch(e){} }
 function setDraftMsg_(m){ state.draftMsg = m; const el = document.getElementById('draftStatus'); if (el) el.textContent = m; }
 async function saveDraft_(force){
-  if (window.TC_IS_GUEST || draftBusy_ || state.tab !== 'entry' || !draftTouched_) return;
+  if (window.TC_IS_GUEST || draftBusy_ || saving_ || state.tab !== 'entry' || !draftTouched_) return;
   const cur = state.editingId ? state.reports.find(x=>x.id===state.editingId) : null;
   if (cur && !isDraft_(cur)) return;                    // editing a submitted report: no drafts
   const sig = sigFrom_(state);
@@ -3591,6 +3589,7 @@ async function saveDraft_(force){
   draftBusy_ = true;
   try{
     const rec = buildDraftRecord_();
+    rec.draftBy = ownerName_();
     state.editingId = rec.id;
     const i = state.reports.findIndex(x=>x.id===rec.id);
     if (i>=0) state.reports[i] = rec; else state.reports.push(rec);
@@ -3691,6 +3690,7 @@ document.addEventListener('click', function(e){
 
 if (window.TCEG) TCEG.init('final', () => render(), r => { if (!state.reports.find(x=>x.id===r.reportId)) { alert('Reports are still loading - please try again in a moment.'); return true; } loadReportIntoForm_(r.reportId); return true; });
 loadReports().then(() => {
+  if (location.hash === '#drafts') state.tab = 'drafts';
   // Opened from QA Inspection / Style Tracking "PDF" link: load that report and download its PDF
   const pdfId = new URLSearchParams(window.location.search).get('pdf');
   if (pdfId && state.reports.some(x => x.id === pdfId)) { loadReportIntoForm_(pdfId, true); return; }
@@ -3702,6 +3702,7 @@ loadReports().then(() => {
   });
 });
 </script>
+<script src="js/draft-reminder.js"></script>
 <script src="js/module-auth.js"></script>
 <script>
   /* Module login — same panel as the other modules. Opened from QA Process (QC team) it
@@ -3752,6 +3753,12 @@ function logFilterBar_(names, shown, total){
     <button type="button" class="btn ghost small" data-lf-clear="1">Clear filter</button>
     <span class="subtle-note" style="margin:0 0 6px;">Showing ${shown} of ${total}</span>
   </div>`;
+}
+
+/* who owns a draft = the logged-in QA Inspection user (shown in the login reminder) */
+function ownerName_(){
+  try{ const s = JSON.parse(sessionStorage.getItem('tc_module_qainspection') || 'null'); if (s && s.name) return s.name; }catch(e){}
+  return (window.TC_MODULE_SESSION && TC_MODULE_SESSION.name) || '';
 }
 </script>
 </body>
