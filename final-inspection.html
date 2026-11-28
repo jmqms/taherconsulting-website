@@ -3171,7 +3171,7 @@ async function saveCurrentReport_(isFinal){
   saving_ = true;
   const sbtn_ = document.querySelector('[data-action="submit-final"]'); if (sbtn_){ sbtn_.disabled = true; }
   let okSave_ = false;
-  try{ okSave_ = await persistReports(); }catch(e){ okSave_ = false; }
+  try{ okSave_ = await persistDraft_(record); }catch(e){ okSave_ = false; }   // this record only (fast) - not the whole list
   saving_ = false;
   if (isFinal && !okSave_){
     state.reports = prevReports_; state.editingId = record.id;   // keep the form; Submit again overwrites, never duplicates

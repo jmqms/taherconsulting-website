@@ -439,8 +439,10 @@ function groupResult_(groupName){
   return 'Pass';
 }
 function autoDecision_(overall){
-  if (state.decisionManual) return;
-  if (overall === 'Pass' || overall === 'Fail' || overall === 'Hold') state.decision = overall;
+  // Final Result follows the Overall Result (Pass / Fail). Only the inspector can switch it to Hold.
+  if (state.decisionManual && state.decision === 'Hold') return;
+  state.decisionManual = false;
+  state.decision = (overall === 'Pass' || overall === 'Fail') ? overall : '';
 }
 function overallResult_(){
   const aql = aqlFor();
@@ -875,6 +877,7 @@ function renderSummaryPanel(aql){
       <div class="f" style="max-width:260px;">
         <span class="field-label">Final Result</span>
         <select id="f_decision"><option value="">-- select --</option>${DECISIONS.map(d=>`<option ${state.decision===d?'selected':''}>${d}</option>`).join('')}</select>
+        <div class="subtle-note" style="margin-top:4px;">Follows the Overall Result (Pass / Fail). Select <b>Hold</b> only if you want to put the report on hold.</div>
       </div>
     </div>
   </div>`;
@@ -975,7 +978,7 @@ function renderViewModal_(){
   }).join('');
   return `
   <div class="tcmodal-bg" data-close-view="1">
-    <div class="tcmodal" onclick="event.stopPropagation()">
+    <div class="tcmodal">
       <div class="tcmodal-head"><div><b>${esc(INSPECTION_TYPE)}</b> <span class="badge ${dec==='Fail'?'fail':dec==='Pass'?'pass':''}">${esc(dec||'-')}</span></div>
         <div><button type="button" class="btn ghost small" data-pdf-report="${r.id}">Download PDF</button> <button type="button" class="btn ghost small" data-close-view="1">&times; Close</button></div></div>
       <div class="tcmodal-body">
@@ -1074,7 +1077,7 @@ function bindEvents(){
   const commentsEl = document.getElementById('f_comments');
   if (commentsEl) commentsEl.addEventListener('input', ()=>{ state.comments = commentsEl.value; });
   const decisionEl = document.getElementById('f_decision');
-  if (decisionEl) decisionEl.addEventListener('change', ()=>{ state.decision = decisionEl.value; state.decisionManual = true; render(); });
+  if (decisionEl) decisionEl.addEventListener('change', ()=>{ if (decisionEl.value === 'Hold'){ state.decision = 'Hold'; state.decisionManual = true; } else { state.decisionManual = false; } render(); });
 
   const saveBtn = document.getElementById('saveBtn');
   if (saveBtn) saveBtn.addEventListener('click', saveInspection);
@@ -1124,7 +1127,7 @@ function openReport_(r){
   Object.assign(state, JSON.parse(JSON.stringify({ header:r.header, checklist:r.checklist, groupPictures:r.groupPictures||PHOTO_GROUPS.reduce((o,g)=>{o[g]=[];return o;},{}), defects:r.defects, noDefectsFound:r.noDefectsFound, comments:r.comments, decision:r.decision, signOff:r.signOff||SIGNOFF_ROLES.map(role=>({role,name:'',signature:''})), draftName:r.draftName||'' })));
   state.editingId = r.id;
   state.decision = decisionNorm_(state.decision);
-  { const ov = overallResult_(); state.decisionManual = !!state.decision && state.decision !== ov; }
+  state.decisionManual = state.decision === 'Hold';
   state.anySbu = !!(r.header && r.header.prodSbuDiffers);
   state.tab = 'entry';
   render();
@@ -1200,7 +1203,7 @@ async function saveInspection(){
   saving_ = true;
   const btn = document.getElementById('saveBtn'); if (btn){ btn.disabled = true; btn.textContent = 'Saving…'; }
   let ok = false;
-  try{ ok = await persistReports(true); }catch(e){ ok = false; }
+  try{ ok = await persistDraft_(report); }catch(e){ ok = false; }   // this record only (fast) - not the whole list
   saving_ = false;
   if (!ok){
     state.reports = prev; state.editingId = report.id;     // keep the form so nothing is lost; pressing Save again overwrites, never duplicates
